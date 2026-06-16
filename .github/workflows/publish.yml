@@ -1,0 +1,42 @@
+# Builds the package on a release tag (v*), runs `twine check`, and publishes to
+# PyPI via Trusted Publishing (OIDC — no API token in the repo). Tags are the
+# public consumption surface; main carries no stability promise.
+#
+# The publish job uploads on every v* tag. It REQUIRES a GitHub Trusted Publisher
+# registered on pypi.org matching EXACTLY: project "pagespeak", owner phierceweb,
+# repo pagespeak, workflow publish.yml, environment pypi. If that registration is
+# missing or mismatched the upload step fails (the build step still succeeds, so
+# the dist is preserved as a CI artifact).
+# (pf-core~=0.2.0 already resolves from PyPI — no pf-core-first step needed.)
+name: publish
+on:
+  push:
+    tags: ["v*"]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install build twine
+      - run: python -m build
+      - run: twine check dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1

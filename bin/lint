@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Ergonomic shortcut for ruff + mypy via the project venv. Routes through
+# `bin/run` so it picks up the same `.env` auto-load.
+
+set -euo pipefail
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+RUN="$PROJECT_ROOT/bin/run"
+
+echo "ruff check"
+"$RUN" ruff check src tests
+
+echo "ruff format --check"
+"$RUN" ruff format --check src tests
+
+echo "mypy strict"
+"$RUN" mypy src
+
+echo "file-size guard (pf-core)"
+# Enforces per-file line budgets: hard 500 = FAIL, soft 300 = WARN. No file is
+# currently over the hard limit, so the guard runs from zero with no grandfather
+# list — a NEW file over 500 lines fails the lint.
+"$RUN" python -m pf_core.guards --root src/pagespeak
+
+echo "all checks passed"

@@ -1,0 +1,223 @@
+{% extends "base.html" %}
+{% block title %}{{ conv.dir_name }} — pagespeak console{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-4">
+  <div>
+    <h1 class="text-lg font-semibold">{{ stem or conv.dir_name }}</h1>
+    <div class="text-xs text-slate-400">{{ conv.dir_name }}{% if conv.source_path %} · {{ conv.source_path.name }}{% endif %}</div>
+  </div>
+  <a href="/" class="text-sm text-blue-700 hover:underline">← all conversions</a>
+</div>
+
+<div class="mb-5" hx-get="/partials/phase-strip/{{ conv.dir_name }}"
+     hx-trigger="load, every 3s" hx-swap="innerHTML">
+  {% include "partials/phase_strip.html" %}
+</div>
+
+<div id="actions" hx-get="/partials/actions/{{ conv.dir_name }}" hx-trigger="load" hx-swap="innerHTML"
+     class="mb-5"></div>
+
+<div class="bg-white border rounded p-3 mb-5 text-sm flex items-center gap-3">
+  <div class="flex-1">
+    <div class="font-medium">Deliver</div>
+    <div class="text-xs text-slate-500">
+      Copy just the finished files (the master <span class="mono">.md</span>, <span class="mono">sections/</span>, <span class="mono">images/</span>) to
+      <span class="mono">conversions/delivery/{{ conv.dir_name }}/</span>. Re-runnable.
+    </div>
+  </div>
+  <form hx-post="/api/deliver/{{ conv.dir_name }}" hx-target="#deliver-result" hx-swap="innerHTML"
+        hx-confirm="Deliver {{ conv.dir_name }} to conversions/delivery/?">
+    <button type="submit"
+            {% if not conv.phases_done.final %}disabled title="No master .md to deliver yet"{% endif %}
+            class="bg-blue-600 text-white px-3 py-1.5 rounded font-medium disabled:bg-slate-300 disabled:cursor-not-allowed">
+      Deliver
+    </button>
+  </form>
+</div>
+<div id="deliver-result" class="mb-5 empty:hidden"></div>
+
+<div id="llm" hx-get="/partials/llm/{{ conv.dir_name }}" hx-trigger="load, every 5s" hx-swap="innerHTML"
+     class="mb-5"></div>
+
+<!-- Vision result for a clicked image (gallery thumbnail OR an inline image in
+     the rendered document). Above the tabs + full width so it's visible from
+     either; hidden until an image is clicked. -->
+<div id="image-detail" class="mb-5 empty:hidden"></div>
+
+<!-- Tabs: keep the document full-width; move the (often large) image gallery
+     to its own tab. -->
+<div class="border-b mb-4 flex gap-1 text-sm">
+  <button type="button" id="tab-btn-document"
+          class="px-3 py-2 border-b-2 border-blue-600 text-blue-700 font-medium">Document</button>
+  <button type="button" id="tab-btn-images"
+          class="px-3 py-2 border-b-2 border-transparent text-slate-500">Images ({{ images|length }})</button>
+  {% if run_record %}
+  <button type="button" id="tab-btn-runrecord"
+          class="px-3 py-2 border-b-2 border-transparent text-slate-500">Run record</button>
+  {% endif %}
+</div>
+
+<div id="tab-document">
+  <div class="flex flex-wrap items-center gap-2 text-xs mb-2">
+    {% for v in ["ingest","cleanup","normalize","repair","vision","final"] %}
+    <a href="?view={{ v }}" class="px-2 py-1 rounded {{ 'bg-blue-600 text-white' if view==v else 'bg-slate-100 text-slate-500' }}">{{ v }}</a>
+    {% endfor %}
+    {% if markdown %}
+    <span class="ml-auto inline-flex rounded border overflow-hidden">
+      <button type="button" id="btn-rendered" class="px-2 py-1 bg-blue-600 text-white">Rendered</button>
+      <button type="button" id="btn-raw" class="px-2 py-1 bg-white text-slate-600">Raw text</button>
+    </span>
+    {% endif %}
+  </div>
+  {% if markdown %}
+  <zero-md id="md-rendered" src="/c/{{ conv.dir_name }}/md/{{ view }}"
+           class="block bg-white border rounded p-4 overflow-x-auto">
+    <template><style>img { cursor: pointer; }</style></template>
+  </zero-md>
+  <pre id="md-raw" class="hidden bg-white border rounded p-4 text-xs whitespace-pre-wrap mono overflow-x-auto">{{ markdown }}</pre>
+  {% else %}
+  <div class="bg-white border rounded p-4 text-sm"><span class="text-slate-400">(no checkpoint for this phase yet)</span></div>
+  {% endif %}
+</div>
+
+<div id="tab-images" class="hidden">
+  {% if images %}
+  <p class="text-xs text-slate-400 mb-2">Click an image for its caption + mermaid.</p>
+  <div class="grid grid-cols-4 md:grid-cols-6 gap-2">
+    {% for name in images %}
+    <button type="button" title="{{ name }}"
+            hx-get="/partials/image/{{ conv.dir_name }}/{{ name }}"
+            hx-target="#image-detail" hx-swap="innerHTML show:#image-detail:top"
+            class="block rounded focus:outline-none focus:ring-2 focus:ring-blue-400">
+      <img src="/c/{{ conv.dir_name }}/images/{{ name }}"
+           class="w-full h-24 object-cover rounded border hover:opacity-80" loading="lazy"/>
+    </button>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="text-sm text-slate-400">No images extracted for this document.</p>
+  {% endif %}
+</div>
+
+{% if run_record %}
+<div id="tab-runrecord" class="hidden">
+  <div class="bg-white border rounded p-4 max-w-3xl">
+    <p class="text-sm text-slate-600 mb-4">
+      The settings and results from the <strong>last time this document was converted</strong>.
+      It's saved so a re-run reuses the same settings — your output stays consistent unless you
+      deliberately change an option.
+    </p>
+
+    <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">What happened</h3>
+    <table class="w-full text-sm border mb-5">
+      <tbody>
+        <tr><td class="p-2 border-b text-slate-500 w-44">Converted</td><td class="p-2 border-b">{{ run_record.finished_at or run_record.started_at or "—" }}</td></tr>
+        <tr><td class="p-2 border-b text-slate-500">pagespeak version</td><td class="p-2 border-b">{{ run_record.version or "—" }}</td></tr>
+        <tr><td class="p-2 border-b text-slate-500">Source file used</td><td class="p-2 border-b mono">{{ run_record.input or "—" }}</td></tr>
+        <tr><td class="p-2 border-b text-slate-500">Sections produced</td><td class="p-2 border-b">{{ run_record.section_count if run_record.section_count is not none else "—" }}</td></tr>
+        <tr><td class="p-2 border-b text-slate-500">Images extracted</td><td class="p-2 border-b">{{ run_record.image_count if run_record.image_count is not none else "—" }}</td></tr>
+        {% if run_record.llm_calls %}
+        <tr><td class="p-2 text-slate-500">AI image calls</td><td class="p-2">{{ run_record.llm_calls.total_calls or 0 }} calls · ${{ "%.4f"|format(run_record.llm_calls.total_cost_usd or 0) }}</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+
+    <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Settings used</h3>
+    <table class="w-full text-sm border mb-5">
+      <tbody>
+        <tr><td class="p-2 border-b text-slate-500 w-44">preset</td><td class="p-2 border-b">{{ run_record.preset or "none" }}</td></tr>
+        {% for k, v in (run_record.resolved_flags or {}).items() %}
+        <tr>
+          <td class="p-2 border-b text-slate-500">{{ k.replace("_", " ") }}</td>
+          <td class="p-2 border-b">{% if v is true %}yes{% elif v is false %}no{% elif v is none %}<span class="text-slate-400">default</span>{% else %}{{ v }}{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <details>
+      <summary class="text-xs text-slate-500 cursor-pointer">Raw run record (<span class="mono">.pagespeak-run.json</span>)</summary>
+      <pre class="bg-slate-50 border rounded p-2 text-[11px] overflow-x-auto mono mt-2">{{ run_record | tojson(indent=2) }}</pre>
+    </details>
+  </div>
+</div>
+{% endif %}
+
+<!-- Preview pane renders with the zero-md web component (marked + highlight.js +
+     GitHub styling). It fetches checkpoint markdown from the md route. -->
+<script type="module" src="https://cdn.jsdelivr.net/npm/zero-md@3?register"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>
+(function () {
+  var byId = function (id) { return document.getElementById(id); };
+  var dir = {{ conv.dir_name | tojson }};
+
+  // Rendered / Raw text toggle.
+  var rendered = byId('md-rendered'), raw = byId('md-raw');
+  var btnR = byId('btn-rendered'), btnX = byId('btn-raw');
+  if (rendered && raw && btnR && btnX) {
+    var showRendered = function (asRendered) {
+      rendered.classList.toggle('hidden', !asRendered);
+      raw.classList.toggle('hidden', asRendered);
+      btnR.className = 'px-2 py-1 ' + (asRendered ? 'bg-blue-600 text-white' : 'bg-white text-slate-600');
+      btnX.className = 'px-2 py-1 ' + (asRendered ? 'bg-white text-slate-600' : 'bg-blue-600 text-white');
+    };
+    btnR.addEventListener('click', function () { showRendered(true); });
+    btnX.addEventListener('click', function () { showRendered(false); });
+  }
+
+  // Document / Images / Run record tabs.
+  var tabActive = 'px-3 py-2 border-b-2 border-blue-600 text-blue-700 font-medium';
+  var tabIdle = 'px-3 py-2 border-b-2 border-transparent text-slate-500';
+  var tabNames = ['document', 'images', 'runrecord'];
+  var showTab = function (name) {
+    tabNames.forEach(function (n) {
+      var pane = byId('tab-' + n);
+      var btn = byId('tab-btn-' + n);
+      if (pane) pane.classList.toggle('hidden', n !== name);
+      if (btn) btn.className = (n === name ? tabActive : tabIdle);
+    });
+  };
+  tabNames.forEach(function (n) {
+    var btn = byId('tab-btn-' + n);
+    if (btn) btn.addEventListener('click', function () { showTab(n); });
+  });
+
+  // Click an inline image in the rendered document -> same image-detail panel
+  // as a gallery thumbnail. zero-md renders in a shadow root, so listen on the
+  // host and use composedPath() to find the actual <img>.
+  if (rendered) {
+    rendered.addEventListener('click', function (e) {
+      var path = e.composedPath ? e.composedPath() : [];
+      var img = null;
+      for (var i = 0; i < path.length; i++) {
+        if (path[i] && path[i].tagName === 'IMG') { img = path[i]; break; }
+      }
+      if (!img || !img.src || img.src.indexOf('/images/') < 0) return;
+      e.preventDefault();
+      var name = decodeURIComponent(img.src.split('/images/').pop().split(/[?#]/)[0]);
+      var scrollToPanel = function () {
+        var panel = byId('image-detail');
+        if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      };
+      if (window.htmx) {
+        // Scroll AFTER the panel is populated (it's empty:hidden until then).
+        window.htmx.ajax('GET', '/partials/image/' + dir + '/' + name,
+                         { target: '#image-detail', swap: 'innerHTML' }).then(scrollToPanel, scrollToPanel);
+      } else {
+        scrollToPanel();
+      }
+    });
+  }
+
+  // zero-md auto-renders ```mermaid fenced blocks as diagrams when mermaid.js
+  // is present (loaded above). securityLevel 'antiscript' still renders HTML in
+  // labels (e.g. the LLM-generated <br/>) but strips any script — diagram source
+  // comes from the vision LLM's output on user-supplied images, so it must not
+  // be able to execute script in the console.
+  if (window.mermaid) {
+    window.mermaid.initialize({ startOnLoad: false, securityLevel: 'antiscript' });
+  }
+})();
+</script>
+{% endblock %}

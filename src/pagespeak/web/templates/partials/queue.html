@@ -1,0 +1,30 @@
+<div class="bg-white border rounded mb-4">
+  <div class="px-3 py-2 text-sm font-semibold border-b">Queue</div>
+  {% if not active and not recent %}
+  <div class="px-3 py-2 text-sm text-slate-400">idle</div>
+  {% endif %}
+  {% for j in active %}
+  <div class="px-3 py-2 text-sm flex items-center gap-3 border-b last:border-0">
+    <span class="px-1.5 py-0.5 rounded text-xs bg-blue-100 text-blue-700">{{ j.status }}</span>
+    <a class="text-blue-700 hover:underline" href="/c/{{ j.doc }}">{{ j.doc }}</a>
+    <span class="mono text-xs text-slate-400">job {{ j.id }}</span>
+    <span class="text-slate-600">{{ j.current_step or "" }}</span>
+    <form class="ml-auto" action="/api/jobs/{{ j.id }}/cancel" method="post">
+      <button class="text-xs text-red-600 hover:underline">cancel</button>
+    </form>
+  </div>
+  {% endfor %}
+  {% for j in recent %}
+  <div class="px-3 py-2 text-sm flex items-center gap-3 border-b last:border-0 text-slate-500">
+    <span class="px-1.5 py-0.5 rounded text-xs
+      {{ 'bg-green-100 text-green-700' if j.status=='succeeded' else 'bg-red-100 text-red-700' }}">{{ j.status }}</span>
+    <a class="hover:underline" href="/c/{{ j.doc }}">{{ j.doc }}</a>
+    <span class="mono text-xs">job {{ j.id }}</span>
+    {% if j.status in ('failed','canceled') %}
+    <form class="ml-auto" action="/api/jobs/{{ j.id }}/retry" method="post">
+      <button class="text-xs text-blue-600 hover:underline">retry</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>

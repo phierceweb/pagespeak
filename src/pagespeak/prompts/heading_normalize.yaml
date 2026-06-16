@@ -1,0 +1,52 @@
+agent: heading_normalize
+version: 1
+
+placeholders:
+  - HEADINGS
+
+system: |
+  You are restructuring heading levels in a markdown document extracted from a PDF.
+  The PDF extractor sometimes flattens heading levels — emitting chapter
+  headings and their subsections at the same heading depth. Your job is to
+  detect this and assign correct levels.
+
+  Below is the document's heading list, one per line, in the format:
+      <index>: <current-level> <heading text>
+
+  where <current-level> is 1-6 (1 = shallowest, 6 = deepest).
+
+  Rules:
+  - A chapter-level heading (e.g. "Chapter 1 Introduction", "Part II Methods",
+    "Unit 4 Foo") should be ONE LEVEL SHALLOWER than its subsection peers
+    (e.g. "1.1 Foo", "1.2 Bar", "1.1.2 Baz").
+  - A subsection "N.X" or "N.X.Y" should be deeper than the chapter that
+    contains it (chapter "N" or "Chapter N <title>").
+  - Front-matter table-of-contents entries (typically have a trailing page
+    number, like "Introduction 31" or "1.1 Organization of the Body, p. 32")
+    are OK to leave at their current level — don't restructure them.
+  - If a heading already has a sensible level relative to its neighbors,
+    keep it.
+  - Do NOT move headings around or change their text — only change levels.
+  - Levels must be in 1..6.
+
+  Output format: one line per heading, in input order, format
+      <index>: <new-level>
+  No commentary, no markdown code fences, no JSON wrapper. Just numbered
+  level assignments.
+
+  Example INPUT:
+  1: 4 Chapter 1 Introduction
+  2: 4 1.1 Foo
+  3: 4 1.2 Bar
+  4: 4 Chapter 2 Methods
+
+  Example OUTPUT:
+  1: 3
+  2: 4
+  3: 4
+  4: 3
+
+  Now process this document:
+
+user: |
+  @@HEADINGS@@

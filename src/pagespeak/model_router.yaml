@@ -1,0 +1,121 @@
+# Bundled default model config — ships inside the pagespeak wheel and is
+# used when no override is present. Override precedence (highest first):
+# the MODEL_ROUTER_CONFIG env var, then ./config/model_router.yaml in the
+# current working directory. To retune an installed copy, point
+# MODEL_ROUTER_CONFIG at your own file rather than editing this one.
+#
+# Per-agent model + sampling config for pagespeak's LLM-calling tasks.
+#
+# Read by `pagespeak._agent_runtime.resolve_agent_config(slug, backend)`.
+# Schema is per-backend so each task can use a different model depending
+# on which backend is active:
+#
+#   agents:
+#     <agent_slug>:
+#       backends:
+#         claude_code:
+#           model: <claude-code-flavored model name>
+#         anthropic:
+#           model: <anthropic-API model name>
+#         openrouter:
+#           model: <openrouter slash-namespaced model name>
+#       # Optional shared sampling kwargs (apply to whichever backend
+#       # is picked):
+#       # temperature: 0.0
+#       # max_tokens: 4000
+#
+# Backend selection at call time is governed by
+# `PAGESPEAK_<SLUG>_BACKEND` env var (default `claude_code`).
+#
+# Precedence for resolving the model (highest first):
+#   1. Explicit kwarg passed to the task
+#      (e.g. `to_markdown(vision_model=…)`)
+#   2. CLI flag `--<task>-model`
+#   3. Env var `PAGESPEAK_<TASK>_MODEL`
+#   4. This YAML's backend-specific entry
+#   5. Hardcoded fallback in `_agent_runtime.py` (haiku-4-5)
+
+agents:
+  vision:
+    # Vision pass — per-image diagram classification + caption + mermaid.
+    # Native multimodal required.
+    backends:
+      claude_code:
+        # `haiku` short alias resolves to whatever the local Claude CLI
+        # session has access to (typically the latest pinned Haiku).
+        model: haiku
+        # claude --print uses session-default max output; no kwarg needed.
+      anthropic:
+        model: claude-haiku-4-5-20251001
+        max_tokens: 2048
+        # Anthropic's strict mode for Haiku 4.5 rejects sending both
+        # `temperature` AND `top_p`. Keep `temperature` (set per-call /
+        # via pf-core default 0.2), drop `top_p` (set null → pf-core's
+        # conditional-include omits it from the API body).
+        top_p: null
+      openrouter:
+        # Gemini 2.5 Flash — 1M context, native multimodal,
+        # ~10× cheaper than Haiku via Anthropic API for the same task.
+        model: google/gemini-2.5-flash
+        max_tokens: 2048
+
+  heading_normalize:
+    # `llm` mode — filtered structural-heading list (numbered prefixes
+    # only). Tiny payload, haiku is plenty.
+    #
+    # One `<idx>: <level>` line per heading, so the output budget scales
+    # with heading count (a large textbook ≈ 1750 headings ≈ 4400 tokens).
+    # 8000 leaves headroom; claude_code ignores this kwarg.
+    backends:
+      claude_code:
+        # `haiku` short alias — resolved by the local CLI to the latest
+        # Haiku your session has access to.
+        model: sonnet
+      anthropic:
+        model: claude-sonnet-4-6
+        max_tokens: 8000
+      openrouter:
+        model: google/gemini-2.5-flash
+        max_tokens: 8000
+
+  heading_normalize_full:
+    # `llm_full` mode — all headings + body-context anchors. The
+    # reasoning-heavy task: inferring parent-child relationships from prose
+    # when headings are unnumbered. Sonnet fits Anthropic-family backends;
+    # Haiku struggles on the tricky unnumbered-heading cases.
+    #
+    # `max_input_tokens` is pagespeak's payload-shaping gate (NOT a client
+    # kwarg). When chars÷4 of the headings+anchors prompt exceeds it, gather
+    # drops body anchors and re-sends headings only. Set per-backend to
+    # match each backend's context window. `max_tokens` is the output cap.
+    backends:
+      claude_code:
+        # `opus` short alias — resolves to whatever Opus the local CLI
+        # session has access to. Best reasoning available, $0 under an
+        # active Max subscription. Swap to `sonnet` for faster/cheaper.
+        model: opus
+        # Opus/Sonnet via the CLI support 1M extended context. 800K
+        # leaves headroom so body anchors go through on textbook-scale
+        # docs (~350K). Drop to 150K if you want forced fallback to
+        # headings-only mode.
+        max_input_tokens: 800000
+      anthropic:
+        # Direct Anthropic API. Opus 4.8 is a reasoning model that
+        # rejects `temperature` and `top_p` — set both to null to
+        # opt out (pf-core's AnthropicClient drops `None` kwargs from
+        # the API call body). Swap model to `claude-sonnet-4-6` (or
+        # similar non-reasoning model) and the temperature/top_p
+        # opt-out can stay or be removed; both are accepted there.
+        model: claude-opus-4-8
+        #model: claude-sonnet-4-6
+        max_tokens: 8000
+        max_input_tokens: 150000
+        temperature: null
+        top_p: null
+      openrouter:
+        # Gemini 2.5 for the 1M window — keeps body anchors through for
+        # textbook-scale docs without the gate firing.
+        #model: google/gemini-2.5-pro
+        model: anthropic/claude-opus-4.8
+        max_tokens: 16000
+        max_input_tokens: 900000

@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="flex items-center justify-between mb-4">
+  <h1 class="text-lg font-semibold">Conversions</h1>
+  <form action="/api/upload" method="post" enctype="multipart/form-data" class="flex items-center gap-2">
+    <input type="file" name="file" required class="text-sm"/>
+    <button class="text-sm bg-blue-600 text-white px-3 py-1.5 rounded">Upload</button>
+  </form>
+</div>
+
+<div id="queue" hx-get="/partials/queue" hx-trigger="load, every 3s" hx-swap="innerHTML"></div>
+
+<table class="w-full text-sm bg-white rounded border">
+  <thead class="text-left text-slate-500 border-b">
+    <tr><th class="p-2">Document</th><th class="p-2">Phases</th><th class="p-2">Images</th><th class="p-2"></th></tr>
+  </thead>
+  <tbody>
+    {% for c in conversions %}
+    <tr class="border-b last:border-0">
+      <td class="p-2 font-medium">
+        <a class="text-blue-700 hover:underline" href="/c/{{ c.dir_name }}">{{ c.dir_name }}</a>
+        {% if c.source_path %}<div class="text-xs text-slate-400">{{ c.source_path.name }}</div>{% endif %}
+      </td>
+      <td class="p-2">
+        {% for p in ["ingest","cleanup","normalize","repair","vision","split"] %}
+          <span class="inline-block px-1.5 py-0.5 rounded text-xs mr-1
+            {{ 'bg-green-100 text-green-700' if c.phases_done[p] else 'bg-slate-100 text-slate-400' }}">{{ p }}</span>
+        {% endfor %}
+      </td>
+      <td class="p-2 text-slate-600">{{ c.image_count }}</td>
+      <td class="p-2 text-right"><a class="text-blue-700 hover:underline" href="/c/{{ c.dir_name }}">open →</a></td>
+    </tr>
+    {% else %}
+    <tr><td class="p-3 text-slate-500" colspan="4">No documents. Drop a file in <span class="mono">conversions/in/</span> or upload above.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

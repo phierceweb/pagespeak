@@ -1,0 +1,19 @@
+{# Live status line for one conversion job. Self-polls until terminal, then
+   stops (no hx-get on a finished job). Rendered into #run-result by the run
+   endpoint, and re-fetched from /partials/job/{id}. #}
+<div
+  {% if not terminal %}hx-get="/partials/job/{{ job.id }}" hx-trigger="load delay:1.5s" hx-swap="outerHTML"{% endif %}
+  class="p-2 rounded text-sm border
+    {{ 'bg-green-50 border-green-200 text-green-800' if job.status == 'succeeded'
+       else ('bg-red-50 border-red-200 text-red-800' if job.status in ['failed', 'canceled']
+       else 'bg-blue-50 border-blue-200 text-blue-800') }}">
+  {% if job.status == 'pending' %}
+    ⏳ Queued job #{{ job.id }} — waiting for a worker…
+  {% elif job.status == 'running' %}
+    ▶ Running job #{{ job.id }}{% if job.current_step %} · {{ job.current_step }}{% endif %} …
+  {% elif job.status == 'succeeded' %}
+    ✓ Job #{{ job.id }} finished — <a class="underline" href="/c/{{ dir_name }}">reload to see output</a>
+  {% else %}
+    ✗ Job #{{ job.id }} {{ job.status }}{% if job.error %} — {{ job.error | truncate(160) }}{% endif %}
+  {% endif %}
+</div>

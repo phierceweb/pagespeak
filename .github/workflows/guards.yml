@@ -1,0 +1,23 @@
+name: guards
+on: [push, pull_request]
+jobs:
+  structure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      # Light extras (docx/web/tophat) give mypy real types for those code
+      # paths; the torch-heavy pdf/docling extras are omitted (too slow per run)
+      # and stay Any via ignore_missing_imports. Mirrors the lint gate
+      # contributors run locally (bin/lint).
+      - run: pip install -e ".[docx-structured,tophat,web,dev]"
+      - name: ruff check
+        run: ruff check src tests
+      - name: ruff format --check
+        run: ruff format --check src tests
+      - name: mypy strict
+        run: mypy src
+      - name: file-size gate
+        run: python -m pf_core.guards --root src/pagespeak

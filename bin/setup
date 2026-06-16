@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+# Create venv and install pagespeak editable with dev extras.
+#
+# Extras are ADDITIVE — combine flags freely:
+#   --pdf               marker-pdf (heavy: torch + surya, ~2GB)
+#   --docling           docling PDF backend (pdf-docling extra)
+#   --docx-structured   python-docx (structure-faithful DOCX)
+#   --tophat            pypdfium2 (Top Hat quiz-export PDF backend; light —
+#                       also ships with --pdf / --docling)
+#   --web               web console (FastAPI + uvicorn)
+#   --postgres          psycopg2 (Postgres LLM-tracking DB driver; only
+#                       needed when DATABASE_URL points at Postgres)
+#   --all               every extra above — required to run the FULL test
+#                       suite (bin/test imports docx, marker, docling, fastapi)
+
+set -euo pipefail
+
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$PROJECT_ROOT"
+
+PYTHON="${PYTHON:-python3.12}"
+if ! command -v "$PYTHON" >/dev/null 2>&1; then
+  PYTHON="python3.11"
+  if ! command -v "$PYTHON" >/dev/null 2>&1; then
+    PYTHON="python3"
+  fi
+fi
+
+if [ ! -d ".venv" ]; then
+  echo "creating venv with $PYTHON"
+  "$PYTHON" -m venv .venv
+fi
+
+.venv/bin/python -m pip install --upgrade pip --quiet
+
+INSTALL_TARGET="."
+# Extras accumulate so flags combine (e.g. `--pdf --web`). `dev` is always
+# present; each flag appends its extra. `--all` selects the full set needed
+# to run the entire test suite.
+EXTRAS="dev"
+
+for arg in "$@"; do
+  case "$arg" in
+    --pdf)
+      EXTRAS="$EXTRAS,pdf"
+      ;;
+    --docling)
+      EXTRAS="$EXTRAS,pdf-docling"
+      ;;
+    --docx-structured)
+      EXTRAS="$EXTRAS,docx-structured"
+      ;;
+    --tophat)
+      EXTRAS="$EXTRAS,tophat"
+      ;;
+    --web)
+      EXTRAS="$EXTRAS,web"
+      ;;
+    --postgres)
+      EXTRAS="$EXTRAS,postgres"
+      ;;
+    --all)
+      EXTRAS="dev,pdf,pdf-docling,docx-structured,tophat,web,postgres"
+      ;;
+    --help|-h)
+      echo "Usage: bin/setup [--all] [--pdf] [--docling] [--docx-structured] [--tophat] [--web] [--postgres]"
+      echo ""
+      echo "Extras are additive — combine flags freely."
+      echo ""
+      echo "  --all               Every extra below — needed to run the FULL test suite"
+      echo "  --pdf               marker-pdf (~2GB: torch + surya; required for PDF support)"
+      echo "  --docling           docling PDF backend (pdf-docling extra)"
+      echo "  --docx-structured   python-docx (structure-faithful DOCX)"
+      echo "  --tophat            pypdfium2 (Top Hat quiz-export PDF backend; light)"
+      echo "  --web               web console (FastAPI + uvicorn)"
+      echo "  --postgres          psycopg2 (Postgres LLM-tracking DB driver)"
+      exit 0
+      ;;
+    *)
+      echo "unknown argument: $arg (try: bin/setup --help)" >&2
+      exit 1
+      ;;
+  esac
+done
+
+echo "installing pagespeak[$EXTRAS] editable"
+.venv/bin/python -m pip install -e "$INSTALL_TARGET[$EXTRAS]" --quiet
+
+# Activate the build-gate hooks (file-size + ruff) so they run on every commit.
+# The .github/workflows/guards.yml CI job is the unskippable backstop. Non-fatal
+# — a fresh clone without git, or pre-commit unavailable, shouldn't break setup.
+if [ -f ".pre-commit-config.yaml" ]; then
+  .venv/bin/pre-commit install >/dev/null 2>&1 && echo "pre-commit gate hooks installed" || true
+fi
+
+# Scaffold .env from the tracked .env.example so the user has a place
+# to land secrets. Skip if .env already exists — never clobber it.
+if [ ! -f ".env" ] && [ -f ".env.example" ]; then
+  echo "scaffolding .env from .env.example"
+  cp .env.example .env
+  echo "  edit .env before running anything that hits a real backend"
+fi
+
+echo "ready: $(.venv/bin/python -c 'import pagespeak; print(pagespeak.__version__)')"
+echo ""
+echo "next:"
+echo "  bin/run --help      see pagespeak CLI options"
+echo "  bin/run pytest      run the test suite (or: bin/test)"
+echo "                      NOTE: the full suite needs all extras — bin/setup --all"
+echo "  bin/run python …    one-off venv'd python"
+echo "  bin/lint            ruff + mypy"

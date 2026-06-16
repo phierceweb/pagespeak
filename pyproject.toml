@@ -1,0 +1,129 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pagespeak"
+version = "0.1.0"
+description = "Convert PDFs and Office documents to LLM-friendly markdown, with diagram extraction to Mermaid."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Mike Farr" }]
+keywords = ["pdf", "docx", "markdown", "llm", "rag", "ingest", "mermaid"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+    "Topic :: Text Processing :: Markup :: Markdown",
+    "Typing :: Typed",
+]
+dependencies = [
+    "anthropic>=0.39.0",
+    "beautifulsoup4>=4.12",
+    "httpx>=0.25",
+    "markdownify>=0.13",
+    "markitdown[docx,pptx,xlsx,outlook]>=0.0.1a3",
+    "pf-core[image-phash,tracking,llm]~=0.2.2",
+    "typer>=0.12.0",
+]
+# beautifulsoup4 + markdownify back the inline-HTML→markdown utility
+# (utils/_html.py, used by the QTI backend). Both were already present
+# transitively via markitdown; declared directly since we import them.
+# ImageHash + Pillow arrive transitively via the pf-core[image-phash] extra.
+
+[project.optional-dependencies]
+pdf = [
+    "marker-pdf>=0.2.0",
+    "pypdfium2",
+]
+pdf-docling = [
+    "docling>=2.0",
+    "pypdfium2",
+]
+docx-structured = [
+    "python-docx>=1.1",
+]
+tophat = [
+    # Top Hat quiz-export PDFs: text-layer extraction only (no Marker/torch).
+    # pypdfium2 also ships with the `pdf` / `pdf-docling` extras, so PDF users
+    # already have it; this light extra is for tophat-only installs.
+    "pypdfium2",
+]
+web = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "jinja2>=3.1",
+    "python-multipart>=0.0.9",
+]
+postgres = [
+    # Postgres driver for the LLM-call tracking DB. Default tracking sink
+    # is SQLite at `~/.pagespeak/llm_tracking.db` — install this extra +
+    # set `DATABASE_URL=postgresql://...` to point at a shared Postgres
+    # instance instead. SQLAlchemy 2.0 + pf-core's tracking schema work
+    # against either with no code changes.
+    "psycopg2-binary>=2.9",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-mock>=3.12",
+    "ruff>=0.5",
+    "mypy>=1.10",
+    # Type stubs for transitively-imported third-party packages so mypy
+    # strict mode passes without per-import `type: ignore[import-untyped]`.
+    "types-PyYAML>=6.0",
+    # Generates the table-bearing PDF fixture for the real (un-mocked)
+    # repair-tables end-to-end test (tests/test_table_repair_e2e.py). Dev-only;
+    # the test is gated on the `pdf-docling` extra too.
+    "fpdf2>=2.7",
+    # Runs the build gates (file-size + ruff) on every commit; the
+    # .github/workflows/guards.yml CI job is the unskippable backstop.
+    "pre-commit>=3.7",
+]
+
+[project.scripts]
+pagespeak = "pagespeak.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/phierceweb/pagespeak"
+Repository = "https://github.com/phierceweb/pagespeak"
+Changelog = "https://github.com/phierceweb/pagespeak/blob/main/CHANGELOG.md"
+Issues = "https://github.com/phierceweb/pagespeak/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+pagespeak = ["py.typed", "prompts/*.yaml", "model_router.yaml"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/pagespeak/cli/__init__.py" = ["B008"]  # Typer uses function calls in argument defaults
+"src/pagespeak/cli/_convert.py" = ["B008"]  # Typer uses function calls in argument defaults
+"src/pagespeak/cli/_invalidate.py" = ["B008"]  # Typer uses function calls in argument defaults
+"src/pagespeak/cli/_baseline.py" = ["B008"]  # Typer uses function calls in argument defaults
+"src/pagespeak/cli/_ingest.py" = ["B008"]  # Typer uses function calls in argument defaults
+"src/pagespeak/cli/_deliver.py" = ["B008"]  # Typer uses function calls in argument defaults
+"src/pagespeak/cli/_audit.py" = ["B008"]  # Typer uses function calls in argument defaults
+"src/pagespeak/cli/_repair.py" = ["B008"]  # Typer uses function calls in argument defaults
+"tests/*" = ["B011"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-x --ff -ra"

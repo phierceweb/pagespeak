@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% block title %}Help — pagespeak console{% endblock %}
+{% block content %}
+<div class="max-w-3xl">
+  <h1 class="text-xl font-semibold mb-2">pagespeak console — help</h1>
+  <p class="text-sm text-slate-600 mb-6">
+    A local web UI over the pagespeak pipeline. Drop a document, run the full
+    conversion or any single phase, watch progress, and read the output —
+    markdown, extracted images, and LLM cost — without touching the CLI.
+  </p>
+
+  <nav class="text-sm text-blue-700 mb-8 flex flex-wrap gap-x-4 gap-y-1">
+    <a href="#start" class="hover:underline">Getting started</a>
+    <a href="#pipeline" class="hover:underline">The pipeline</a>
+    <a href="#running" class="hover:underline">Running a conversion</a>
+    <a href="#options" class="hover:underline">Options</a>
+    <a href="#cost" class="hover:underline">Cost &amp; safety</a>
+    <a href="#detail" class="hover:underline">Reading the output</a>
+    <a href="#deliver" class="hover:underline">Deliver</a>
+    <a href="#admin" class="hover:underline">LLM admin</a>
+    <a href="#config" class="hover:underline">Configuration</a>
+  </nav>
+
+  <section id="start" class="mb-8">
+    <h2 class="text-lg font-semibold mb-2">Getting started</h2>
+    <p class="text-sm text-slate-700 mb-2">
+      The console reads a <span class="mono">conversions/</span> directory with two folders:
+    </p>
+    <ul class="text-sm text-slate-700 list-disc ml-5 space-y-1 mb-2">
+      <li><span class="mono">conversions/in/</span> — your source documents (PDF, DOCX, PPTX, XLSX, HTML, …).</li>
+      <li><span class="mono">conversions/out/&lt;dir&gt;/</span> — generated output for each document.</li>
+    </ul>
+    <p class="text-sm text-slate-700">
+      Add a document two interchangeable ways: drop a file into
+      <span class="mono">conversions/in/</span> in Finder, <em>or</em> use the
+      <strong>Upload</strong> button on the home page. Either way it appears in
+      the list, ready to convert. A document with no output yet shows as
+      <em>not converted</em>.
+    </p>
+  </section>
+
+  <section id="pipeline" class="mb-8">
+    <h2 class="text-lg font-semibold mb-2">The pipeline</h2>
+    <p class="text-sm text-slate-700 mb-3">
+      A conversion runs in ordered phases. Each writes a checkpoint file you can
+      inspect, and you can run the whole chain or stop/start at any phase.
+    </p>
+    <table class="w-full text-sm border">
+      <thead class="bg-slate-50 text-left"><tr><th class="p-2 border-b">Phase</th><th class="p-2 border-b">What it does</th><th class="p-2 border-b">Checkpoint</th></tr></thead>
+      <tbody>
+        <tr><td class="p-2 border-b mono">ingest</td><td class="p-2 border-b">Convert the source to markdown via the backend (Marker/Docling for PDF, MarkItDown/python-docx for Office), extracting images.</td><td class="p-2 border-b mono">.raw.md</td></tr>
+        <tr><td class="p-2 border-b mono">cleanup</td><td class="p-2 border-b">Tidy markdown: dedup repeated page decorations, strip converter artifacts, normalize whitespace.</td><td class="p-2 border-b mono">.cleaned.md</td></tr>
+        <tr><td class="p-2 border-b mono">normalize</td><td class="p-2 border-b">Optional: fix flattened heading levels (textbook-style docs where everything is one depth). Off unless enabled.</td><td class="p-2 border-b mono">.normalized.md</td></tr>
+        <tr><td class="p-2 border-b mono">repair</td><td class="p-2 border-b">Deterministic ($0) post-normalize heading fixes.</td><td class="p-2 border-b mono">.repaired.md</td></tr>
+        <tr><td class="p-2 border-b mono">vision</td><td class="p-2 border-b">Run the vision LLM on each extracted image; embed a Mermaid diagram + caption for diagrams, caption-only for photos/screenshots. <strong>This is the LLM-spending phase.</strong></td><td class="p-2 border-b mono">.visioned.md → &lt;stem&gt;.md</td></tr>
+        <tr><td class="p-2 mono">split</td><td class="p-2">Optional: also write one file per section under <span class="mono">sections/</span>.</td><td class="p-2 mono">sections/</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="running" class="mb-8">
+    <h2 class="text-lg font-semibold mb-2">Running a conversion</h2>
+    <ul class="text-sm text-slate-700 list-disc ml-5 space-y-1">
+      <li>First <strong>choose what to run</strong> with the step buttons — <strong>Full run</strong> (every step end-to-end) or a single step (ingest … split). Picking a step <strong>filters the options below to just the ones that affect it</strong> (e.g. <em>vision</em> shows only the image options).</li>
+      <li>Adjust the relevant options, then press the separate <strong>Run</strong> button. A single step reuses the on-disk checkpoints from earlier steps — handy for iterating on one stage.</li>
+      <li>Every run asks for confirmation first, so a stray click can't kick off work.</li>
+      <li>After you start a run, a <strong>live status line</strong> shows ⏳ queued → ▶ running → ✓ done / ✗ failed, and the <strong>phase strip</strong> lights up green as each phase produces its checkpoint.</li>
+      <li>The <strong>queue</strong> (home page and top of the detail page) lists active and recent jobs; cancel a running job or retry a failed one from there.</li>
+      <li>Conversions run one at a time by default (configurable) so parallel vision runs can't stampede your quota.</li>
+    </ul>
+  </section>
+
+  <section id="options" class="mb-8">
+    <h2 class="text-lg font-semibold mb-2">Options</h2>
+    <p class="text-sm text-slate-700 mb-3">These are the controls in the run form, in plain English.</p>
+    <table class="w-full text-sm border">
+      <thead class="bg-slate-50 text-left"><tr><th class="p-2 border-b">Option</th><th class="p-2 border-b">What it does</th></tr></thead>
+      <tbody>
+        <tr><td class="p-2 border-b font-medium">images</td><td class="p-2 border-b">One choice (the three modes can't be combined into an invalid state): <strong>Describe &amp; redraw with AI</strong> — the AI looks at every picture and makes a clean diagram + description (uses your Claude plan, or money on a paid engine); <strong>Reuse cached results only</strong> — free, only reuses results from an earlier run, never looks again; <strong>Skip images</strong> — ignore pictures (fastest).</td></tr>
+        <tr><td class="p-2 border-b font-medium">which AI looks at images</td><td class="p-2 border-b">The default is <strong>free</strong> — it uses your Claude plan. The other two (openrouter, anthropic) <strong>charge real money</strong> for every image.</td></tr>
+        <tr><td class="p-2 border-b font-medium">preset</td><td class="p-2 border-b">Start from a ready-made bundle of settings for a common goal: <span class="mono">rag-default</span> (tuned for feeding an AI/search database), <span class="mono">textbook</span>, <span class="mono">flat</span>, <span class="mono">archival</span>. Anything you change yourself still wins.</td></tr>
+        <tr><td class="p-2 border-b font-medium">tidy the text</td><td class="p-2 border-b">How much to clean up the converted text. <span class="mono">off</span> = leave as-is; <span class="mono">basic</span> = light tidy; <span class="mono">aggressive</span> = also remove more leftover clutter from the original file.</td></tr>
+        <tr><td class="p-2 border-b font-medium">PDF reader</td><td class="p-2 border-b">Which engine reads PDF files. <span class="mono">marker</span> is fast; <span class="mono">docling</span> is slower but more accurate. Only matters for PDFs.</td></tr>
+        <tr><td class="p-2 border-b font-medium">save each section separately</td><td class="p-2 border-b">Besides the one combined file, also save each section of the document as its own file.</td></tr>
+        <tr><td class="p-2 border-b font-medium">group sections in folders</td><td class="p-2 border-b">When saving sections separately, organize them into numbered folders that mirror the document's structure. (Available only when "save each section separately" is on.)</td></tr>
+        <tr><td class="p-2 border-b font-medium">rebuild heading structure</td><td class="p-2 border-b">If a document came out with every heading the same size (common with textbook PDFs), restore the real chapter / sub-section nesting so the structure is correct.</td></tr>
+        <tr><td class="p-2 font-medium">how to rebuild headings</td><td class="p-2">Only used if "rebuild heading structure" is on. <strong>Automatic rules</strong> = fast and free. The <strong>AI</strong> options do a better job (the "reads the whole doc" one is most accurate but costs money). <strong>Decide per document</strong> picks automatically.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="cost" class="mb-8">
+    <h2 class="text-lg font-semibold mb-2">Cost &amp; safety</h2>
+    <p class="text-sm text-slate-700 mb-2">
+      Vision is the only phase that spends anything — one LLM call per
+      <em>uncached</em> image. The console guards it:
+    </p>
+    <ul class="text-sm text-slate-700 list-disc ml-5 space-y-1">
+      <li>The vision backend defaults to <span class="mono">claude_code</span>, which is <strong>$0</strong> (it draws on your Claude Max plan rather than a paid API).</li>
+      <li>Before any live vision run, a confirmation card shows the exact <strong>cache-miss count</strong> — e.g. <em>"40 images · 31 cached · 9 live calls"</em> — and you must confirm.</li>
+      <li>A <strong>paid</strong> backend is <strong>blocked</strong> when the image count isn't known yet (the document hasn't been ingested), so you never approve an un-estimable spend. Run ingest first, then vision.</li>
+      <li>Descriptions are cached by the image's content (perceptual hash), so re-running an unchanged document is free — switching engines or tinkering with other phases reuses the cache.</li>
+    </ul>
+  </section>
+
+  <section id="detail" class="mb-8">
+    <h2 class="text-lg font-semibold mb-2">Reading the output</h2>
+    <p class="text-sm text-slate-700 mb-2">A conversion's detail page has three tabs:</p>
+    <ul class="text-sm text-slate-700 list-disc ml-5 space-y-1">
+      <li><strong>Document</strong> — the markdown for any checkpoint, with a <strong>Rendered / Raw text</strong> toggle. Rendered shows formatted markdown (headings, tables, inline images) with Mermaid blocks drawn as diagrams; Raw text shows the literal file. Use the phase chips (ingest … final) to view a specific checkpoint.</li>
+      <li><strong>Images</strong> — every extracted image. Click a thumbnail — <em>or</em> any image inline in the rendered document — to open a panel with the image, its caption (alt text), diagram type, and the Mermaid source.</li>
+      <li><strong>Run record</strong> — the settings and results from the last conversion of this document (when it ran, the options used, sections/images produced, AI cost). It's saved so a re-run reuses the same settings and your output stays consistent.</li>
+    </ul>
+    <p class="text-sm text-slate-700 mt-2">
+      The <strong>LLM summary</strong> bar (above the tabs) shows how many vision calls this
+      conversion made and their cost, linking into the admin for per-call detail.
+    </p>
+  </section>
+
+  <section id="deliver" class="mb-8">
+    <h2 class="text-lg font-semibold mb-2">Deliver</h2>
+    <p class="text-sm text-slate-700 mb-2">
+      A converted output dir holds the deliverables (the master <span class="mono">.md</span>,
+      <span class="mono">sections/</span>, <span class="mono">images/</span>)
+      <em>and</em> all the working files — stage checkpoints, run record, caches.
+      <strong>Deliver</strong> copies just the finished files to a parallel
+      <span class="mono">conversions/delivery/&lt;dir&gt;/</span> dir, ready to hand off or feed into a RAG index.
+    </p>
+    <ul class="text-sm text-slate-700 list-disc ml-5 space-y-1">
+      <li>The button is on the detail page, under the run form. Press it once a conversion is finished — it's disabled until there's a master <span class="mono">.md</span> to deliver.</li>
+      <li>Re-runnable: the destination is rebuilt to match the source, so running it again after another conversion drops stale files cleanly.</li>
+      <li>The source <span class="mono">out/</span> dir is never modified — only the parallel <span class="mono">delivery/</span> dir is written.</li>
+      <li>Same as <span class="mono">pagespeak deliver &lt;out-dir&gt;</span> on the CLI.</li>
+    </ul>
+  </section>
+
+  <section id="admin" class="mb-8">
+    <h2 class="text-lg font-semibold mb-2">LLM admin</h2>
+    <p class="text-sm text-slate-700">
+      <a href="/admin/llm/" class="text-blue-700 hover:underline">/admin/llm</a>
+      is a built-in dashboard for every LLM call across all conversions: runs,
+      cost by model and by agent, per-job detail, cache hit rate, and budgets.
+    </p>
+  </section>
+
+  <section id="config" class="mb-8">
+    <h2 class="text-lg font-semibold mb-2">Configuration</h2>
+    <p class="text-sm text-slate-700 mb-2">Set via environment variables (or <span class="mono">.env</span>):</p>
+    <table class="w-full text-sm border">
+      <thead class="bg-slate-50 text-left"><tr><th class="p-2 border-b">Variable</th><th class="p-2 border-b">Default</th><th class="p-2 border-b">Purpose</th></tr></thead>
+      <tbody>
+        <tr><td class="p-2 border-b mono">PAGESPEAK_CONVERSIONS_DIR</td><td class="p-2 border-b mono">./conversions</td><td class="p-2 border-b">Root holding <span class="mono">in/</span> + <span class="mono">out/</span>.</td></tr>
+        <tr><td class="p-2 border-b mono">PAGESPEAK_WEB_HOST</td><td class="p-2 border-b mono">127.0.0.1</td><td class="p-2 border-b">Bind host.</td></tr>
+        <tr><td class="p-2 border-b mono">PAGESPEAK_WEB_PORT</td><td class="p-2 border-b mono">8810</td><td class="p-2 border-b">Bind port.</td></tr>
+        <tr><td class="p-2 mono">PAGESPEAK_WEB_CONCURRENCY</td><td class="p-2 mono">1</td><td class="p-2">Concurrent conversion jobs.</td></tr>
+      </tbody>
+    </table>
+    <p class="text-sm text-slate-700 mt-3">
+      Start in the background with <span class="mono">bin/start</span>, stop with
+      <span class="mono">bin/stop</span>, restart with
+      <span class="mono">bin/restart</span>. Restart after upgrading pagespeak —
+      the server doesn't hot-reload code.
+    </p>
+  </section>
+
+  <p class="text-xs text-slate-400 border-t pt-4">Full project docs: <span class="mono">docs/web.md</span> and <span class="mono">docs/pipeline.md</span> in the repo.</p>
+</div>
+{% endblock %}

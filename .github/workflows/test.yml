@@ -1,0 +1,22 @@
+name: test
+on: [push, pull_request]
+jobs:
+  # The full suite minus the marker (pdf) / docling backend modules, which
+  # need torch+surya (gigabytes) — too heavy to install on every run.
+  # tests/conftest.py skips those modules cleanly when their extra is absent,
+  # so this job runs the docx / web / quiz / pipeline / services suite in full.
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -e ".[docx-structured,tophat,web,dev]"
+      # --maxfail=0 overrides the repo's fail-fast `-x` (addopts) so CI reports
+      # EVERY failure in one run, not just the first.
+      - run: python -m pytest tests/ -q --maxfail=0

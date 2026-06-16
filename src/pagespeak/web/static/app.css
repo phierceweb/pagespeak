@@ -1,0 +1,26 @@
+/* Minimal extras on top of Tailwind CDN. The rendered markdown preview is
+   handled by the <zero-md> web component, which brings its own (GitHub-style)
+   CSS inside a shadow root — no markdown styling needed here. */
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+/* Hover tooltips for the run-form options: a small ⓘ that pops a styled
+   bubble on hover/focus (instant, unlike the native title= tooltip). */
+.tip { position: relative; display: inline-flex; align-items: center; }
+.tip > .tip-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 15px; height: 15px; border-radius: 9999px;
+  background: #94a3b8; color: #fff; font-size: 10px; font-weight: 700;
+  font-style: normal; cursor: help; user-select: none;
+}
+.tip:hover > .tip-icon, .tip:focus-within > .tip-icon { background: #2563eb; }
+.tip > .tip-box {
+  visibility: hidden; opacity: 0; transition: opacity .12s ease;
+  position: absolute; left: 0; top: calc(100% + 6px); z-index: 50;
+  width: 17rem; max-width: 75vw;
+  background: #0f172a; color: #f1f5f9;
+  font-size: 12px; line-height: 1.45; font-weight: 400; text-align: left;
+  padding: .5rem .625rem; border-radius: .375rem;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .25);
+}
+.tip:hover > .tip-box, .tip:focus-within > .tip-box { visibility: visible; opacity: 1; }
+.tip > .tip-box .mono { color: #c7d2fe; }

@@ -1,0 +1,23 @@
+{# Vision result for one clicked gallery image: the image, its caption (alt
+   text), and the mermaid source — looked up from .vision-cache by phash. #}
+<div class="bg-white border rounded p-4">
+  <div class="flex flex-col gap-4 md:flex-row md:items-start">
+    <img src="/c/{{ dir_name }}/images/{{ name }}"
+         class="w-full md:w-64 shrink-0 rounded border" loading="lazy"/>
+    <div class="flex-1 min-w-0">
+      <div class="text-xs text-slate-400 mono mb-2">
+        {{ name }}{% if diagram_type %} · <span class="text-slate-500">{{ diagram_type }}</span>{% endif %}
+      </div>
+
+      <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Caption / alt text</h3>
+      <p class="text-sm mb-3">{{ caption or "(no caption cached — run the vision phase on this doc)" }}</p>
+
+      {% if mermaid %}
+      <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Mermaid</h3>
+      <pre class="bg-slate-50 border rounded p-2 text-xs overflow-x-auto whitespace-pre mono">{{ mermaid }}</pre>
+      {% else %}
+      <p class="text-xs text-slate-400">No mermaid for this image (photo / screenshot / caption-only, or not yet visioned).</p>
+      {% endif %}
+    </div>
+  </div>
+</div>

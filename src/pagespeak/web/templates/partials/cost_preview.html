@@ -1,0 +1,10 @@
+<div class="p-3 rounded bg-amber-50 border border-amber-200 text-sm">
+  <p class="text-amber-800 mb-2">{{ decision.message }}</p>
+  <form hx-post="/api/run/{{ conv.dir_name }}" hx-target="#run-result" hx-swap="innerHTML">
+    {% for k, v in form.items() %}
+      {% if k != "confirmed" %}<input type="hidden" name="{{ k }}" value="{{ v }}"/>{% endif %}
+    {% endfor %}
+    <input type="hidden" name="confirmed" value="true"/>
+    <button class="bg-amber-600 text-white px-3 py-1.5 rounded">Confirm &amp; run vision</button>
+  </form>
+</div>

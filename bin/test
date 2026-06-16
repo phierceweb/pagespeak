@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Ergonomic shortcut for `bin/run pytest`. Routes through `bin/run` so
+# it picks up the same `.env` auto-load.
+
+set -euo pipefail
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+exec "$PROJECT_ROOT/bin/run" pytest "$@"

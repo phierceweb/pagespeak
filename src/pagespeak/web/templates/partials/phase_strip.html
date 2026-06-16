@@ -1,0 +1,10 @@
+{# The phase badges, derived from on-disk checkpoints. Polled on the detail
+   page so phases visibly light up as a running conversion produces them. #}
+<div class="flex flex-wrap gap-2">
+  {% for p in phases %}
+  <span class="px-2 py-1 rounded text-xs
+    {{ 'bg-green-100 text-green-700' if conv.phases_done[p] else 'bg-slate-100 text-slate-400' }}">
+    {{ p }}{{ ' ✓' if conv.phases_done[p] else '' }}
+  </span>
+  {% endfor %}
+</div>

@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Stop then start the pagespeak web console (same as ./bin/stop && ./bin/start).
+
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+"$ROOT/bin/stop" || true
+exec "$ROOT/bin/start"

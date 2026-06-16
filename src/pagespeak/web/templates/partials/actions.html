@@ -1,0 +1,183 @@
+<div class="bg-white border rounded p-3">
+  <form id="run-form" hx-post="/api/run/{{ conv.dir_name }}" hx-target="#run-result" hx-swap="innerHTML"
+        hx-confirm="Run the full conversion on {{ conv.dir_name }}?" class="text-sm">
+    <input type="hidden" name="start" id="sel-start" value=""/>
+    <input type="hidden" name="stop_after" id="sel-stop" value=""/>
+
+    <!-- Step 1 — pick what to run; this filters the options below. -->
+    <div class="text-xs text-slate-500 mb-1">Choose what to run · <a href="/help" class="text-blue-600 hover:underline">help →</a></div>
+    <div class="flex flex-wrap gap-1 mb-3">
+      <button type="button" data-phase="full" class="phase-btn px-2.5 py-1 rounded text-xs">Full run</button>
+      {% for p in phases %}
+      <button type="button" data-phase="{{ p }}" class="phase-btn px-2.5 py-1 rounded text-xs">{{ p }}</button>
+      {% endfor %}
+    </div>
+
+    <!-- Step 2 — only the options relevant to the chosen step are shown. -->
+    <div class="grid grid-cols-2 gap-3 mb-3">
+      <div data-phases="full vision" class="flex flex-col gap-0.5">
+        <span class="flex items-center gap-1.5 font-medium">images
+          <span class="tip" tabindex="0"><span class="tip-icon">i</span><span class="tip-box">What to do with pictures in the document. <strong>Describe &amp; redraw</strong> = the AI looks at each image and makes a clean diagram + caption (uses your Claude plan, or costs money on a paid engine). <strong>Reuse cached only</strong> = free; only reuses results from an earlier run, never looks again. <strong>Skip</strong> = ignore images (fastest).</span></span>
+        </span>
+        <!-- One control instead of two checkboxes: "skip + cached-only" together
+             is invalid (the converter errors), so a 3-way choice prevents it. -->
+        <select id="vision-mode" class="border rounded p-1">
+          <option value="describe">Describe &amp; redraw with AI</option>
+          <option value="cached">Reuse cached results only (free)</option>
+          <option value="skip">Skip images</option>
+        </select>
+        <input type="hidden" name="diagrams" id="opt-diagrams" value="true"/>
+        <input type="hidden" name="vision_cache_only" id="opt-cacheonly" value=""/>
+      </div>
+
+      <div data-phases="full vision" class="flex flex-col gap-0.5">
+        <span class="flex items-center gap-1.5 font-medium">which AI looks at images
+          <span class="tip" tabindex="0"><span class="tip-icon">i</span><span class="tip-box">The default is <strong>free</strong> — it uses your Claude plan. The other two (openrouter, anthropic) <strong>charge real money</strong> for every image they look at.</span></span>
+        </span>
+        <select name="vision_backend" class="border rounded p-1">
+          <option value="">free — uses your Claude plan (default)</option>
+          <option value="openrouter">openrouter — costs money</option>
+          <option value="anthropic">anthropic — costs money</option>
+        </select>
+      </div>
+      <div data-phases="full" class="flex flex-col gap-0.5">
+        <span class="flex items-center gap-1.5 font-medium">preset
+          <span class="tip" tabindex="0"><span class="tip-icon">i</span><span class="tip-box">Start from a ready-made bundle of settings for a common goal. <span class="mono">rag-default</span> = tuned for feeding an AI / search database; plus <span class="mono">textbook</span>, <span class="mono">flat</span>, <span class="mono">archival</span>; <span class="mono">qti</span> = Canvas quiz exports (one file per quiz). Anything you change yourself still wins.</span></span>
+        </span>
+        <select name="preset" class="border rounded p-1">
+          <option value="">none</option>
+          <option>rag-default</option><option>flat</option><option>textbook</option><option>archival</option><option>qti</option>
+        </select>
+      </div>
+
+      <div data-phases="full cleanup" class="flex flex-col gap-0.5">
+        <span class="flex items-center gap-1.5 font-medium">tidy the text
+          <span class="tip" tabindex="0"><span class="tip-icon">i</span><span class="tip-box">How much to clean up the converted text. <span class="mono">off</span> = leave as-is; <span class="mono">basic</span> = light tidy; <span class="mono">aggressive</span> = also remove more leftover clutter from the original file.</span></span>
+        </span>
+        <select name="cleanup" class="border rounded p-1">
+          <option value="">default</option><option>off</option><option>basic</option><option>aggressive</option>
+        </select>
+      </div>
+      <div data-phases="full ingest" class="flex flex-col gap-0.5">
+        <span class="flex items-center gap-1.5 font-medium">PDF reader
+          <span class="tip" tabindex="0"><span class="tip-icon">i</span><span class="tip-box">Which engine reads PDF files. <span class="mono">marker</span> is fast; <span class="mono">docling</span> is slower but more accurate. Only matters for PDFs.</span></span>
+        </span>
+        <select name="pdf_backend" class="border rounded p-1">
+          <option value="">marker — fast (default)</option><option>docling — more accurate, slower</option>
+        </select>
+      </div>
+
+      <div data-phases="full split" class="flex items-center gap-1.5">
+        <label class="flex items-center gap-2 font-medium"><input type="checkbox" name="split_sections" id="opt-split" value="true"/> save each section separately</label>
+        <span class="tip" tabindex="0"><span class="tip-icon">i</span><span class="tip-box">Besides the one combined file, also save each section of the document as its own separate file.</span></span>
+      </div>
+      <div data-phases="full split" class="flex items-center gap-1.5">
+        <label class="flex items-center gap-2 font-medium"><input type="checkbox" name="nested_split" id="opt-nested" value="true"/> group sections in folders</label>
+        <span class="tip" tabindex="0"><span class="tip-icon">i</span><span class="tip-box">When saving sections separately, organize them into numbered folders that mirror the document's structure. Needs "save each section separately".</span></span>
+      </div>
+
+      <div data-phases="full normalize" class="flex items-center gap-1.5">
+        <label class="flex items-center gap-2 font-medium"><input type="checkbox" name="normalize_headings" id="opt-norm" value="true"/> rebuild heading structure</label>
+        <span class="tip" tabindex="0"><span class="tip-icon">i</span><span class="tip-box">If a document came out with every heading the same size (common with textbook PDFs), restore the real chapter / sub-section nesting so the structure is correct.</span></span>
+      </div>
+      <div data-phases="full normalize" class="flex flex-col gap-0.5">
+        <span class="flex items-center gap-1.5 font-medium">how to rebuild headings
+          <span class="tip" tabindex="0"><span class="tip-icon">i</span><span class="tip-box">Only used if "rebuild heading structure" is on. <strong>Automatic rules</strong> = fast and free. The <strong>AI</strong> options do a better job (the "reads the whole doc" one is most accurate but costs money). <strong>Decide per document</strong> picks for you.</span></span>
+        </span>
+        <select name="normalize_headings_mode" id="opt-norm-mode" class="border rounded p-1">
+          <option value="">automatic rules — fast &amp; free (default)</option>
+          <option value="llm">AI, headings only</option>
+          <option value="llm_full">AI, reads the whole doc — best, costs money</option>
+          <option value="auto">decide per document</option>
+        </select>
+      </div>
+    </div>
+
+    <p id="no-options-note" class="text-xs text-slate-400 mb-3 hidden">This step has no options to configure — just run it.</p>
+
+    <!-- Step 3 — run (separate from the step picker). -->
+    <div class="pt-2 border-t">
+      <button type="submit" id="run-btn" class="bg-blue-600 text-white px-4 py-1.5 rounded font-medium">▶ Run full conversion</button>
+    </div>
+  </form>
+  <div id="run-result" class="mt-3"></div>
+
+  <script>
+  (function () {
+    var form = document.getElementById('run-form');
+    if (!form) return;
+    var startEl = document.getElementById('sel-start');
+    var stopEl = document.getElementById('sel-stop');
+    var runBtn = document.getElementById('run-btn');
+    var note = document.getElementById('no-options-note');
+    var dir = {{ conv.dir_name | tojson }};
+    var phaseBtns = form.querySelectorAll('.phase-btn');
+    var optGroups = form.querySelectorAll('[data-phases]');
+    var selCls = 'phase-btn px-2.5 py-1 rounded text-xs bg-blue-600 text-white';
+    var idleCls = 'phase-btn px-2.5 py-1 rounded text-xs bg-slate-100 text-slate-600 hover:bg-slate-200';
+
+    function select(phase) {
+      startEl.value = (phase === 'full') ? '' : phase;
+      stopEl.value = (phase === 'full') ? '' : phase;
+      phaseBtns.forEach(function (b) { b.className = (b.dataset.phase === phase) ? selCls : idleCls; });
+      var anyVisible = false;
+      optGroups.forEach(function (g) {
+        var rel = g.dataset.phases.split(' ').indexOf(phase) >= 0;
+        g.classList.toggle('hidden', !rel);
+        if (rel) anyVisible = true;
+      });
+      note.classList.toggle('hidden', anyVisible);
+      runBtn.textContent = (phase === 'full') ? '▶ Run full conversion' : ('▶ Run ' + phase);
+      form.setAttribute('hx-confirm', phase === 'full'
+        ? 'Run the full conversion on ' + dir + '?'
+        : "Run the '" + phase + "' step on " + dir + '?');
+    }
+
+    phaseBtns.forEach(function (b) { b.addEventListener('click', function () { select(b.dataset.phase); }); });
+    select('full');
+
+    // --- Option dependencies (prevent invalid / meaningless combinations) ---
+
+    // Vision is a 3-way choice mapped to the diagrams + cache-only flags. This
+    // makes the invalid "skip images + reuse-cached-only" pair impossible.
+    var visionMode = document.getElementById('vision-mode');
+    var optDiagrams = document.getElementById('opt-diagrams');
+    var optCacheOnly = document.getElementById('opt-cacheonly');
+    if (visionMode && optDiagrams && optCacheOnly) {
+      var syncVision = function () {
+        optDiagrams.value = (visionMode.value === 'skip') ? '' : 'true';
+        optCacheOnly.value = (visionMode.value === 'cached') ? 'true' : '';
+      };
+      visionMode.addEventListener('change', syncVision);
+      syncVision();
+    }
+
+    // "group in folders" only does anything with "save each section separately".
+    var optSplit = document.getElementById('opt-split');
+    var optNested = document.getElementById('opt-nested');
+    if (optSplit && optNested) {
+      var syncSplit = function () {
+        optNested.disabled = !optSplit.checked;
+        if (!optSplit.checked) optNested.checked = false;
+        var grp = optNested.closest('[data-phases]');
+        if (grp) grp.classList.toggle('opacity-40', !optSplit.checked);
+      };
+      optSplit.addEventListener('change', syncSplit);
+      syncSplit();
+    }
+
+    // The heading-rebuild mode only matters when "rebuild heading structure" is on.
+    var optNorm = document.getElementById('opt-norm');
+    var optNormMode = document.getElementById('opt-norm-mode');
+    if (optNorm && optNormMode) {
+      var syncNorm = function () {
+        optNormMode.disabled = !optNorm.checked;
+        var grp = optNormMode.closest('[data-phases]');
+        if (grp) grp.classList.toggle('opacity-40', !optNorm.checked);
+      };
+      optNorm.addEventListener('change', syncNorm);
+      syncNorm();
+    }
+  })();
+  </script>
+</div>

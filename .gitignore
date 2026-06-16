@@ -1,0 +1,68 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+*.egg
+.eggs/
+build/
+dist/
+wheels/
+.installed.cfg
+
+# Virtual envs
+.venv/
+venv/
+env/
+.env
+
+# Tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Pagespeak runtime artifacts
+/out/
+*.log
+# Web console background-process state (bin/start writes pid + log here)
+/logs/
+
+# ─── Conversion scratch (source docs in, generated markdown out) ───────────
+# conversions/in/ holds source PDFs/DOCX you want to convert.
+# conversions/out/ holds generated markdown + images + sections.
+# conversions/delivery/ holds stripped, delivery-ready copies (`pagespeak deliver`).
+# All three are local-only; only the .gitkeep markers are tracked.
+conversions/in/*
+!conversions/in/.gitkeep
+conversions/out/*
+!conversions/out/.gitkeep
+conversions/delivery/*
+!conversions/delivery/.gitkeep
+
+# ─── AI / agent workspace (local-only; not shipped) ────────────────────────
+# The entire .ai/ tree, the AI-tool configs, and CLAUDE.md are build-time
+# scaffolding kept on the maintainer's machine only — pagespeak ships as a
+# consumer library, not its own build harness.
+.ai/
+docs/superpowers
+CLAUDE.md
+/bin/validate
+
+# ─── Editor / AI-tool configs (rule/plan symlinks, skills, local settings) ──
+.claude/
+.cursor/
+
+# ─── Playwright MCP artifacts ──────────────────────────────────────────────
+.playwright-mcp/

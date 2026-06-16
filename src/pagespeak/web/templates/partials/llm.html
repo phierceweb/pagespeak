@@ -1,0 +1,8 @@
+<div class="bg-white border rounded p-3 text-sm flex items-center gap-6">
+  <div><span class="text-slate-400 text-xs">LLM calls</span><div class="font-semibold">{{ calls }}</div></div>
+  <div><span class="text-slate-400 text-xs">cost</span><div class="font-semibold">${{ "%.4f"|format(cost) }}</div></div>
+  {% if job_ids %}
+  <a class="ml-auto text-blue-700 hover:underline text-xs"
+     href="/admin/llm/runs?job_id={{ job_ids[0] }}">view runs in admin →</a>
+  {% endif %}
+</div>

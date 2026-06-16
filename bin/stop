@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Stop the pagespeak web console started by ./bin/start.
+
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PIDFILE="$ROOT/logs/.pagespeak-web.pid"
+
+stopped=0
+
+if [[ -f "$PIDFILE" ]]; then
+  PID="$(<"$PIDFILE")"
+  if kill -0 "$PID" 2>/dev/null; then
+    kill -TERM "$PID" 2>/dev/null || true
+    stopped=1
+    for _ in 1 2 3 4 5; do
+      kill -0 "$PID" 2>/dev/null || break
+      sleep 0.2
+    done
+    if kill -0 "$PID" 2>/dev/null; then
+      kill -KILL "$PID" 2>/dev/null || true
+    fi
+  fi
+  rm -f "$PIDFILE"
+fi
+
+# Backstop: clean up any stray server process for this app.
+if pgrep -f "pagespeak.web" >/dev/null 2>&1; then
+  pkill -f "pagespeak.web" 2>/dev/null || true
+  stopped=1
+fi
+
+if [[ "$stopped" -eq 1 ]]; then
+  echo "Stopped pagespeak console."
+else
+  echo "pagespeak console does not appear to be running."
+fi

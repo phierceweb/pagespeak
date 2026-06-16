@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Start the pagespeak web console (FastAPI + Uvicorn + in-process worker)
+# in the BACKGROUND. Run from anywhere; cd's to the repo root. Stop: bin/stop.
+#
+# Reads PAGESPEAK_WEB_HOST / PAGESPEAK_WEB_PORT / PAGESPEAK_WEB_CONCURRENCY /
+# PAGESPEAK_CONVERSIONS_DIR (from .env or the shell). Defaults: 127.0.0.1:8810,
+# conversions dir = ./conversions.
+
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+if [[ ! -d ".venv" ]]; then
+  echo "No .venv here. Run: bin/setup --web" >&2
+  exit 1
+fi
+
+# Load .env so PAGESPEAK_* settings apply to the backgrounded process.
+if [[ -f "$ROOT/.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$ROOT/.env"
+  set +a
+fi
+
+HOST="${PAGESPEAK_WEB_HOST:-127.0.0.1}"
+PORT="${PAGESPEAK_WEB_PORT:-8810}"
+LOGDIR="$ROOT/logs"
+PIDFILE="$LOGDIR/.pagespeak-web.pid"
+LOGFILE="$LOGDIR/.pagespeak-web.log"
+mkdir -p "$LOGDIR"
+
+if [[ -f "$PIDFILE" ]] && kill -0 "$(<"$PIDFILE")" 2>/dev/null; then
+  echo "Already running (PID $(<"$PIDFILE")). http://${HOST}:${PORT}/" >&2
+  exit 0
+fi
+rm -f "$PIDFILE"
+
+# No --reload on purpose: a file-watch restart would kill the worker thread
+# and strand any in-flight conversion subprocess (its job stuck 'running').
+# The console is a long-running process by design.
+nohup .venv/bin/python -m pagespeak.web >>"$LOGFILE" 2>&1 &
+echo $! >"$PIDFILE"
+
+echo "Started pagespeak console (PID $(<"$PIDFILE"))."
+echo "  URL:  http://${HOST}:${PORT}/"
+echo "  Log:  $LOGFILE"
+echo "  Stop: $ROOT/bin/stop"

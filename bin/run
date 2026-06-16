@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# bin/run — invoke a command via the project venv.
+#
+#   bin/run pytest [args]      run the test suite
+#   bin/run python [args]      one-off venv'd python (e.g. for local scripts)
+#   bin/run pip [args]         pip in the project venv
+#   bin/run ruff [args]        ruff in the project venv
+#   bin/run mypy [args]        mypy in the project venv
+#   bin/run <pagespeak-cmd>    forward to the pagespeak CLI (convert / ingest /
+#                              deliver / audit / …)
+#   bin/run --help             show pagespeak's command list
+#
+# Anything that maps to a venv binary (pytest / python / pip / ruff / mypy)
+# is special-cased and forwarded directly. Everything else dispatches to
+# the pagespeak CLI.
+
+set -euo pipefail
+
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$PROJECT_ROOT"
+
+# Auto-load .env if present (KEY=VALUE pairs become process env). pagespeak
+# itself doesn't depend on python-dotenv; this wrapper handles it so
+# `bin/run` "just works" without a separate `source .env` step.
+#
+# Precedence: anything already in the environment WINS over `.env`. So
+# `PAGESPEAK_VISION_BACKEND=openrouter bin/run convert ...` (inline
+# assignment) and parent-shell exports both take effect — `.env` only
+# fills vars that are otherwise unset. Implementation: snapshot the
+# exported env, source `.env` (so bash parses quoting/escaping correctly),
+# then re-apply the snapshot. Pre-existing vars are restored to their
+# original value; vars introduced solely by `.env` survive.
+if [ -f ".env" ]; then
+  _pre_env="$(export -p)"
+  set -a
+  # shellcheck disable=SC1091
+  source .env
+  set +a
+  eval "$_pre_env"
+  unset _pre_env
+fi
+
+if [ ! -d ".venv" ]; then
+  echo "venv not set up. Run: bin/setup" >&2
+  exit 1
+fi
+
+# Special-case venv binaries. Pass-through to .venv/bin/<cmd>.
+case "${1:-}" in
+  pytest|python|pip|ruff|mypy)
+    cmd="$1"
+    shift
+    if [ ! -x ".venv/bin/$cmd" ]; then
+      echo ".venv/bin/$cmd not found — try: bin/setup" >&2
+      exit 1
+    fi
+    exec ".venv/bin/$cmd" "$@"
+    ;;
+esac
+
+# Default: forward to the pagespeak CLI.
+if [ ! -x ".venv/bin/pagespeak" ]; then
+  echo ".venv/bin/pagespeak not found — try: bin/setup" >&2
+  exit 1
+fi
+exec .venv/bin/pagespeak "$@"
