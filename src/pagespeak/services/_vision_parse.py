@@ -19,8 +19,36 @@ from ..models._models import Diagram
 logger = get_logger(__name__)
 
 
+class VisionParseError(Exception):
+    """The model's reply could not be parsed into a caption.
+
+    Raised by `_build_diagram` so the orchestrator routes the image through
+    its failure handler (fall back to source alt, skip the cache) instead of
+    caching a plausible-looking placeholder as if it were a real description.
+    """
+
+
+# Below this length the source alt is too thin to serve as a caption (e.g.
+# "Figure 3") — fall through to the marked failure token instead.
+_FALLBACK_ALT_MIN_CHARS = 12
+
+
+def _failure_caption(image_path: Path, original_alt: str) -> str:
+    """Caption for an image whose vision call failed or returned an
+    unparseable reply. Prefer the figure's authored alt text — a real
+    description keeps the figure retrievable; otherwise a clearly-marked
+    token that never reads as a genuine caption.
+    """
+    alt = original_alt.strip()
+    if len(alt) >= _FALLBACK_ALT_MIN_CHARS:
+        return alt
+    return f"Image at {image_path.name} (extraction failed)."
+
+
 def _build_diagram(image_path: Path, raw_text: str) -> Diagram:
     parsed = _parse_response(raw_text, image_path)
+    if parsed.get("parse_failed"):
+        raise VisionParseError(f"unparseable vision response for {image_path.name}")
     return Diagram(
         image_path=image_path,
         caption=parsed["caption"],
@@ -52,9 +80,13 @@ def _parse_response(text: str, image_path: Path) -> dict[str, Any]:
         return _normalize_parsed(parsed, image_path)
 
     logger.warning("could_not_parse_diagram_response path=%s text=%r", image_path, text[:200])
+    # `parse_failed` tells `_build_diagram` to raise VisionParseError rather
+    # than return this placeholder — the caption below is diagnostic only and
+    # never reaches output or the cache.
     return {
         "is_diagram": False,
         "diagram_type": None,
         "caption": f"Image at {image_path.name} (description unavailable).",
         "mermaid": None,
+        "parse_failed": True,
     }

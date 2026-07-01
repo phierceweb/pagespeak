@@ -2,6 +2,11 @@
 
 Notable changes to pagespeak, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## 0.2.1
+
+### Fixed
+- **A failed vision read no longer caches a silent placeholder caption.** When the vision call fails or the model's reply can't be parsed, the figure is captioned with its authored alt text when one exists (a real description, so the figure stays retrievable) instead of a bare `(description unavailable)`. The failure is never written to the perceptual-hash cache, so a re-run re-attempts the real call rather than serving the placeholder forever, and parse failures now count toward the end-of-run `vision_failure_summary`. Existing caches keep any placeholder already written — re-vision a document (`--rerun-from vision`) to heal it.
+
 ## 0.2.0
 
 ### Added

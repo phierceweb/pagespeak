@@ -50,7 +50,13 @@ from ._vision_backends import (
     build_backend as build_backend,
 )
 from ._vision_parse import (
+    VisionParseError as VisionParseError,
+)
+from ._vision_parse import (
     _build_diagram as _build_diagram,
+)
+from ._vision_parse import (
+    _failure_caption as _failure_caption,
 )
 from ._vision_parse import (
     _normalize_parsed as _normalize_parsed,
@@ -162,16 +168,24 @@ def _process_one_image(
     try:
         diagram = backend.analyze(image_path, phash=cache_phash, original_alt=original_alt)
     except Exception as e:
-        logger.warning("diagram_extraction_failed path=%s error=%s", image_path, e)
+        # A failed call OR an unparseable reply (VisionParseError). Both fall
+        # back to the source alt (a real description) and are NOT cached, so a
+        # re-run re-attempts rather than freezing a placeholder on disk.
+        event = (
+            "vision_response_unparseable"
+            if isinstance(e, VisionParseError)
+            else "diagram_extraction_failed"
+        )
+        logger.warning("%s path=%s error=%s", event, image_path, e)
         return (
             Diagram(
                 image_path=image_path,
-                caption=f"Image at {image_path.name} (extraction failed).",
+                caption=_failure_caption(image_path, original_alt),
                 mermaid=None,
             ),
-            False,
-            True,
-            False,
+            False,  # not a hit
+            True,  # failed
+            False,  # not skipped
         )
 
     if cache_path is not None:
@@ -320,7 +334,7 @@ def gather_diagrams(
                 logger.warning("vision_worker_crashed path=%s error=%s", image_path, e)
                 diagram = Diagram(
                     image_path=image_path,
-                    caption=f"Image at {image_path.name} (extraction failed).",
+                    caption=_failure_caption(image_path, alt_map.get(image_path.name, "")),
                     mermaid=None,
                 )
                 hit = False

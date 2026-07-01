@@ -16,6 +16,8 @@ from pagespeak.services._diagrams import (
     AnthropicVisionBackend,
     ClaudeCodeVisionBackend,
     OpenRouterVisionBackend,
+    VisionParseError,
+    _build_diagram,
     _claude_code_timeout_s,
     _inject_diagrams,
     _parse_response,
@@ -1056,6 +1058,93 @@ def test_enrich_with_diagrams_one_image_failure_does_not_kill_others(
     assert captions["img_0.png"] == "ok-img_0.png"
     assert captions["img_1.png"] == "ok-img_1.png"
     assert captions["img_3.png"] == "ok-img_3.png"
+
+
+# --- vision failure: alt fallback, no cache, parse-error signalling ------
+
+
+class _UnparseableBackend:
+    """A backend whose model reply never parses — exercises the *real*
+    parse path (not a mocked raise), reproducing the bug where a parse
+    failure returned a plausible placeholder Diagram that got cached."""
+
+    def analyze(
+        self, image_path: Path, *, phash: str | None = None, original_alt: str | None = None
+    ) -> Diagram:
+        return _build_diagram(image_path, "not json at all")
+
+
+def test_parse_response_flags_parse_failure() -> None:
+    """An unparseable reply is flagged so the caller treats it as a failure
+    (fall back to alt / skip cache) instead of caching the placeholder
+    caption as a real description."""
+    failed = _parse_response("not json at all", Path("img.png"))
+    assert failed["parse_failed"] is True
+    ok = _parse_response('{"is_diagram": false, "caption": "A cat."}', Path("img.png"))
+    assert ok.get("parse_failed", False) is False
+
+
+def test_build_diagram_raises_on_unparseable() -> None:
+    """`_build_diagram` raises rather than returning a plausible placeholder
+    Diagram, so the orchestrator routes the image to its failure handler."""
+    with pytest.raises(VisionParseError):
+        _build_diagram(Path("img.png"), "not json at all")
+
+
+def test_gather_failure_falls_back_to_source_alt(fake_image: Path, tmp_path: Path) -> None:
+    """A failed vision call with authored alt text captions the figure with
+    that alt — a real description keeps it retrievable, not a dead marker."""
+    backend = MagicMock()
+    backend.analyze.side_effect = RuntimeError("api down")
+
+    out = gather_diagrams(
+        [fake_image],
+        backend=backend,
+        backend_name="anthropic",
+        cache_dir=tmp_path / "cache",
+        alt_by_basename={fake_image.name: "A labelled diagram of the cardiac cycle."},
+    )
+    assert out[fake_image.name].caption == "A labelled diagram of the cardiac cycle."
+
+
+def test_gather_parse_failure_falls_back_and_skips_cache(tmp_path: Path) -> None:
+    """The biology-2e bug: a parse failure used to cache `(description
+    unavailable)` as a real caption. Now it falls back to the authored alt
+    and writes nothing to the cache, so a re-run re-attempts the real call.
+
+    Uses a real (phash-decodable) PNG so the cache would genuinely be written
+    on the old success-path — the empty-cache assertion has teeth."""
+    from PIL import Image
+
+    img = tmp_path / "fig.png"
+    Image.new("RGB", (16, 16), (200, 100, 50)).save(img)
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+
+    out = gather_diagrams(
+        [img],
+        backend=_UnparseableBackend(),
+        backend_name="anthropic",
+        cache_dir=cache_dir,
+        alt_by_basename={"fig.png": "A labelled diagram of the cardiac cycle."},
+    )
+    assert out["fig.png"].caption == "A labelled diagram of the cardiac cycle."
+    assert list(cache_dir.glob("*.json")) == []
+
+
+def test_gather_failure_no_alt_uses_clear_marker(fake_image: Path, tmp_path: Path) -> None:
+    """With no alt to fall back on, the caption is a clearly-marked failure
+    token — never a plausible sentence that reads as a real description."""
+    backend = MagicMock()
+    backend.analyze.side_effect = RuntimeError("api down")
+
+    out = gather_diagrams(
+        [fake_image],
+        backend=backend,
+        backend_name="anthropic",
+        cache_dir=tmp_path / "cache",
+    )
+    assert "extraction failed" in out[fake_image.name].caption
 
 
 def test_enrich_with_diagrams_concurrency_one_serializes(tmp_path: Path) -> None:
