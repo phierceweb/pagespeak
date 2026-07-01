@@ -2,6 +2,11 @@
 
 Notable changes to pagespeak, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## 0.2.0
+
+### Added
+- **`pagespeak vision-audit`** — a read-only command that flags likely-confabulated vision captions for review. It compares each figure's generated caption against the author's source alt text and flags a caption that keeps none of the alt's subject words — a figure described as the wrong thing, the failure a caption-only read can't catch. Deterministic, $0, no LLM; `--strict` exits non-zero to gate a delivery.
+
 ## 0.1.0 — initial public release
 
 pagespeak converts documents into clean, LLM-friendly Markdown — with extracted diagrams rendered as embedded Mermaid and an optional per-section split for retrieval (RAG). CLI + Python library. The feature set, by area.

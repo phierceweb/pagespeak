@@ -110,6 +110,7 @@ Modules are organized into role-based subpackages. All public symbols are re-exp
 | `services/_audit_checks.py` | Pure text-defect detectors for `pagespeak audit` (`AuditFinding` + one `text -> findings` function per observed defect shape: collapsed tables, HTML debris, U+FFFD, entities, shattered emphasis, duplicate headings). Fence-aware; detectors report, never fix. | — |
 | `services/_audit.py` | `audit_paths()` / `render_report()` — walks final artifacts (skips checkpoints, `chunks/`, dot-dirs), adds file-context checks (orphan-shell sections, dangling image refs), aggregates an `AuditReport`. Powers `pagespeak audit`. See `docs/audit.md`. | — |
 | `services/_image_refs.py` | `degrade_missing_image_refs()` — rewrites an image ref whose local target is missing on disk into its alt text (an italic caption); external `http`/`data` refs untouched. The complementary FIX to the audit's `dangling_image_ref` check; runs in the vision phase so a broken `![alt](missing)` link becomes the RAG-usable description. | — |
+| `services/_vision_audit.py` | `audit_vision()` / `check_identity_divergence()` — flags likely-confabulated vision captions by comparing each generated caption (`.vision-cache`) to the author's source alt (`structured.md`): a caption that keeps none of the alt's subject words is a candidate. Domain-agnostic (generic figure/English filter only), $0, no LLM. Powers `pagespeak vision-audit`. See `docs/audit.md`. | — |
 | `services/_table_repair.py` | `repair_collapsed_tables()` — splice the clean grid Docling extracts from a collapsed table's PDF page in place of Marker's `<br>` mega-cell. Pure splice logic (find mega-cells, match table by content overlap) + injected I/O helpers (`locate_page_in_pdf`, `docling_page_md`). Powers `pagespeak repair-tables`. | yes (`pypdfium2` / Docling backend imported lazily in the I/O helpers) |
 
 ### `orchestrators/`
@@ -137,6 +138,7 @@ Modules are organized into role-based subpackages. All public symbols are re-exp
 | `cli/_ingest.py` | `ingest` subcommand — backend phase only (`--workers` flag for chunked-parallel PDF). | — |
 | `cli/_audit.py` | `audit` subcommand — output-defect scan over converted output dirs / files; exit 1 on errors. | — |
 | `cli/_repair.py` | `repair-tables` subcommand — Docling-splice fix for collapsed tables in an existing out-dir; patches `<stem>.raw.md`, `--dry-run` previews. | — |
+| `cli/_vision_audit.py` | `vision-audit` subcommand — flag likely-confabulated vision captions; `--summary-only` for totals, `--strict` exits 1 on findings. | — |
 
 ### `web/`
 

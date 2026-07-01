@@ -8,6 +8,7 @@ Subcommands:
   pagespeak invalidate <output> [...] bust caches at a stage
   pagespeak deliver <output> [...]   strip an output dir to delivery-ready files
   pagespeak audit <paths> [...]      scan converted output for conversion defects
+  pagespeak vision-audit <paths> [.] flag likely-confabulated vision captions
   pagespeak repair-tables <out> [...] splice Docling grids into collapsed tables
 """
 
@@ -24,6 +25,7 @@ from ._deliver import register as _register_deliver
 from ._ingest import register as _register_ingest
 from ._invalidate import register as _register_invalidate
 from ._repair import register as _register_repair
+from ._vision_audit import register as _register_vision_audit
 
 # Logging is bootstrapped at `pagespeak/__init__.py` (the package root) so that
 # both CLI and library users hit the same configuration before any module-level
@@ -131,6 +133,7 @@ _register_invalidate(app)
 _register_baseline(app)
 _register_deliver(app)
 _register_audit(app)
+_register_vision_audit(app)
 _register_repair(app)
 
 

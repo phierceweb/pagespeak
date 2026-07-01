@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pagespeak"
-version = "0.1.0"
+version = "0.2.0"
 description = "Convert PDFs and Office documents to LLM-friendly markdown, with diagram extraction to Mermaid."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -117,6 +117,7 @@ ignore = ["E501"]
 "src/pagespeak/cli/_deliver.py" = ["B008"]  # Typer uses function calls in argument defaults
 "src/pagespeak/cli/_audit.py" = ["B008"]  # Typer uses function calls in argument defaults
 "src/pagespeak/cli/_repair.py" = ["B008"]  # Typer uses function calls in argument defaults
+"src/pagespeak/cli/_vision_audit.py" = ["B008"]  # Typer uses function calls in argument defaults
 "tests/*" = ["B011"]
 
 [tool.mypy]
