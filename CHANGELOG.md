@@ -2,6 +2,11 @@
 
 Notable changes to pagespeak, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## 0.2.2
+
+### Added
+- **`audit` gains a `misaligned_table` check.** Flags a wide multi-column spec table whose cell boundaries drifted during extraction so a value lands under the wrong label. Reported as a **warning**, not an error: the defect is real RAG noise but not auto-fixable — Marker and Docling reproduce it identically (ambiguous multi-line-cell geometry in the source PDF), so it is report-only like `duplicate_heading`. Gated on a non-empty sibling value cell, so blank fill-in forms and worksheets are not flagged. Deterministic, $0, no LLM.
+
 ## 0.2.1
 
 ### Fixed

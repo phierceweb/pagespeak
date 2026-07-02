@@ -50,6 +50,7 @@ Every detector exists because the defect was **observed in real converted output
 | `html_entity` | Undecoded `&lt;` / `&amp;` / `&#8217;` outside code fences — a cleanup regression | error |
 | `shattered_emphasis` | Emphasis-marker pileups (`****word****`) from shattered runs | error |
 | `dangling_image_ref` | `![…](path)` whose relative target doesn't exist on disk | error |
+| `misaligned_table` | A wide multi-column spec table whose cell boundaries drifted during extraction — two labels merge into one label-column cell, so a value lands under the wrong label. Real RAG noise, but **not auto-fixable** (Marker and Docling reproduce it identically — ambiguous multi-line-cell geometry in the source PDF), so it is report-only like `duplicate_heading`. Gated on a non-empty sibling value cell, so blank fill-in forms / worksheets are not flagged | warning |
 | `empty_section` | A `sections/` file with no body **and** no subsections — a true orphan shell | warning |
 | `duplicate_heading` | The same heading text ≥4 times in one file (recurring scaffold furniture) | warning |
 
@@ -58,12 +59,13 @@ Detector-shape notes that prevent false positives — preserve these behaviors w
 - All text checks operate **outside fenced code blocks**: a literal `&lt;` in a code example is content, not a defect.
 - `html_fragment` masks angle-wrapped markdown link targets (`](<Table of Contents.md>)`) before matching — the splitter's link style is not HTML debris. `<br>` and page-anchor `<span id="page-…">` lines are pagespeak's own legitimate output and are never flagged.
 - `empty_section` does NOT flag nav nodes: a parent section whose only content is a `## Subsections` list is the splitter's deliberate shape — its content lives in its children.
+- `misaligned_table` scans only a table's *label column* (the column where most cells end in `:`) and flags a merged label only when the same row has a non-empty value cell — so a blank fill-in form / worksheet (merged labels, empty answer column) is authored structure, not spillover. Colon-space is required, so `10:30`, `https://…`, and `:---:` alignment rows never read as labels.
 - A line of only asterisks is a markdown horizontal rule, not shatter.
 
 ## Severity model and exit codes
 
 - **error** — the content itself is damaged; an LLM/RAG consumer reads wrong or missing information. Any error → exit code 1.
-- **warning** — worth a human look, but possibly faithful-to-source (e.g. `duplicate_heading`: recurring callout furniture is structurally identical to inconsistently-leveled real sections, so automated demotion is a known wall — the audit reports, a human decides). Warnings alone → exit code 0.
+- **warning** — worth a human look, but either possibly faithful-to-source or not auto-fixable. `duplicate_heading`: recurring callout furniture is structurally identical to inconsistently-leveled real sections, so automated demotion is a known wall. `misaligned_table`: a value under the wrong label is real RAG noise, but Marker and Docling reproduce it identically (ambiguous source-PDF cell geometry), so no backend swap or `repair-tables` splice can fix it — the audit flags the unreliable table for a human to exclude or hand-correct. Warnings alone → exit code 0.
 
 ## What audit deliberately does NOT do
 

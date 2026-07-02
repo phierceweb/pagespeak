@@ -68,9 +68,17 @@ def create_app(*, start_worker: bool = True) -> FastAPI:
     app.state.templates = templates
 
     app.include_router(health_router())
-    # Pass templates=None so the admin uses its own packaged templates dir,
-    # which contains dashboard.html, runs_list.html, etc.
-    app.include_router(make_admin_router(auth_dep=None, prefix="/admin/llm", templates=None))
+    # templates=None → admin uses its own packaged templates dir.
+    # allow_unauthenticated → localhost dev console; pf-core >=0.2.3 requires
+    # the explicit opt-in to mount an admin with auth_dep=None.
+    app.include_router(
+        make_admin_router(
+            auth_dep=None,
+            allow_unauthenticated=True,
+            prefix="/admin/llm",
+            templates=None,
+        )
+    )
 
     from pagespeak.web.api import actions, pages, partials
 

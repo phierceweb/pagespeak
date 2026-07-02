@@ -14,6 +14,7 @@ from pagespeak.services._audit_checks import (
     check_duplicate_heading,
     check_html_entity,
     check_html_fragment,
+    check_misaligned_table,
     check_replacement_char,
     check_shattered_emphasis,
     run_text_checks,
@@ -239,6 +240,129 @@ def test_duplicate_heading_case_insensitive() -> None:
 def test_duplicate_heading_subsections_excluded() -> None:
     """`## Subsections` is splitter furniture, present in many files."""
     assert check_duplicate_heading(_heading_doc("Subsections", 9)) == []
+
+
+# ── misaligned_table ───────────────────────────────────────────────────────
+
+
+# The real defect shape: a wide multi-column spec sheet whose cell boundaries
+# drifted during extraction, so two labels land merged in one label-column
+# cell and values shift under the wrong label.
+_MISALIGNED_SPEC_TABLE = (
+    "|  | Crossover Frequency: | 2.6 kHz 4th order LF / 2nd order |\n"
+    "| --- | --- | --- |\n"
+    "|  | Distortion, 96 dB, 1 m: Mid-High Range (200 Hz - 20 kHz) | HF (model B) |\n"
+    "|  | 2nd Harmonic: | <0.4% |\n"
+    "|  | 3rd Harmonic: | <0.3% |\n"
+    "|  | Input Connector: Noise Level: | IEC <13 dBA / 1 m |\n"
+    "|  | Peak Level: | 112 dB / 1 m |\n"
+)
+
+
+def test_misaligned_table_merged_labels_flagged() -> None:
+    findings = check_misaligned_table(_MISALIGNED_SPEC_TABLE)
+    assert len(findings) == 2
+    assert all(f.check == "misaligned_table" for f in findings)
+    # warning, not error: the defect is real RAG noise but not auto-fixable
+    # (Marker and Docling reproduce it identically) — report-only, like
+    # duplicate_heading.
+    assert all(f.severity == "warning" for f in findings)
+    assert [f.line for f in findings] == [3, 6]
+
+
+def test_misaligned_table_blank_form_ok() -> None:
+    """A blank fill-in form flattened to one column — merged labels but an
+    EMPTY value cell. No data landed under the wrong label, so it is not the
+    spillover defect (and is faithful to an authored blank form)."""
+    text = (
+        "|  | Name: Model: |\n"
+        "| --- | --- |\n"
+        "|  | Company: Serial Number: |\n"
+        "|  | Address: Store: |\n"
+        "|  | Email: Date: |\n"
+    )
+    assert check_misaligned_table(text) == []
+
+
+def test_misaligned_table_worksheet_multi_prompt_cell_ok() -> None:
+    """An authored fill-in worksheet: one cell holds a label plus several
+    colon-prompts, beside an EMPTY answer cell. The empty column is by
+    design — nothing is misattributed."""
+    text = (
+        "|  |  |\n"
+        "| --- | --- |\n"
+        "| Strand #1: 3'-TAC-5'  Complementary sequence:  mRNA sequence:  Type: |  |\n"
+        "| Strand #2: 3'-TAG-5'  Complementary sequence:  mRNA sequence:  Type: |  |\n"
+        "| Strand #3: 3'-TAA-5'  Complementary sequence:  mRNA sequence:  Type: |  |\n"
+    )
+    assert check_misaligned_table(text) == []
+
+
+def test_misaligned_table_clean_key_value_ok() -> None:
+    """A well-formed 2-column spec table — every label one colon-terminated
+    phrase — is the closest legitimate shape and must not be flagged."""
+    text = (
+        "| Frequency Response: | 50 Hz - 20 kHz |\n"
+        "| --- | --- |\n"
+        "| Power Rating (rated impedance): | 150 watts |\n"
+        "| Impedance: | 8 ohms |\n"
+        "| Signal-to-Noise: | 96 dB |\n"
+    )
+    assert check_misaligned_table(text) == []
+
+
+def test_misaligned_table_colon_in_value_column_ok() -> None:
+    """Colon-space inside a VALUE cell is content (a note, a ratio caption),
+    not a merged label — only the label column is scanned."""
+    text = (
+        "| AC Input: | 115 VAC, 60 Hz (note: EU models differ) |\n"
+        "| --- | --- |\n"
+        "| Fuse: | 2 A slow-blow |\n"
+        "| Power: | 45 W typical |\n"
+    )
+    assert check_misaligned_table(text) == []
+
+
+def test_misaligned_table_instruction_table_ok() -> None:
+    """A worked-example table (instruction | math) has no colon-terminated
+    label column, so interior colons there are never scanned."""
+    text = (
+        "|  |  |\n"
+        "| --- | --- |\n"
+        "|  | $3x^{2}+7x-9=0$ |\n"
+        "| Identify *a*, *b*, and *c*. | $a=3, b=7, c=-9$ |\n"
+        "| Write the discriminant. | $b^{2}-4ac$ |\n"
+        "| Simplify. | $157$ |\n"
+    )
+    assert check_misaligned_table(text) == []
+
+
+def test_misaligned_table_alignment_colons_ok() -> None:
+    """`:---:` alignment syntax in the separator row is not a label."""
+    text = "| Name: | Value |\n|:---|---:|\n| Width: | 20 cm |\n| Height: | 30 cm |\n"
+    assert check_misaligned_table(text) == []
+
+
+def test_misaligned_table_time_and_url_colons_ok() -> None:
+    """Colons without a following space (times, URLs) are never merged labels."""
+    text = (
+        "| Start Time: | 10:30 |\n"
+        "| --- | --- |\n"
+        "| Manual URL: | https://example.com/doc |\n"
+        "| Duration: | 45 min |\n"
+    )
+    assert check_misaligned_table(text) == []
+
+
+def test_misaligned_table_ignores_fenced_code() -> None:
+    text = f"```\n{_MISALIGNED_SPEC_TABLE}```\n"
+    assert check_misaligned_table(text) == []
+
+
+def test_misaligned_table_small_table_ok() -> None:
+    """Too few label cells to classify a label column — never flagged."""
+    text = "| Note: See manual: page 3 | x |\n| --- | --- |\n| b | y |\n"
+    assert check_misaligned_table(text) == []
 
 
 # ── run_text_checks + general robustness ───────────────────────────────────

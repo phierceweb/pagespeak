@@ -35,6 +35,14 @@ _ENTITY_RE = re.compile(
     r"hellip|copy|reg|trade|deg|times|plusmn|middot|bull|sect|para|"
     r"#\d+|#x[0-9a-fA-F]+);"
 )
+# A column is the label column of a key-value table when at least this many
+# cells — and this share of its non-empty cells — are colon-terminated.
+_LABEL_COL_MIN = 3
+_LABEL_COL_RATIO = 0.5
+# An interior `…x: y…` inside a label-column cell = a second label merged in.
+# Colon-space is required, so times (10:30) and URLs never match.
+_MERGED_LABEL_RE = re.compile(r"\S:\s+\S")
+_ALIGNMENT_CELL_RE = re.compile(r"^:?-{3,}:?$|^$")
 _SHATTER_RE = re.compile(r"\*{4,}")
 _HR_LINE_RE = re.compile(r"\s*\*+\s*$")
 _HEADING_RE = re.compile(r"(#{1,6})\s+(.+?)\s*$")
@@ -173,6 +181,67 @@ def check_shattered_emphasis(text: str) -> list[AuditFinding]:
     return findings
 
 
+def _table_rows(run: list[tuple[int, str]]) -> list[tuple[int, list[str]]]:
+    """(lineno, cells) per data row of one pipe-table run; alignment rows
+    (`--- / :---:`) are dropped so their colons never read as labels."""
+    rows: list[tuple[int, list[str]]] = []
+    for lineno, line in run:
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if all(_ALIGNMENT_CELL_RE.match(c) for c in cells):
+            continue
+        rows.append((lineno, cells))
+    return rows
+
+
+def check_misaligned_table(text: str) -> list[AuditFinding]:
+    """Wide-table misalignment: two labels merged into one label-column cell —
+    the shape a wide multi-column spec sheet takes when extraction drifts the
+    cell boundaries, landing values under the wrong label (wrong data for any
+    consumer, unlike a collapse, which is at least self-consistent).
+
+    Scoped to key-value tables: a column qualifies as the label column when
+    most of its cells are colon-terminated; only there does an interior
+    `label: more text` read as a merged label rather than prose."""
+    findings: list[AuditFinding] = []
+    run: list[tuple[int, str]] = []
+    prose = _prose_lines(text)
+    for lineno, line in [*prose, (0, "")]:  # sentinel flushes the last run
+        if line.strip().startswith("|"):
+            run.append((lineno, line))
+            continue
+        rows = _table_rows(run)
+        run = []
+        if len(rows) < _LABEL_COL_MIN:
+            continue
+        ncols = max(len(cells) for _, cells in rows)
+        for j in range(ncols):
+            col = [cells[j] for _, cells in rows if j < len(cells) and cells[j]]
+            labels = sum(1 for cell in col if cell.endswith(":"))
+            if labels < _LABEL_COL_MIN or labels < _LABEL_COL_RATIO * len(col):
+                continue
+            for ln, cells in rows:
+                if j >= len(cells) or not _MERGED_LABEL_RE.search(cells[j]):
+                    continue
+                # Only a real misalignment when the row carries data that could
+                # be sitting under the wrong label. A blank form / worksheet row
+                # (every other cell empty) is authored structure, not spillover.
+                if any(k != j and other.strip() for k, other in enumerate(cells)):
+                    findings.append(
+                        AuditFinding(
+                            check="misaligned_table",
+                            # warning, not error: a value under the wrong label is
+                            # real RAG noise, but it is NOT auto-fixable — Marker and
+                            # Docling reproduce it identically (ambiguous multi-line
+                            # cell geometry in the source PDF). Report for a human,
+                            # like duplicate_heading; a backend swap cannot repair it.
+                            severity="warning",
+                            line=ln,
+                            message=f"two labels merged in one cell: {cells[j][:60]!r}",
+                        )
+                    )
+    return sorted(findings, key=lambda f: f.line)
+
+
 def check_duplicate_heading(text: str) -> list[AuditFinding]:
     """The same heading text repeated many times in one document — the
     recurring-scaffold shape (a numbered-procedure manual's `Important note:`
@@ -207,6 +276,7 @@ def check_duplicate_heading(text: str) -> list[AuditFinding]:
 
 _TEXT_CHECKS = (
     check_collapsed_table,
+    check_misaligned_table,
     check_html_fragment,
     check_replacement_char,
     check_html_entity,
