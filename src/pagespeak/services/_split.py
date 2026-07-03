@@ -27,6 +27,7 @@ from ._split_filter import (
     _filter_english_subtrees,
     _select_kept_sections,
 )
+from ._split_pack import pack_sections
 from ._split_parse import (
     _detect_fallback_min_level as _detect_fallback_min_level,
 )
@@ -63,9 +64,11 @@ def split_into_sections(
     nested: bool = False,
     source_name: str = "markdown",
     min_level: int | None = None,
+    max_level: int | None = None,
     images_dir: Path | None = None,
     min_body_chars: int = 0,
-    frontmatter: str = "",
+    target_kb: int | None = None,
+    doc_id: str | None = None,
     provenance: dict[str, object] | None = None,
     doc_title: str | None = None,
     english_only: bool = False,
@@ -104,16 +107,24 @@ def split_into_sections(
         images_dir: Override the default `<output>/../images/` location.
         min_body_chars: Drop sections whose body has fewer than this many
             non-whitespace chars. Default 30. Set 0 to disable.
-        frontmatter: Uniform provenance YAML block (from
-            ``_provenance.build_provenance_frontmatter``) prepended above
-            the heading of every written section file. Default "" = none.
-            Ignored when ``provenance`` is given.
-        provenance: Doc-level provenance fields (``source_type`` /
-            ``source_label`` / ``source_file`` / ``doc_title``). When set,
-            each section file gets RICH per-section frontmatter — the doc
-            fields plus derived locators ``section_title`` / ``section_path``
-            (ancestor breadcrumb) / ``section_number`` / ``heading_level``.
-            Takes precedence over ``frontmatter``.
+        target_kb: Size-targeted packing (see `_split_pack`). Each branch of
+            the heading tree decides for itself: a subtree fitting this many
+            KB becomes ONE file (descendants inlined); an oversized node
+            recurses into its children; an oversized flat node is
+            partitioned at block boundaries into `(part i of k)` sections
+            sharing its identity. Mutually exclusive with `max_level`
+            (competing mechanisms). None (default) = off.
+        doc_id: Stable document identifier emitted in every section's
+            frontmatter (the corpus-level join key). Defaults to the name
+            of ``output_dir``'s parent — the conversion/out-dir name in the
+            standard ``<out>/sections`` layout.
+        provenance: Opt-in doc-level source fields (``source_type`` /
+            ``source_label`` / ``source_file`` / ``doc_title``) merged into
+            each section's frontmatter ahead of the structural fields.
+            Structural identity (``doc_id`` / ``section_id`` / ``parent_id``
+            / ``section_title`` / ``section_path`` / ``section_number`` /
+            ``heading_level`` / ``depth`` / ``order``) is ALWAYS emitted,
+            with or without ``provenance``.
         doc_title: The document / manual title. When set, every section's
             in-file ``> ↑`` breadcrumb is rooted at ``[doc_title](INDEX.md)``,
             so each split chunk self-identifies its source document — including
@@ -124,9 +135,13 @@ def split_into_sections(
     Returns:
         The list of written section file paths (excluding `INDEX.md`).
     """
+    if target_kb is not None and max_level is not None:
+        raise ValueError(
+            "target_kb and max_level are competing section-shaping mechanisms; pass one"
+        )
     output_dir.mkdir(parents=True, exist_ok=True)
     lines = markdown.splitlines()
-    sections = _parse_sections(lines, min_level=min_level)
+    sections = _parse_sections(lines, min_level=min_level, max_level=max_level)
 
     # Auto-fallback for non-numbered docs. When the caller passed no explicit
     # `min_level` and the numbered-only parse doesn't represent the doc's
@@ -143,7 +158,7 @@ def split_into_sections(
                 detected_level,
                 reason,
             )
-            sections = _parse_sections(lines, min_level=detected_level)
+            sections = _parse_sections(lines, min_level=detected_level, max_level=max_level)
 
     # Default: images live at `<output>/images/`, sibling to the sections/ dir.
     # That's what `to_markdown` produces. Callers with a different layout can
@@ -208,6 +223,16 @@ def split_into_sections(
     # sections to disk.
     sections = writable_sections
 
+    if target_kb is not None:
+        before = len(sections)
+        sections = pack_sections(sections, target_bytes=target_kb * 1024)
+        logger.info(
+            "split_packed_sections target_kb=%d before=%d after=%d",
+            target_kb,
+            before,
+            len(sections),
+        )
+
     sections, path_collisions = _dedupe_section_paths(sections, output_dir, nested=nested)
     for c in path_collisions:
         logger.info(
@@ -232,19 +257,21 @@ def split_into_sections(
         if slug:
             slug_to_sections.setdefault(slug, []).append(s)
 
+    resolved_doc_id = doc_id if doc_id is not None else output_dir.resolve().parent.name
     written: list[Path] = [
         _write_section_file(
             section,
             output_dir,
             nested=nested,
+            doc_id=resolved_doc_id,
+            order=i,
             slug_to_sections=slug_to_sections,
             images_dir=images_dir,
             kept_ids=kept_ids,
-            frontmatter=frontmatter,
             provenance=provenance,
             doc_title=doc_title,
         )
-        for section in sections
+        for i, section in enumerate(sections, start=1)
     ]
 
     index_path = _write_index(

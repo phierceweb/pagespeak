@@ -55,6 +55,8 @@ def to_markdown(
     split_sections: bool | None = None,
     nested_split: bool | None = None,
     split_min_level: int | None = None,
+    split_max_level: int | None = None,
+    split_target_kb: int | None = None,
     min_body_chars: int | None = None,
     english_only: bool = False,
     regenerate_toc: bool = True,
@@ -113,6 +115,14 @@ def to_markdown(
         nested_split: With `split_sections`, mirror the heading hierarchy.
         split_min_level: With `split_sections`, also split semantic headings at
             this depth+ (default: numbered only).
+        split_max_level: With `split_sections`, cap section depth — headings
+            deeper than this stay inline (default None: no cap). `2` gives one
+            file per H2 with subsections inline (textbook section-level chunks).
+        split_target_kb: With `split_sections`, size-targeted packing: each
+            branch fitting this many KB becomes one file, oversized branches
+            split deeper, oversized heading-less sections partition into
+            `(part i of k)` files. Adapts per branch; mutually exclusive
+            with `split_max_level` (default None: off).
         min_body_chars: Drop sections under this body-char count (default 30).
         regenerate_toc: Rebuild `## Table of Contents` from real headings (default True).
         decoration_threshold: Page-header/footer decoration cutoff (5; `0` off).
@@ -210,6 +220,8 @@ def to_markdown(
             split_sections=split_sections,
             nested_split=nested_split,
             split_min_level=split_min_level,
+            split_max_level=split_max_level,
+            split_target_kb=split_target_kb,
             min_body_chars=min_body_chars,
             regenerate_toc=regenerate_toc,
             decoration_threshold=decoration_threshold,
@@ -395,6 +407,8 @@ def to_markdown(
         split_sections=split_sections,
         nested_split=nested_split,
         split_min_level=split_min_level,
+        split_max_level=split_max_level,
+        split_target_kb=split_target_kb,
         min_body_chars=min_body_chars,
         english_only=english_only,
         regenerate_toc=regenerate_toc,

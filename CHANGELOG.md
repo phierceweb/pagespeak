@@ -2,7 +2,13 @@
 
 Notable changes to pagespeak, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
-## 0.2.2
+## 0.3.0
+
+### Added
+- **`--split-target-kb N` — size-targeted section packing.** An alternative to the fixed-depth split knobs: each branch of the heading tree decides for itself. A branch that fits N KB becomes one file (subsections inlined); an oversized branch splits one level deeper, child by child; an oversized section with **no** sub-headings is partitioned at paragraph/block boundaries into `Title (part i of k)` files that share its identity (`part_index` / `part_count` frontmatter, parts parented to part 1; fenced code and tables are never cut mid-block). One setting produces bounded, retrieval-sized sections across book shapes where no fixed level can — mixed-depth chapters, flat mega-sections — eliminating both monster files and per-heading dust. Mutually exclusive with `--split-max-level`; opt-in, off by default.
+- **Every split section file now carries structural identity frontmatter — always on.** Each section leads with a YAML block of joinable keys: `doc_id` (the conversion/out-dir name), `section_id` (the section's own relative path — stable across re-runs), `parent_id` (the nearest ancestor actually written to disk), `section_title` / `section_path` / `section_number` / `heading_level`, `depth`, and `order` (1-based document order). A RAG consumer can scope retrieval to one document, walk from any chunk to its parent or siblings, and cite a stable id — without a second retrieval round-trip. The opt-in provenance source fields (`--provenance` / `--source-type` / `--source-label`) merge into the same block; the master document remains untouched without them. Library note: `split_into_sections()` gained `doc_id=` (defaults to the out-dir name) and dropped the superseded `frontmatter=` string parameter.
+
+
 
 ### Added
 - **`audit` gains a `misaligned_table` check.** Flags a wide multi-column spec table whose cell boundaries drifted during extraction so a value lands under the wrong label. Reported as a **warning**, not an error: the defect is real RAG noise but not auto-fixable — Marker and Docling reproduce it identically (ambiguous multi-line-cell geometry in the source PDF), so it is report-only like `duplicate_heading`. Gated on a non-empty sibling value cell, so blank fill-in forms and worksheets are not flagged. Deterministic, $0, no LLM.

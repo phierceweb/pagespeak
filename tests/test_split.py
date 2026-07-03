@@ -9,6 +9,7 @@ from pagespeak.services._split import (
     _parse_numbered_heading,
     split_into_sections,
 )
+from pagespeak.services._split_parse import _parse_sections
 from pagespeak.services._split_write import _sanitize_crumb, _sanitize_filename
 
 
@@ -1104,12 +1105,15 @@ def test_filename_collision_breadcrumb_uses_bare_display_name(tmp_path: Path) ->
     # Both Foo files exist, suffixed.
     assert (tmp_path / "1.1. Foo.md").exists()
     assert (tmp_path / "1.1. Foo-2.md").exists()
-    # Each retains the bare display heading at the top — no `-2` leaks
-    # into the heading text or breadcrumb.
+    # Each retains the bare display heading — no `-2` leaks into the
+    # heading text or breadcrumb. The suffix DOES stay in section_id
+    # (the join key must be unique).
     bare = (tmp_path / "1.1. Foo.md").read_text()
-    assert bare.startswith("## 1.1. Foo\n")
+    assert bare.split("---\n\n", 1)[1].startswith("## 1.1. Foo\n")
+    assert 'section_id: "1.1. Foo.md"' in bare
     suffixed = (tmp_path / "1.1. Foo-2.md").read_text()
-    assert suffixed.startswith("## 1.1. Foo\n")
+    assert suffixed.split("---\n\n", 1)[1].startswith("## 1.1. Foo\n")
+    assert 'section_id: "1.1. Foo-2.md"' in suffixed
 
 
 def test_section_file_keeps_preserved_anchor_attached_to_heading(tmp_path: Path) -> None:
@@ -1118,7 +1122,7 @@ def test_section_file_keeps_preserved_anchor_attached_to_heading(tmp_path: Path)
     md = '# 1. Foo\n<span id="page-1-0"></span>\n\nBody paragraph.\n'
     split_into_sections(md, tmp_path, min_body_chars=0)
     written = (tmp_path / "1. Foo.md").read_text(encoding="utf-8")
-    lines = written.splitlines()
+    lines = written.split("---\n\n", 1)[1].splitlines()
     assert lines[0] == "# 1. Foo"
     assert lines[1] == '<span id="page-1-0"></span>'
     assert lines[2] == ""
@@ -1129,7 +1133,7 @@ def test_section_file_handles_multiple_consecutive_anchors(tmp_path: Path) -> No
     md = '# 1. Foo\n<span id="page-1-0"></span>\n<span id="page-1-1"></span>\n\nBody.\n'
     split_into_sections(md, tmp_path, min_body_chars=0)
     written = (tmp_path / "1. Foo.md").read_text(encoding="utf-8")
-    lines = written.splitlines()
+    lines = written.split("---\n\n", 1)[1].splitlines()
     assert lines[0] == "# 1. Foo"
     assert lines[1] == '<span id="page-1-0"></span>'
     assert lines[2] == '<span id="page-1-1"></span>'
@@ -1507,6 +1511,61 @@ def test_split_numbered_at_toplevel_does_not_fall_back(tmp_path: Path) -> None:
     assert "Paper Title.md" not in names
 
 
+# --- max_level: bounded section depth (--split-max-level) ---
+
+
+def test_parse_sections_max_level_inlines_deeper() -> None:
+    """max_level caps section depth: a heading deeper than max_level stays inline
+    as content of the enclosing section, not its own section."""
+    lines = [
+        "## 1.1 Overview",
+        "ovw body",
+        "### Learning Objectives",
+        "- obj",
+        "#### Detail",
+        "deep body",
+        "## 1.2 Next",
+        "next body",
+    ]
+    secs = _parse_sections(lines, min_level=2, max_level=2)
+    assert [s.level for s in secs] == [2, 2]
+    body = "\n".join(secs[0].content_lines)
+    assert "### Learning Objectives" in body
+    assert "#### Detail" in body
+
+
+def test_split_max_level_caps_section_depth(tmp_path: Path) -> None:
+    """A textbook (title + numbered H2 + unnumbered back-matter + deep
+    subsections) split with max_level=2: numbered sections AND back-matter each
+    get a file; H3+ stays inline — no mislabeled `Learning Objectives.md`."""
+    md = (
+        "# Book Title\nintro\n\n"
+        "## 1.1 Overview\novw body\n\n"
+        "### Learning Objectives\n- obj\n\n"
+        "#### Sub detail\ndetail\n\n"
+        "## 1.2 Homeostasis\nhomeo body\n\n"
+        "## Key Terms\nterm defs\n\n"
+        "## Chapter Review\nreview body\n"
+    )
+    written = split_into_sections(md, tmp_path, source_name="test", max_level=2)
+    names = {p.name for p in written}
+    assert any("Overview" in n for n in names)
+    assert any("Homeostasis" in n for n in names)
+    assert any("Key Terms" in n for n in names)
+    assert any("Chapter Review" in n for n in names)
+    assert "Learning Objectives.md" not in names
+    assert "Sub detail.md" not in names
+    ovw = next(p for p in written if "Overview" in p.name)
+    assert "Learning Objectives" in ovw.read_text()
+
+
+def test_split_max_level_none_preserves_deep_split(tmp_path: Path) -> None:
+    """Default (max_level=None) is unchanged — deep headings still split out."""
+    md = "# Book Title\nintro\n\n## 1.1 Overview\novw\n\n### Learning Objectives\n- obj\n"
+    written = split_into_sections(md, tmp_path, source_name="t")
+    assert any("Learning Objectives" in p.name for p in written)
+
+
 # --- sparse-shallow-group correction in fallback detection ---
 
 
@@ -1571,27 +1630,6 @@ def test_fallback_advances_once_to_the_large_group() -> None:
 def test_fallback_no_headings_returns_none() -> None:
     """Empty input still returns None (unchanged contract)."""
     assert _detect_fallback_min_level(["plain text", "more text"]) is None
-
-
-def test_frontmatter_prepended_to_each_section_file(tmp_path: Path) -> None:
-    """When `frontmatter` is given, every section file begins with the
-    provenance YAML block, above its heading — so each RAG chunk carries
-    its source. The heading still follows the block intact."""
-    md = "# 1. ARCHITECTURE\nIntro paragraph.\n\n## 1.1. STACK\nStack details.\n"
-    fm = '---\nsource_type: "textbook"\nsource_file: "doc.md"\n---\n\n'
-    written = split_into_sections(md, tmp_path, frontmatter=fm)
-    assert written  # sanity: sections were produced
-    for path in written:
-        text = path.read_text()
-        assert text.startswith(fm)
-        assert text[len(fm) :].lstrip().startswith("#")  # heading right after
-
-
-def test_no_frontmatter_leaves_section_files_unchanged(tmp_path: Path) -> None:
-    """Default (no frontmatter arg) leaves each file starting at its heading."""
-    md = "# 1. ARCHITECTURE\nIntro.\n"
-    written = split_into_sections(md, tmp_path)
-    assert written[0].read_text().startswith("# 1. ARCHITECTURE")
 
 
 def test_provenance_emits_rich_per_section_frontmatter(tmp_path: Path) -> None:

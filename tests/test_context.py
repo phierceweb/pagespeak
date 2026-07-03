@@ -40,6 +40,8 @@ def _ctx(**over: object) -> PipelineContext:
         split_sections=False,
         nested_split=False,
         split_min_level=None,
+        split_max_level=None,
+        split_target_kb=None,
         min_body_chars=None,
         english_only=False,
         regenerate_toc=True,

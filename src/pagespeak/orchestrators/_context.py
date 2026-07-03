@@ -58,6 +58,8 @@ class PipelineContext:
     split_sections: bool
     nested_split: bool
     split_min_level: int | None
+    split_max_level: int | None
+    split_target_kb: int | None
     min_body_chars: int | None
     english_only: bool
     regenerate_toc: bool

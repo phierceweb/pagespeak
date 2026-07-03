@@ -6,12 +6,12 @@ Two shapes:
   `# title` + `## Question N` quiz, so it splits with rich per-question
   frontmatter (`quiz` / `quiz_id` / `question_number` / `question_type`) via
   `backends._qti_split`, the same machinery the Canvas QTI fan-out uses.
-- **Generic** (everything else): when provenance is on (`c.provenance`,
-  preset-controlled — or a source flag set), per-section files are stamped
-  with source tags + an auto-derived `source_label` + breadcrumb locators;
-  `source_type` is omitted when not supplied. Off → byte-for-byte unchanged.
-
-Either way the master doc gets the matching frontmatter prepended.
+- **Generic** (everything else): every section file always gets structural
+  identity frontmatter (`doc_id` / `section_id` / `parent_id` / locators —
+  see `services._split_identity._section_frontmatter`). The source tags
+  (`source_type` / `source_label` / `source_file`) remain opt-in via
+  `c.provenance` or an explicit source flag; the MASTER doc's frontmatter
+  is opt-in on the same trigger (off → master byte-for-byte unchanged).
 """
 
 from __future__ import annotations
@@ -64,12 +64,13 @@ def _doc_title(markdown: str) -> str | None:
 
 
 def _write_generic(c: PipelineContext, result: IngestResult, source_file: str) -> None:
-    """Generic (non-quiz) docs: when provenance is on, emit RICH per-section
-    frontmatter (source tags + doc_title + section breadcrumb / number /
-    level) — the research-backed locator set for multi-source RAG. On when
-    `c.provenance` (preset-controlled) OR a source flag is set; off → byte-
-    for-byte unchanged. With no explicit `source_label`, it's auto-derived
-    from the cleaned filename stem; `source_type` is omitted when None."""
+    """Generic (non-quiz) docs: sections always carry structural identity
+    frontmatter (doc_id = the out-dir name + section/parent join keys +
+    locators). Source tags (source_type / source_label / source_file) are
+    opt-in: `c.provenance` (preset-controlled) OR a source flag; when on,
+    the master doc gets the matching frontmatter too (off → master
+    unchanged). With no explicit `source_label`, it's auto-derived from the
+    cleaned filename stem; `source_type` is omitted when None."""
     from ..services._provenance import build_frontmatter, clean_source_label
 
     enabled = c.provenance or c.source_type is not None or c.source_label is not None
@@ -97,7 +98,10 @@ def _write_generic(c: PipelineContext, result: IngestResult, source_file: str) -
             nested=c.nested_split,
             source_name=source_file,
             min_level=c.split_min_level,
+            max_level=c.split_max_level,
+            target_kb=c.split_target_kb,
             min_body_chars=effective_min_body,
+            doc_id=c.out.name,
             provenance=provenance,
             # Root every section breadcrumb at the doc name → INDEX.md so
             # each split chunk self-identifies its source doc (the in-chunk

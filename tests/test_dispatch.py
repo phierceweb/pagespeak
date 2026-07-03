@@ -115,6 +115,60 @@ def test_split_sections_writes_files_when_output_dir_set(fake_docx: Path, tmp_pa
     assert any("BETA" in name for name in files)
 
 
+def test_split_max_level_caps_depth_through_pipeline(fake_docx: Path, tmp_path: Path) -> None:
+    """--split-max-level flows to_markdown → split phase: H2 headings become
+    section files, deeper headings stay inline (no per-H3 file)."""
+    raw = (
+        "# Book Title\n"
+        "Intro body substantial enough to clear the body threshold cutoff.\n"
+        "## 1.1 Alpha\n"
+        "Alpha body substantial enough to clear the body cutoff threshold.\n"
+        "### Alpha Detail\n"
+        "Detail body also substantial enough to clear the body cutoff here.\n"
+        "## 1.2 Beta\n"
+        "Beta body content with enough substance to cross the threshold too.\n"
+    )
+    fake_result = IngestResult(markdown=raw, source_format="docx")
+    out = tmp_path / "out"
+    with patch("pagespeak.backends._docx.convert_with_markitdown", return_value=fake_result):
+        to_markdown(
+            fake_docx,
+            output_dir=out,
+            diagrams=False,
+            cleanup="off",
+            split_sections=True,
+            split_max_level=2,
+        )
+    files = [p for p in (out / "sections").rglob("*.md") if p.name != "INDEX.md"]
+    names = [p.name for p in files]
+    assert any("Beta" in n for n in names)
+    assert not any("Alpha Detail" in n for n in names)  # H3 inlined, not its own file
+    alpha = next(p for p in files if "Alpha" in p.name and "Detail" not in p.name)
+    assert "Alpha Detail" in alpha.read_text()  # H3 heading + body inline in the H2 section
+
+
+def test_split_target_kb_packs_through_pipeline(fake_docx: Path, tmp_path: Path) -> None:
+    """--split-target-kb flows to_markdown → split phase: a subtree fitting
+    the target becomes one file with its subsections inlined."""
+    para = "Body content substantial enough to clear the body cutoff threshold. "
+    raw = f"# 1. Book\n{para}\n## 1.1. Alpha\n{para}\n## 1.2. Beta\n{para}\n"
+    fake_result = IngestResult(markdown=raw, source_format="docx")
+    out = tmp_path / "out"
+    with patch("pagespeak.backends._docx.convert_with_markitdown", return_value=fake_result):
+        to_markdown(
+            fake_docx,
+            output_dir=out,
+            diagrams=False,
+            cleanup="off",
+            split_sections=True,
+            split_target_kb=8,
+        )
+    files = [p for p in (out / "sections").rglob("*.md") if p.name != "INDEX.md"]
+    assert [p.name for p in files] == ["1. Book.md"]  # whole doc fits one 8KB box
+    text = files[0].read_text()
+    assert "## 1.1. Alpha" in text and "## 1.2. Beta" in text
+
+
 def test_source_provenance_stamped_on_doc_and_sections(fake_docx: Path, tmp_path: Path) -> None:
     """source_type/source_label stamp a provenance YAML block on BOTH the
     returned whole-doc markdown and every section file — the multi-source
@@ -146,9 +200,10 @@ def test_source_provenance_stamped_on_doc_and_sections(fake_docx: Path, tmp_path
         assert p.read_text().startswith('---\nsource_type: "textbook"\n')
 
 
-def test_no_source_flags_leaves_output_frontmatter_free(fake_docx: Path, tmp_path: Path) -> None:
-    """Without source flags the output is byte-for-byte as before — no YAML
-    block prepended to the doc or any section file."""
+def test_no_source_flags_master_clean_sections_structural(fake_docx: Path, tmp_path: Path) -> None:
+    """Without source flags the MASTER doc stays frontmatter-free, while
+    section files carry structural identity only (doc_id = out-dir name,
+    join keys, locators) — never the opt-in source fields."""
     raw = "# 1. ALPHA\nSubstantive alpha body passing the body cutoff threshold.\n"
     fake_result = IngestResult(markdown=raw, source_format="docx")
     out = tmp_path / "out"
@@ -157,8 +212,14 @@ def test_no_source_flags_leaves_output_frontmatter_free(fake_docx: Path, tmp_pat
             fake_docx, output_dir=out, diagrams=False, cleanup="off", split_sections=True
         )
     assert not result.markdown.startswith("---")
-    for p in (out / "sections").glob("*.md"):
-        assert not p.read_text().startswith("---")
+    section_files = [p for p in (out / "sections").glob("*.md") if p.name != "INDEX.md"]
+    assert section_files
+    for p in section_files:
+        text = p.read_text()
+        assert text.startswith("---\n")
+        assert 'doc_id: "out"' in text
+        assert "source_type" not in text
+        assert "source_label" not in text
 
 
 def test_provenance_flag_emits_frontmatter_with_auto_label(fake_docx: Path, tmp_path: Path) -> None:
@@ -1265,6 +1326,8 @@ def test_vision_phase_threads_cache_only(monkeypatch, tmp_path):
         split_sections=False,
         nested_split=False,
         split_min_level=None,
+        split_max_level=None,
+        split_target_kb=None,
         min_body_chars=None,
         english_only=False,
         regenerate_toc=False,

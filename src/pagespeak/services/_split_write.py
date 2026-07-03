@@ -1,10 +1,11 @@
 """Section file/path construction + writing for the splitter.
 
 Filename sanitization, nested-folder path building, image + in-doc-ref
-rewriting, breadcrumb + per-section frontmatter construction, and the
-`_write_section_file` / `_write_index` writers. `_split` re-exports
-`_build_breadcrumb`. Imports `_Section` + `_is_page_anchor_line` from
-`_split_parse`; the orchestrator + filter call here.
+rewriting, breadcrumbs, and the `_write_section_file` / `_write_index`
+writers. Per-section identity frontmatter lives in `_split_identity`.
+`_split` re-exports `_build_breadcrumb`. Imports `_Section` +
+`_is_page_anchor_line` from `_split_parse`; the orchestrator + filter
+call here.
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ import os
 import re
 from pathlib import Path
 
-from ._provenance import build_frontmatter
+from ._split_identity import _section_frontmatter, _strip_embedded_links
 from ._split_parse import _is_page_anchor_line, _Section
 
 IN_DOC_REF_RE = re.compile(r"\[([^\]]+)\]\(#([^)]+)\)")
@@ -21,17 +22,6 @@ IN_DOC_REF_RE = re.compile(r"\[([^\]]+)\]\(#([^)]+)\)")
 IMAGE_REF_RE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
 
 _MAX_FILENAME_LEN = 200
-
-_EMBEDDED_MD_LINK = re.compile(r"\[([^\]]+)\]\([^)]+\)")
-
-
-def _strip_embedded_links(name: str) -> str:
-    """`a[b](c)d` → `abd`. Idempotent."""
-    prev = None
-    while prev != name:
-        prev = name
-        name = _EMBEDDED_MD_LINK.sub(r"\1", name)
-    return name
 
 
 def _sanitize_filename(name: str) -> str:
@@ -340,33 +330,21 @@ def _build_breadcrumb(
     return "> ↑ " + " / ".join(crumbs)
 
 
-def _section_path(section: _Section) -> list[str]:
-    """Ancestor heading titles, root-first — this section's breadcrumb path.
+def _written_parent_id(
+    section: _Section, output_dir: Path, *, nested: bool, kept_ids: set[int] | None
+) -> str | None:
+    """`section_id` of the nearest ancestor actually written to disk, or None.
 
-    Powers the `section_path` frontmatter field (the high-ROI RAG locator: a
-    retrieved chunk knows where it sits in the document). Uses `display_name`
-    (number + title) to match the on-page breadcrumb, with embedded markdown
-    links stripped."""
-    crumbs: list[str] = []
+    Ancestor-only / filtered-out ancestors are skipped (`kept_ids`), so the
+    emitted `parent_id` is always a joinable key to an existing section file.
+    """
     cursor = section.parent
     while cursor is not None:
-        crumbs.append(_strip_embedded_links(cursor.display_name))
+        if kept_ids is None or id(cursor) in kept_ids:
+            path = _section_output_path(cursor, output_dir, nested=nested)
+            return path.relative_to(output_dir).as_posix()
         cursor = cursor.parent
-    crumbs.reverse()
-    return crumbs
-
-
-def _section_frontmatter(section: _Section, provenance: dict[str, object]) -> str:
-    """Per-section provenance frontmatter: the doc-level `provenance` fields
-    (source_type / source_label / source_file / doc_title) plus this section's
-    derived locators (title, breadcrumb path, number, heading level)."""
-    fields = dict(provenance)
-    fields["section_title"] = _strip_embedded_links(section.title)
-    path = _section_path(section)
-    fields["section_path"] = path or None
-    fields["section_number"] = section.number or None
-    fields["heading_level"] = section.level
-    return build_frontmatter(fields)
+    return None
 
 
 def _write_section_file(
@@ -374,10 +352,11 @@ def _write_section_file(
     output_dir: Path,
     *,
     nested: bool,
+    doc_id: str,
+    order: int,
     slug_to_sections: dict[str, list[_Section]] | None = None,
     images_dir: Path | None = None,
     kept_ids: set[int] | None = None,
-    frontmatter: str = "",
     provenance: dict[str, object] | None = None,
     doc_title: str | None = None,
 ) -> Path:
@@ -425,12 +404,17 @@ def _write_section_file(
             lines.append(f"- {_md_link(display, rel)}")
         lines.append("")
 
-    # Provenance frontmatter (when supplied) sits above the heading so the
-    # section file leads with its source tag. With `provenance`, build rich
-    # per-section frontmatter (adds section_title / section_path / number /
-    # level); otherwise fall back to the uniform `frontmatter` string. Empty
-    # string = no-op.
-    front = _section_frontmatter(section, provenance) if provenance is not None else frontmatter
+    # Identity frontmatter sits above the heading so every section file leads
+    # with its joinable keys (doc_id / section_id / parent_id) + locators.
+    front = _section_frontmatter(
+        section,
+        provenance,
+        doc_id=doc_id,
+        doc_title=doc_title,
+        section_id=path.relative_to(output_dir).as_posix(),
+        parent_id=_written_parent_id(section, output_dir, nested=nested, kept_ids=kept_ids),
+        order=order,
+    )
     path.write_text(front + "\n".join(lines).rstrip() + "\n", encoding="utf-8")
     return path
 

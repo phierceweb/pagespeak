@@ -149,6 +149,16 @@ def register(
             "--split-min-level",
             help="With --split-sections, split on semantic headings at this depth or deeper. Default 1 (split on every heading); pass a higher depth for coarser sections.",
         ),
+        split_max_level: int | None = typer.Option(
+            None,
+            "--split-max-level",
+            help="With --split-sections, cap section depth: headings deeper than this stay inline. E.g. 2 = one file per H2 with subsections inline (textbook section-level chunks). Default: no cap.",
+        ),
+        split_target_kb: int | None = typer.Option(
+            None,
+            "--split-target-kb",
+            help="With --split-sections, pack sections to a size target instead of a fixed depth: a branch fitting N KB becomes one file, an oversized branch splits deeper, and an oversized heading-less section is partitioned into '(part i of k)' files. Adapts per branch — works across mixed book shapes. Mutually exclusive with --split-max-level.",
+        ),
         english_only: bool = typer.Option(
             False,
             "--english-only",
@@ -348,6 +358,8 @@ def register(
                 split_sections=split_sections if "split_sections" in explicit else None,
                 nested_split=nested_split if "nested_split" in explicit else None,
                 split_min_level=split_min_level if "split_min_level" in explicit else None,
+                split_max_level=split_max_level,
+                split_target_kb=split_target_kb,
                 english_only=english_only,
                 pdf_backend=cast(PdfBackendName, pdf_backend),
                 repair_tables=repair_tables,

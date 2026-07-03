@@ -135,6 +135,11 @@ class _Section:
     # (and rendered as plain-text in breadcrumbs). Preserves chapter
     # context for L2 sections under `min_level=2`.
     is_ancestor_only: bool = False
+    # set by the size-targeted packer (`_split_pack`) when an oversized
+    # flat section is partitioned: 1-based position and total part count.
+    # None on unpartitioned sections.
+    part_index: int | None = None
+    part_count: int | None = None
 
     @property
     def display_name(self) -> str:
@@ -312,7 +317,9 @@ def _detect_fallback_min_level(lines: list[str]) -> int | None:
     return candidate
 
 
-def _parse_sections(lines: list[str], *, min_level: int | None) -> list[_Section]:
+def _parse_sections(
+    lines: list[str], *, min_level: int | None, max_level: int | None = None
+) -> list[_Section]:
     sections: list[_Section] = []
     current: _Section | None = None
 
@@ -337,6 +344,12 @@ def _parse_sections(lines: list[str], *, min_level: int | None) -> list[_Section
 
         if parsed:
             hashes, number, title = parsed
+            if max_level is not None and len(hashes) > max_level:
+                # Deeper than the section-depth cap: keep the heading inline as
+                # content of the enclosing section rather than splitting it out.
+                if current is not None:
+                    current.content_lines.append(line)
+                continue
             section = _Section(
                 level=len(hashes),
                 number=number,

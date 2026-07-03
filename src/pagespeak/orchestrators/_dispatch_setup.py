@@ -60,6 +60,8 @@ def resolved_flags_from_ctx(ctx: PipelineContext) -> dict[str, Any]:
         "split_sections": ctx.split_sections,
         "nested_split": ctx.nested_split,
         "split_min_level": ctx.split_min_level,
+        "split_max_level": ctx.split_max_level,
+        "split_target_kb": ctx.split_target_kb,
         "min_body_chars": ctx.min_body_chars,
         "regenerate_toc": ctx.regenerate_toc,
         "decoration_threshold": ctx.decoration_threshold,
