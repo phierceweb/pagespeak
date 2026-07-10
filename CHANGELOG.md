@@ -2,6 +2,11 @@
 
 Notable changes to pagespeak, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## 0.3.1
+
+### Fixed
+- **Notation-dense equations with two-sided scripts and delimiters no longer flatten.** The presentation-MathML→LaTeX pre-pass (HTML ingest) now handles three more elements: `msubsup` (a base carrying **both** a subscript and a superscript — an integral's limits, an indexed-and-powered variable), `munderover` (an operator carrying **both** a lower and an upper limit — a summation/product), and `mfenced` (a delimiter wrapper). Previously all three fell through to concatenated atoms, so `x₁²` collapsed to `x12`, `∑` from `i=1` to `n` collapsed to `∑i=1n`, and `mfenced` silently dropped its brackets — shredding the body prose of calculus/physics-style documents. They now render `x_{1}^{2}`, `∑_{i=1}^{n}`, and `(x,y)`. Handling stays source-agnostic (standard W3C presentation MathML; unknown elements still fall back to their text, never dropped).
+
 ## 0.3.0
 
 ### Added

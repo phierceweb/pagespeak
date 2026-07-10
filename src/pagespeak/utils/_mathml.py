@@ -185,6 +185,12 @@ def _node_latex(node: PageElement) -> str:
         if len(kids) >= 2:
             op = "^" if name == "msup" else "_"
             return f"{_base(kids[0])}{op}{_braced(kids[1])}"
+    if name in ("msubsup", "munderover"):
+        # Both-sided scripts (x_i^2; ∑/∫ limits) → base_{lower}^{upper}.
+        # Sub/super reads better inline than the \underset stacking above.
+        kids = _element_children(node)
+        if len(kids) >= 3:
+            return f"{_base(kids[0])}_{_braced(kids[1])}^{_braced(kids[2])}"
     if name == "mfrac":
         kids = _element_children(node)
         if len(kids) >= 2:
@@ -195,6 +201,17 @@ def _node_latex(node: PageElement) -> str:
         kids = _element_children(node)
         if len(kids) >= 2:
             return rf"\sqrt[{_node_latex(kids[1])}]{{{_node_latex(kids[0])}}}"
+    if name == "mfenced":
+        # Delimiters/separators live in attributes — the fallback would drop them.
+        opener = _str_attr(node, "open", "(")
+        closer = _str_attr(node, "close", ")")
+        seps = _str_attr(node, "separators", ",")
+        kids = _element_children(node)
+        body = _node_latex(kids[0]) if kids else ""
+        for idx, kid in enumerate(kids[1:]):
+            sep = seps[min(idx, len(seps) - 1)] if seps else ""
+            body += _norm(sep) + _node_latex(kid)
+        return f"{_norm(opener)}{body}{_norm(closer)}"
     if name in ("mover", "munder"):
         kids = _element_children(node)
         if len(kids) >= 2:
@@ -230,6 +247,12 @@ def _children_latex(node: Tag) -> str:
 
 def _element_children(node: Tag) -> list[Tag]:
     return [c for c in node.children if isinstance(c, Tag)]
+
+
+def _str_attr(node: Tag, name: str, default: str) -> str:
+    """A tag attribute as a plain string (BeautifulSoup may type it as a list)."""
+    value = node.get(name, default)
+    return value if isinstance(value, str) else default
 
 
 def _in_script_position(node: PageElement) -> bool:

@@ -1108,9 +1108,9 @@ def test_gather_failure_falls_back_to_source_alt(fake_image: Path, tmp_path: Pat
 
 
 def test_gather_parse_failure_falls_back_and_skips_cache(tmp_path: Path) -> None:
-    """The biology-2e bug: a parse failure used to cache `(description
-    unavailable)` as a real caption. Now it falls back to the authored alt
-    and writes nothing to the cache, so a re-run re-attempts the real call.
+    """A parse failure must not cache `(description unavailable)` as a real
+    caption: it falls back to the authored alt and writes nothing to the
+    cache, so a re-run re-attempts the real call.
 
     Uses a real (phash-decodable) PNG so the cache would genuinely be written
     on the old success-path — the empty-cache assertion has teeth."""

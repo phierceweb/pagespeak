@@ -249,3 +249,53 @@ def test_hyperbolic_names_not_mapped_to_avoid_corruption() -> None:
     assert r"\sinh" not in convert_mathml_to_latex("<math><mi>sinh</mi></math>")
     # but genuine separate-atom "cos h" still maps + separates → \cos h
     assert r"\cos h" in convert_mathml_to_latex("<math><mrow><mi>cos</mi><mi>h</mi></mrow></math>")
+
+
+def test_msubsup_becomes_sub_then_superscript() -> None:
+    """<msubsup> — base with BOTH a subscript and a superscript — is the STEM
+    workhorse (indexed-and-powered variables, integral limits). It must become
+    `base_{sub}^{sup}`. Regression: `x_1^2` flattened to the jammed `x12`."""
+    html = "<math><msubsup><mi>x</mi><mn>1</mn><mn>2</mn></msubsup></math>"
+    assert "$x_{1}^{2}$" in convert_mathml_to_latex(html)
+
+
+def test_msubsup_star_superscript() -> None:
+    """A starred sample point x_i^* — msubsup with an operator superscript,
+    ubiquitous in Riemann-sum notation. Regression: the jammed `xi*`."""
+    html = "<math><msubsup><mi>x</mi><mi>i</mi><mo>*</mo></msubsup></math>"
+    assert "$x_{i}^{*}$" in convert_mathml_to_latex(html)
+
+
+def test_munderover_gives_sub_and_superscript_limits() -> None:
+    """<munderover> on a big operator (∑ ∫ ∏) carries lower + upper limits;
+    the idiomatic, LLM-legible form is sub/superscript: `base_{under}^{over}`.
+    Regression: `∑_{i=1}^{n}` flattened to `∑i=1n`."""
+    html = (
+        "<math><munderover><mo>∑</mo>"
+        "<mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow><mi>n</mi></munderover></math>"
+    )
+    assert "$∑_{i=1}^{n}$" in convert_mathml_to_latex(html)
+
+
+def test_riemann_sum_reads_end_to_end() -> None:
+    """The whole STEM failure in one equation: munderover + msubsup together
+    must not jam. `∑_{i=1}^{n} f(x_i^*)` — structure fully preserved."""
+    html = (
+        '<math display="block"><mrow>'
+        "<munderover><mo>∑</mo><mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow><mi>n</mi></munderover>"
+        "<mi>f</mi><mo>(</mo><msubsup><mi>x</mi><mi>i</mi><mo>*</mo></msubsup><mo>)</mo>"
+        "</mrow></math>"
+    )
+    assert "$$∑_{i=1}^{n}f(x_{i}^{*})$$" in convert_mathml_to_latex(html)
+
+
+def test_mfenced_wraps_children_in_its_delimiters() -> None:
+    """<mfenced> carries its delimiters in attributes (default parens + comma
+    separator); falling through to children silently drops them. Explicit
+    open/close/separators are honored."""
+    default = "<math><mfenced><mi>x</mi><mi>y</mi></mfenced></math>"
+    assert "$(x,y)$" in convert_mathml_to_latex(default)
+    brackets = (
+        '<math><mfenced open="[" close="]" separators=""><mi>a</mi><mi>b</mi></mfenced></math>'
+    )
+    assert "$[ab]$" in convert_mathml_to_latex(brackets)
