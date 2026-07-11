@@ -19,5 +19,5 @@ jobs:
         run: ruff format --check src tests
       - name: mypy strict
         run: mypy src
-      - name: file-size gate
-        run: python -m pf_core.guards --root src/pagespeak
+      - name: structural gate
+        run: python -m pf_core.guards

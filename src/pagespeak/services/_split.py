@@ -72,6 +72,8 @@ def split_into_sections(
     provenance: dict[str, object] | None = None,
     doc_title: str | None = None,
     english_only: bool = False,
+    source_id: str | None = None,
+    source_sha256: str | None = None,
 ) -> list[Path]:
     """Split cleaned markdown into per-section files under `output_dir`.
 
@@ -131,6 +133,11 @@ def split_into_sections(
             top-level sections, which otherwise get no breadcrumb. The in-chunk
             cross-contamination fix for a multi-manual RAG DB. None (default)
             keeps the legacy ancestor-only breadcrumb.
+        source_id: Stable slug of the source work (see
+            ``_provenance.source_id_from_name``); emitted in every section's
+            frontmatter when set — the cross-conversion join key.
+        source_sha256: SHA-256 of the exact source bytes the conversion ran
+            on; emitted alongside ``source_id`` when set.
 
     Returns:
         The list of written section file paths (excluding `INDEX.md`).
@@ -270,6 +277,8 @@ def split_into_sections(
             kept_ids=kept_ids,
             provenance=provenance,
             doc_title=doc_title,
+            source_id=source_id,
+            source_sha256=source_sha256,
         )
         for i, section in enumerate(sections, start=1)
     ]

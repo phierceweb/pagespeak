@@ -113,13 +113,14 @@ def _process_one_image(
     cache_dir: Path | None,
     cache_only: bool = False,
     original_alt: str = "",
-) -> tuple[Diagram, bool, bool, bool]:
+) -> tuple[Diagram | None, bool, bool, bool]:
     """Phash → cache lookup → backend call (on miss) → cache write.
 
     Pure per-image work — no shared state, safe to run concurrently across
     a thread pool. Returns `(diagram, was_cache_hit, was_backend_failure,
     was_skipped)` so the orchestrator can keep hits/misses/failures/skipped
-    counters without re-doing work.
+    counters without re-doing work. `diagram` is None for a cache-only skip:
+    no handoff entry, so inject leaves the ref's authored alt untouched.
     """
     # compute phash up front so it's available both for the
     # vision-cache key AND the per-call tracking write. Cheap relative
@@ -150,20 +151,10 @@ def _process_one_image(
             cache_path = None
 
     if cache_only:
-        # Enforced zero-call mode: a miss is skipped, never sent to the model.
-        return (
-            Diagram(
-                image_path=image_path,
-                caption=(
-                    f"Image at {image_path.name} (no cached description; "
-                    "skipped under --vision-cache-only)."
-                ),
-                mermaid=None,
-            ),
-            False,  # not a hit
-            False,  # not a failure
-            True,  # skipped
-        )
+        # Enforced zero-call mode: a miss is skipped, never sent to the model —
+        # and produces NO diagram, so the figure keeps its authored alt verbatim
+        # (a skip placeholder must never ship as content).
+        return None, False, False, True
 
     try:
         diagram = backend.analyze(image_path, phash=cache_phash, original_alt=original_alt)
@@ -340,9 +331,10 @@ def gather_diagrams(
                 hit = False
                 failed = True
                 skipped = False
-            by_basename[diagram.image_path.name] = diagram
+            if diagram is not None:
+                by_basename[diagram.image_path.name] = diagram
             if skipped:
-                skipped_basenames.append(diagram.image_path.name)
+                skipped_basenames.append(image_path.name)
             if hit:
                 cache_hits += 1
             else:

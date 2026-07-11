@@ -17,10 +17,16 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
+from typing import Any
+
+from ._run_record import RUN_RECORD_FILENAME, file_sha256
 
 # Filename-stem cleaning: collapse `_`/`-` separators and whitespace runs.
 _SEPARATOR_RE = re.compile(r"[_\-]+")
 _WHITESPACE_RE = re.compile(r"\s+")
+# source_id slugging: anything non-alphanumeric collapses to a single `-`.
+_SOURCE_ID_RE = re.compile(r"[^a-z0-9]+")
 
 
 def clean_source_label(stem: str) -> str:
@@ -42,6 +48,98 @@ def clean_source_label(stem: str) -> str:
     """
     cleaned = _WHITESPACE_RE.sub(" ", _SEPARATOR_RE.sub(" ", stem)).strip()
     return cleaned or stem.strip()
+
+
+def source_id_from_name(name: str) -> str:
+    """Stable machine slug of a source filename: stem lowercased, non-alnum
+    runs collapsed to `-`. The cross-conversion join key for one source work
+    (stays constant however the out-dir is named)."""
+    stem = Path(name).stem if name else ""
+    return _SOURCE_ID_RE.sub("-", stem.lower()).strip("-")
+
+
+def _read_run_record(out: Path | None) -> dict[str, Any] | None:
+    """The out-dir's run record as a dict, or None when absent/unreadable."""
+    if out is None:
+        return None
+    record_path = out / RUN_RECORD_FILENAME
+    if not record_path.is_file():
+        return None
+    try:
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return record if isinstance(record, dict) else None
+
+
+def _identity_from_record(record: dict[str, Any] | None) -> dict[str, str] | None:
+    """The original-source identity a run record knows: the persisted
+    `source_identity` block when present, else rebuilt from a non-checkpoint
+    `input` entry. None when the record only knows a `.raw.md` checkpoint."""
+    if record is None:
+        return None
+    block = record.get("source_identity")
+    if isinstance(block, dict):
+        result: dict[str, str] = {
+            key: value
+            for key, value in block.items()
+            if key in ("file", "source_id", "sha256") and isinstance(value, str)
+        }
+        if "source_id" in result or "sha256" in result:
+            return result
+    input_name = record.get("input")
+    if not isinstance(input_name, str) or input_name.endswith(".raw.md"):
+        return None
+    rebuilt: dict[str, str] = {"file": input_name}
+    slug = source_id_from_name(input_name)
+    if slug:
+        rebuilt["source_id"] = slug
+    recorded_sha = record.get("input_sha256")
+    if isinstance(recorded_sha, str):
+        rebuilt["sha256"] = recorded_sha
+    return rebuilt
+
+
+def resolve_source_identity(
+    src: Path, out: Path | None, *, dir_mode: bool
+) -> tuple[str | None, str | None]:
+    """`(source_id, source_sha256)` of the ORIGINAL source document.
+
+    File mode: derived from `src` directly. Dir mode: the run record's
+    persisted `source_identity` block (survives re-runs), falling back to a
+    non-checkpoint `input` entry; unrecoverable → (None, None) rather than
+    mislabeling the book.
+    """
+    if not dir_mode:
+        try:
+            sha: str | None = file_sha256(src)
+        except OSError:
+            sha = None
+        return source_id_from_name(src.name) or None, sha
+    identity = _identity_from_record(_read_run_record(out))
+    if identity is None:
+        return None, None
+    return identity.get("source_id"), identity.get("sha256")
+
+
+def persistable_source_identity(
+    src: Path, out: Path | None, *, dir_mode: bool
+) -> dict[str, str] | None:
+    """The `source_identity` block for this run's record. File mode derives it
+    from the input; dir mode carries the prior record's knowledge forward —
+    so the original source identity survives any number of dir-mode re-runs
+    (each of which records the raw checkpoint as its literal `input`)."""
+    if dir_mode:
+        return _identity_from_record(_read_run_record(out))
+    source_id, sha = resolve_source_identity(src, out, dir_mode=False)
+    if source_id is None and sha is None:
+        return None
+    block: dict[str, str] = {"file": src.name}
+    if source_id is not None:
+        block["source_id"] = source_id
+    if sha is not None:
+        block["sha256"] = sha
+    return block
 
 
 def build_frontmatter(fields: dict[str, object]) -> str:

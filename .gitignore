@@ -57,6 +57,7 @@ conversions/delivery/*
 # consumer library, not its own build harness.
 .ai/
 docs/superpowers
+docs/pf-core
 CLAUDE.md
 /bin/validate
 

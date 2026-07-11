@@ -50,6 +50,8 @@ def _section_frontmatter(
     section_id: str,
     parent_id: str | None,
     order: int,
+    source_id: str | None = None,
+    source_sha256: str | None = None,
 ) -> str:
     """Per-section frontmatter: always-on structural identity plus opt-in
     source provenance.
@@ -58,14 +60,18 @@ def _section_frontmatter(
     (the section's own relative path — the stable join key), `parent_id`
     (nearest written ancestor), `section_title`, `section_path` (ancestor
     breadcrumb), `section_number`, `heading_level`, `depth`, `order`
-    (1-based document order). Source fields (`source_type` / `source_label`
-    / `source_file`) appear only when the caller supplies `provenance`;
-    a provenance-supplied `doc_title` wins over the `doc_title` param.
+    (1-based document order); plus `source_id` / `source_sha256` (which
+    source work, which exact bytes) whenever the caller can resolve them.
+    Source tags (`source_type` / `source_label` / `source_file`) appear only
+    when the caller supplies `provenance`; a provenance-supplied `doc_title`
+    wins over the `doc_title` param.
     """
     fields: dict[str, object] = dict(provenance) if provenance else {}
     if fields.get("doc_title") is None:
         fields["doc_title"] = doc_title
     fields["doc_id"] = doc_id
+    fields["source_id"] = source_id
+    fields["source_sha256"] = source_sha256
     fields["section_id"] = section_id
     fields["parent_id"] = parent_id
     fields["section_title"] = _strip_embedded_links(section.title)

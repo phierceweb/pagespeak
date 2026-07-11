@@ -86,3 +86,29 @@ def test_frontmatter_provenance_doc_title_wins() -> None:
     )
     assert 'doc_title: "From Prov"' in block
     assert 'source_label: "Lbl"' in block
+
+
+def test_frontmatter_source_identity_fields() -> None:
+    root = _make_section("Root", number="1")
+    block = _section_frontmatter(
+        root,
+        None,
+        doc_id="book",
+        doc_title=None,
+        section_id="1. Root.md",
+        parent_id=None,
+        order=1,
+        source_id="widget-guide-2e",
+        source_sha256="c" * 64,
+    )
+    assert 'source_id: "widget-guide-2e"' in block
+    assert f'source_sha256: "{"c" * 64}"' in block
+
+
+def test_frontmatter_source_identity_omitted_when_none() -> None:
+    root = _make_section("Root", number="1")
+    block = _section_frontmatter(
+        root, None, doc_id="book", doc_title=None, section_id="1. Root.md", parent_id=None, order=1
+    )
+    assert "source_id" not in block
+    assert "source_sha256" not in block

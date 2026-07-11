@@ -27,11 +27,18 @@ def write_sections(c: PipelineContext, result: IngestResult) -> None:
     doc is written from it downstream). A no-op frontmatter (no source flags,
     non-quiz) leaves the markdown byte-for-byte unchanged.
     """
-    source_file = f"{c.effective_stem}.md" if c.dir_mode else c.src.name
+    from ..services._provenance import persistable_source_identity
+
+    # Always-on source join keys (which source work + which exact bytes);
+    # dir-mode recovers them from the run record, unrecoverable → omitted.
+    identity = persistable_source_identity(c.src, c.out, dir_mode=c.dir_mode) or {}
+    # `source_file` prefers the TRUE original name the identity knows —
+    # a dir-mode re-tag must not degrade it to the `<stem>.md` fallback.
+    source_file = identity.get("file") or (f"{c.effective_stem}.md" if c.dir_mode else c.src.name)
     if c.source_type == "quiz":
         _write_quiz(c, result, source_file)
     else:
-        _write_generic(c, result, source_file)
+        _write_generic(c, result, source_file, identity)
 
 
 def _write_quiz(c: PipelineContext, result: IngestResult, source_file: str) -> None:
@@ -63,14 +70,17 @@ def _doc_title(markdown: str) -> str | None:
     return None
 
 
-def _write_generic(c: PipelineContext, result: IngestResult, source_file: str) -> None:
+def _write_generic(
+    c: PipelineContext, result: IngestResult, source_file: str, identity: dict[str, str]
+) -> None:
     """Generic (non-quiz) docs: sections always carry structural identity
     frontmatter (doc_id = the out-dir name + section/parent join keys +
-    locators). Source tags (source_type / source_label / source_file) are
-    opt-in: `c.provenance` (preset-controlled) OR a source flag; when on,
-    the master doc gets the matching frontmatter too (off → master
-    unchanged). With no explicit `source_label`, it's auto-derived from the
-    cleaned filename stem; `source_type` is omitted when None."""
+    locators + the `identity` source keys). Source tags (source_type /
+    source_label / source_file) are opt-in: `c.provenance`
+    (preset-controlled) OR a source flag; when on, the master doc gets the
+    matching frontmatter too (off → master unchanged). With no explicit
+    `source_label`, it's auto-derived from the cleaned filename stem;
+    `source_type` is omitted when None."""
     from ..services._provenance import build_frontmatter, clean_source_label
 
     enabled = c.provenance or c.source_type is not None or c.source_label is not None
@@ -113,6 +123,8 @@ def _write_generic(c: PipelineContext, result: IngestResult, source_file: str) -
             # it roots at the wrong thing.)
             doc_title=c.source_label or clean_source_label(c.effective_stem).title(),
             english_only=c.english_only,
+            source_id=identity.get("source_id"),
+            source_sha256=identity.get("sha256"),
         )
         c.section_count = len(written)
 

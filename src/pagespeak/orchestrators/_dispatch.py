@@ -447,6 +447,7 @@ def to_markdown(
     # unwritable output dir.
     if out is not None:
         from .. import __version__
+        from ..services._provenance import persistable_source_identity
         from ..services._run_record import summarize_llm_calls, write_run_record
 
         finished_at = _now_utc_iso()
@@ -456,6 +457,11 @@ def to_markdown(
         record_input = src
         if _qti_mode and src.is_dir():
             record_input = src / "imsmanifest.xml"
+        # Resolve BEFORE writing: dir-mode reads the prior record to carry the
+        # original source identity forward (this run's `input` is a checkpoint).
+        source_identity = (
+            None if _qti_mode else persistable_source_identity(src, out, dir_mode=_dir_mode)
+        )
         try:
             write_run_record(
                 out,
@@ -468,6 +474,7 @@ def to_markdown(
                 section_count=section_count,
                 image_count=len(result.images),
                 llm_calls=summarize_llm_calls(llm_call_records),
+                source_identity=source_identity,
             )
         except OSError as e:
             logger.warning("run_record_write_failed path=%s error=%s", out, e)

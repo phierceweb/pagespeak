@@ -1288,9 +1288,32 @@ def test_gather_cache_only_miss_skips_and_warns(
             cache_only=True,
         )
     assert backend.calls == 0
-    assert out[img.name].mermaid is None
+    # A miss yields NO handoff entry — inject must leave the original ref
+    # (its authored alt) untouched, never ship a skip placeholder as content.
+    assert img.name not in out
     assert "vision_cache_only_skipped" in caplog.text
     assert img.name in caplog.text
+
+
+def test_gather_cache_only_miss_preserves_authored_alt(tmp_path: Path) -> None:
+    """End-to-end gather+inject under cache-only: the uncached figure keeps its
+    AUTHORED alt verbatim. Regression: skips used to inject
+    `(no cached description; skipped under --vision-cache-only)` placeholders,
+    destroying the authored alt corpus-wide."""
+    from pagespeak.services._diagrams import gather_diagrams, inject_diagrams
+
+    img = _phashable_image(tmp_path / "img.png")
+    markdown = "Intro.\n\n![A labeled diagram of the water cycle.](images/img.png)\n"
+    out = gather_diagrams(
+        [img],
+        backend=_RecordingBackend(),
+        backend_name="claude_code",
+        cache_dir=tmp_path / ".vision-cache",  # empty: miss
+        cache_only=True,
+    )
+    result = inject_diagrams(markdown, out)
+    assert "![A labeled diagram of the water cycle.](images/img.png)" in result
+    assert "no cached description" not in result
 
 
 def test_gather_then_inject_matches_enrich_output(tmp_path: Path) -> None:

@@ -214,3 +214,53 @@ def test_run_record_omits_llm_calls_when_not_provided(tmp_path: Path) -> None:
     )
     data = json.loads(written.read_text(encoding="utf-8"))
     assert "llm_calls" not in data
+
+
+def test_run_record_writes_source_identity_when_provided(tmp_path: Path) -> None:
+    """`source_identity=` lands as a top-level key — the durable original-source
+    block that dir-mode re-runs carry forward."""
+    import json
+
+    src = tmp_path / "doc.pdf"
+    src.write_bytes(b"fake pdf bytes")
+    out = tmp_path / "out"
+    out.mkdir()
+
+    identity = {"file": "Widget Guide 2e.html", "source_id": "widget-guide-2e", "sha256": "a" * 64}
+    written = write_run_record(
+        out,
+        version="0.1.0",
+        preset=None,
+        resolved_flags={},
+        input_path=src,
+        started_at="2026-05-12T00:00:00Z",
+        finished_at="2026-05-12T00:00:30Z",
+        section_count=None,
+        image_count=0,
+        source_identity=identity,
+    )
+    data = json.loads(written.read_text(encoding="utf-8"))
+    assert data["source_identity"] == identity
+
+
+def test_run_record_omits_source_identity_when_not_provided(tmp_path: Path) -> None:
+    import json
+
+    src = tmp_path / "doc.pdf"
+    src.write_bytes(b"fake pdf bytes")
+    out = tmp_path / "out"
+    out.mkdir()
+
+    written = write_run_record(
+        out,
+        version="0.1.0",
+        preset=None,
+        resolved_flags={},
+        input_path=src,
+        started_at="2026-05-12T00:00:00Z",
+        finished_at="2026-05-12T00:00:30Z",
+        section_count=None,
+        image_count=0,
+    )
+    data = json.loads(written.read_text(encoding="utf-8"))
+    assert "source_identity" not in data

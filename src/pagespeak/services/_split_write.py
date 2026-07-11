@@ -359,6 +359,8 @@ def _write_section_file(
     kept_ids: set[int] | None = None,
     provenance: dict[str, object] | None = None,
     doc_title: str | None = None,
+    source_id: str | None = None,
+    source_sha256: str | None = None,
 ) -> Path:
     path = _section_output_path(section, output_dir, nested=nested)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -414,6 +416,8 @@ def _write_section_file(
         section_id=path.relative_to(output_dir).as_posix(),
         parent_id=_written_parent_id(section, output_dir, nested=nested, kept_ids=kept_ids),
         order=order,
+        source_id=source_id,
+        source_sha256=source_sha256,
     )
     path.write_text(front + "\n".join(lines).rstrip() + "\n", encoding="utf-8")
     return path

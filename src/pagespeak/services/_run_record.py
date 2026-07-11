@@ -112,17 +112,22 @@ def write_run_record(
     section_count: int | None,
     image_count: int,
     llm_calls: dict[str, Any] | None = None,
+    source_identity: dict[str, Any] | None = None,
 ) -> Path:
     """Write `<output_dir>/.pagespeak-run.json`. Returns the written path.
 
     `llm_calls` is the aggregated per-task LLM call summary
-    produced by :func:`summarize_llm_calls`. Pass ``None`` (default) to
-    omit the field entirely — useful for tests / library use that
-    doesn't track LLM calls.
+    produced by :func:`summarize_llm_calls`. `source_identity` is the durable
+    original-source block from `_provenance.persistable_source_identity`
+    (dir-mode re-runs carry it forward). Pass ``None`` (default) to omit
+    either field entirely.
     """
-    extra: dict[str, Any] | None = None
+    fields: dict[str, Any] = {}
     if llm_calls is not None:
-        extra = {"llm_calls": llm_calls}
+        fields["llm_calls"] = llm_calls
+    if source_identity is not None:
+        fields["source_identity"] = source_identity
+    extra: dict[str, Any] | None = fields or None
     written: Path = _write_run_record(
         output_dir,
         version=version,

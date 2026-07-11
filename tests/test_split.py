@@ -1436,6 +1436,13 @@ def test_parse_numbered_heading_rejects_measurement_shapes() -> None:
     assert _parse_numbered_heading("#### 16 mm End Use") is None
     assert _parse_numbered_heading("## 6.3 mm stereo jack plug, balanced") is None
     assert _parse_numbered_heading("### 50 ohm impedance") is None
+    # Uppercase-initial unit symbols (Hz, V, GHz, W, dBu) — the lowercase-letter
+    # heuristic misses these; a word-boundaried unit whitelist catches them.
+    assert _parse_numbered_heading("### 6.3 Hz notch") is None
+    assert _parse_numbered_heading("### 48 V phantom supply") is None
+    assert _parse_numbered_heading("#### 2.4 GHz wireless band") is None
+    assert _parse_numbered_heading("### 6.3 W power dissipation") is None
+    assert _parse_numbered_heading("### 20 kHz upper limit") is None
 
 
 def test_parse_numbered_heading_keeps_legit_numbered_sections() -> None:
@@ -1460,6 +1467,13 @@ def test_parse_numbered_heading_keeps_legit_numbered_sections() -> None:
     assert got is not None and got[1] == "35"
     got = _parse_numbered_heading("## 1.1 Background")
     assert got is not None and got[1] == "1.1"
+    # A Title-Case word that merely starts with a unit letter (Vacuum ~ V,
+    # Wireless ~ W) must NOT be read as a measurement — the whitelist is
+    # word-boundaried, so only the standalone symbol matches.
+    got = _parse_numbered_heading("### 2.6 Vacuum Systems")
+    assert got is not None and got[1] == "2.6"
+    got = _parse_numbered_heading("### 3.2 Wireless Setup")
+    assert got is not None and got[1] == "3.2"
 
 
 def test_split_numbered_doc_with_measurement_subheading(tmp_path: Path) -> None:
@@ -1669,3 +1683,23 @@ def test_provenance_omits_section_path_for_top_level(tmp_path: Path) -> None:
     assert 'section_title: "Overview"' in text
     # "Manual" (H1) is the only ancestor → it IS the path
     assert 'section_path: ["Manual"]' in text
+
+
+def test_split_sections_carry_source_identity(tmp_path: Path) -> None:
+    """`source_id` / `source_sha256` land in every section's frontmatter —
+    the always-on source join keys (which book, which exact source bytes)."""
+    md = "# Manual\n\n## Overview\n\nBody content that is long enough to keep.\n"
+    written = split_into_sections(
+        md, tmp_path, min_level=2, source_id="widget-guide-2e", source_sha256="d" * 64
+    )
+    text = next(p for p in written if p.name == "Overview.md").read_text()
+    assert 'source_id: "widget-guide-2e"' in text
+    assert f'source_sha256: "{"d" * 64}"' in text
+
+
+def test_split_sections_omit_source_identity_by_default(tmp_path: Path) -> None:
+    md = "# Manual\n\n## Overview\n\nBody content that is long enough to keep.\n"
+    written = split_into_sections(md, tmp_path, min_level=2)
+    text = next(p for p in written if p.name == "Overview.md").read_text()
+    assert "source_id" not in text
+    assert "source_sha256" not in text

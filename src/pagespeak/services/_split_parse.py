@@ -19,6 +19,36 @@ NUMBERED_HEADING_RE = re.compile(r"^(#{1,6})\s+(\d+(?:\.\d+)*)\.?\s+(.+?)\s*$")
 
 MEASUREMENT_HEADING_RE = re.compile(r"^#{1,6}\s+\d+(?:\.\d+)?\s+[a-z]")
 
+# Uppercase-initial unit symbols the lowercase-letter heuristic above can't see
+# (`6.3 Hz`, `48 V`, `2.4 GHz`). Matched only as a standalone token (a trailing
+# `[^A-Za-z]` boundary) so a Title-Case word starting with a unit letter
+# (`Vacuum`, `Wireless`) is NOT mistaken for a measurement. Bare A/I/N/… are
+# excluded on purpose — they collide with articles/section words.
+_UPPER_UNITS = (
+    "THz",
+    "GHz",
+    "MHz",
+    "Hz",
+    "Vpp",
+    "Vrms",
+    "VA",
+    "V",
+    "Wh",
+    "Wb",
+    "W",
+    "MPa",
+    "Pa",
+    "Nm",
+    "MΩ",
+    "Ω",
+    "Sv",
+    "Gy",
+    "Bq",
+)
+MEASUREMENT_UNIT_HEADING_RE = re.compile(
+    r"^#{1,6}\s+[-+]?\d+(?:\.\d+)?\s+(?:" + "|".join(_UPPER_UNITS) + r")(?![A-Za-z])"
+)
+
 ANY_HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 
 NUMBER_PREFIX_RE = re.compile(r"^(\d+(?:\.\d+)*)\.?\s+(.+?)$")
@@ -66,10 +96,11 @@ def _parse_numbered_heading(line: str) -> tuple[str, str, str] | None:
         hashes, number, title = m.groups()
         if len(hashes) == 2 and "." not in number:
             return None
-        # reject `<number> <lowercase unit>` measurement
-        # shapes (`35 mm`, `6.3 mm`, `50 ohm`) — the number is a
-        # quantity, not a section prefix.
-        if MEASUREMENT_HEADING_RE.match(line):
+        # reject `<number> <unit>` measurement shapes (`35 mm`, `6.3 mm`,
+        # `50 ohm`, `6.3 Hz`, `48 V`) — the number is a quantity, not a
+        # section prefix. Two guards: lowercase-initial units, and a curated
+        # word-boundaried whitelist for uppercase-initial ones.
+        if MEASUREMENT_HEADING_RE.match(line) or MEASUREMENT_UNIT_HEADING_RE.match(line):
             return None
         return hashes, number, title
     # Fall back to Chapter-N pattern detection.

@@ -2,6 +2,16 @@
 
 Notable changes to pagespeak, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## 0.4.0
+
+### Fixed
+- **A `--vision-cache-only` skip no longer replaces the figure's authored alt with a placeholder.** An uncached image used to get `(no cached description; skipped under --vision-cache-only)` injected as its alt text — shipping a placeholder as content and destroying the source's own description on every skipped figure. A skip now produces no injection at all: the figure keeps its authored alt verbatim (the skip list is still logged via `vision_cache_only_skipped`). Same principle as the v0.2.1 failed-call fix: placeholders never ship as content.
+- **The splitter's measurement-heading guard now also rejects uppercase-initial units.** A heading like `### 6.3 Hz notch`, `### 48 V phantom supply`, or `#### 2.4 GHz band` was mis-parsed as section number 6.3 / 48 / 2.4 (the existing guard only caught lowercase-initial units like `mm`/`ohm`), which spawned bogus numeric folders and could mis-nest unrelated sections under a false parent. A curated, word-boundaried unit whitelist (`Hz`/`V`/`GHz`/`W`/`Pa`/`Ω`/…) now catches these while leaving real Title-Case sections (`### 2.6 Vacuum Systems`, `### 3.2 Wireless Setup`) untouched.
+- **A directory-mode re-run no longer degrades `source_file` to the `<stem>.md` fallback.** When the run record knows the original source (its persisted identity, or a file-mode record), the opt-in `source_file` provenance field and the `INDEX.md` source name keep the true filename across re-tags instead of being overwritten with the master-doc name.
+
+### Added
+- **Every split section now carries `source_id` + `source_sha256` — always-on source identity.** `source_id` is a stable slug of the source filename (constant however the out-dir is named — the cross-conversion join key for one source work); `source_sha256` is the SHA-256 of the exact source bytes the conversion ran on. Together they complete the identity block: a retrieved chunk can name its source work and version even when within-book hierarchy degrades, and a multi-source consumer can scope by work instead of by out-dir name. Resolved from the input file directly; in directory mode recovered from the out-dir's run record — which now persists a durable `source_identity` block that every dir-mode re-run carries forward, so identity survives any number of re-runs (and a pre-existing record without the block upgrades on its next run). Omitted, never guessed, when genuinely unrecoverable. Library note: `split_into_sections()` gained optional `source_id=` / `source_sha256=` passthrough kwargs.
+
 ## 0.3.1
 
 ### Fixed

@@ -6,9 +6,9 @@
 repos:
   - repo: local
     hooks:
-      - id: pagespeak-file-size
-        name: pagespeak file-size gate
-        entry: .venv/bin/python -m pf_core.guards --root src/pagespeak
+      - id: pagespeak-guards
+        name: pagespeak structural gate
+        entry: .venv/bin/python -m pf_core.guards
         language: system
         pass_filenames: false
         always_run: true

@@ -1424,3 +1424,34 @@ def test_docx_backend_routes_to_structured(make_docx, tmp_path) -> None:
         )
     conv.assert_called_once()
     assert conv.call_args.args[0] == "python-docx"
+
+
+def test_dir_mode_split_keeps_original_source_file_from_identity(tmp_path: Path) -> None:
+    """A dir-mode re-run whose run record knows the original source must stamp
+    the TRUE `source_file` (and the identity keys), not the `<stem>.md`
+    fallback that used to overwrite it on every re-tag."""
+    import json
+
+    out = tmp_path / "out"
+    out.mkdir()
+    md = "# Widget Guide\n\n## Overview\n\nBody content that is long enough to keep.\n"
+    (out / "doc.raw.md").write_text(md, encoding="utf-8")
+    (out / "doc.visioned.md").write_text(md, encoding="utf-8")
+    (out / ".pagespeak-run.json").write_text(
+        json.dumps({"input": "Widget Guide 2e.html", "input_sha256": "a" * 64}),
+        encoding="utf-8",
+    )
+    to_markdown(
+        out,
+        output_dir=out,
+        start="split",
+        stop_after="split",
+        diagrams=False,
+        split_sections=True,
+        split_min_level=2,
+        source_type="textbook",
+    )
+    text = (out / "sections" / "Overview.md").read_text(encoding="utf-8")
+    assert 'source_file: "Widget Guide 2e.html"' in text
+    assert 'source_id: "widget-guide-2e"' in text
+    assert f'source_sha256: "{"a" * 64}"' in text
