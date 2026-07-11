@@ -46,11 +46,7 @@ result = to_markdown(
 # result.source_format → "pdf"
 ```
 
-The result includes the final markdown string (with Mermaid blocks already embedded). Consumers typically write it themselves:
-
-```python
-Path("./out/manual.md").write_text(result.markdown, encoding="utf-8")
-```
+The result includes the final markdown string (with Mermaid blocks already embedded). With `output_dir` set, `to_markdown()` also writes it to `<output_dir>/<stem>.md` — the same master the CLI reports — so a library consumer gets the finished document on disk without writing it themselves. (An early `stop_after` skips the write; the phase checkpoint is the deliverable there.)
 
 ## CLI
 
@@ -116,7 +112,7 @@ Two input modes:
 | `--from <phase>` | none | Begin at this phase using the existing upstream checkpoint as input (does **not** bust caches — that's `--rerun-from`). Phases: `ingest \| cleanup \| normalize \| repair \| structure \| vision \| split`. Errors if the input checkpoint is absent. |
 | `--stop-after <phase>` | none | Halt after this phase — its checkpoint is written, nothing downstream runs. Same phase names as `--from`. Run one phase at a time to validate the pipeline methodically. `--from X --stop-after X` runs exactly phase X. `--from split` splits the post-vision `visioned.md` checkpoint. |
 
-The CLI writes `<output_dir>/<stem>.md` plus `<output_dir>/images/`. With `--split-sections`, also `<output_dir>/sections/`. With `--normalize-headings`, also `<output_dir>/<stem>.pre-normalize.md` (post-cleanup pre-LLM snapshot for diff/revert).
+Conversion writes `<output_dir>/<stem>.md` (from the library layer, so `to_markdown()` consumers get it too) plus `<output_dir>/images/`. With `--split-sections`, also `<output_dir>/sections/`. With `--normalize-headings`, also `<output_dir>/<stem>.pre-normalize.md` (post-cleanup pre-LLM snapshot for diff/revert).
 
 Side files for re-test ergonomics: `<stem>.raw.md` (backend output checkpoint), `<stem>.cleaned.md` (post-cleanup snapshot for resume), `<stem>.normalized.md` (post-normalize snapshot), `.vision-cache/<phash>.json` (per-image vision cache), `.heading-normalize-cache/<hash>.json` (LLM-mode normalize cache), `.pagespeak-run.json` (resolved config + counts). See [docs/caching.md](caching.md).
 
@@ -157,6 +153,7 @@ bin/lint                             # ergonomic shortcut for ruff + mypy via `b
 | `PAGESPEAK_VISION_CLAUDE_CODE_TIMEOUT_S` | `120` | Subprocess timeout (seconds) for `claude --print` per vision image. Bump for large diagrams or slow networks. |
 | `PAGESPEAK_CHUNK_PAGES` | `50` | Pages per chunk in `--workers > 1` parallel ingest. Smaller = finer-grained resume; larger = fewer Marker model-loads but more per-worker RAM. |
 | `PAGESPEAK_DOWNLOAD_REMOTE_IMAGES` | `1` | HTML ingest: download remote `<img>` URLs into `images/<name>` + retarget refs so the vision pass can process them. `0` = leave as external URLs. Already-downloaded files are reused. |
+| `PAGESPEAK_COPY_LOCAL_IMAGES` | `1` | HTML/markdown ingest: copy local sibling-image refs (a saved-webpage bundle's `images/` dir next to the source) into `<out>/images/` so the vision pass can see them. Refs outside the source's dir or pointing at missing files are left untouched. `0` = leave refs pointing at the source tree. |
 | `PAGESPEAK_REMOTE_IMAGE_TIMEOUT_S` | `30` | Per-request HTTP timeout (s) when downloading a remote HTML image. Bump on slow networks / large figures. |
 | `PAGESPEAK_REMOTE_IMAGE_MAX_BYTES` | `26214400` | Max bytes for one downloaded remote image (25 MiB). A larger image is skipped (ref kept remote, nothing written). Raise for legitimately large figures. |
 | `PAGESPEAK_DEFAULT_DEVICE` | (unset → backend autodetects) | Default torch device for PDF backends (`cpu` / `mps` / `cuda`). Set to `cpu` on Apple Silicon to avoid the surya/MPS crash. Explicit `--device` still wins. |

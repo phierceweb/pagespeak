@@ -158,15 +158,8 @@ def _get_client_for_backend(backend: Backend) -> Any:
         from pf_core.clients import claude_code
         from pf_core.utils.env import resolve_int
 
-        # Operational tunable (env-configurable):
-        # `PAGESPEAK_CLAUDE_CODE_TIMEOUT_S` (default 1800) sets the
-        # subprocess timeout for every `claude --print` call from
-        # pagespeak (vision, heading_normalize, heading_normalize_full).
-        # pf-core's `get_client()` caches a per-model singleton; first
-        # call wins, so passing the resolved timeout here propagates to
-        # all downstream `chat()` invocations on the cached client.
-        # Without this, pf-core's internal `DEFAULT_TIMEOUT_SECONDS = 600`
-        # is silently used and bumps via the env var have no effect.
+        # Pass the timeout explicitly: pf-core's per-model singleton caches the
+        # first call's args, and its own default is 600s — env bumps would be lost.
         timeout_s: int = resolve_int(None, "PAGESPEAK_CLAUDE_CODE_TIMEOUT_S", default=1800)
         return claude_code.get_client(timeout=timeout_s)
     if backend == "openrouter":

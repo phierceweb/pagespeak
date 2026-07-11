@@ -222,13 +222,8 @@ def _claude_code_invoke(prompt: str, *, model: str | None = None) -> str:
     from pf_core.clients.claude_code import ClaudeCodeClient
     from pf_core.exceptions import AppError
 
-    # `retry=1` mirrors the vision-backend adoption. Heading-normalize is a
-    # single LLM call per document, not 1000s in parallel, so the impact of a
-    # transient failure is small — but the cost
-    # of one retry is also small, and a successful retry means the
-    # normalization actually applies instead of silently dropping (the caller
-    # in `gather_normalize_levels` catches any exception and returns None,
-    # which skips normalization entirely).
+    # retry=1: a failed call makes the caller skip normalization entirely,
+    # so one cheap retry is worth it.
     client = ClaudeCodeClient(timeout=_claude_code_timeout_s(), model=model, retry=1)
     try:
         # `model` is already set on the client (constructor above); pf-core's

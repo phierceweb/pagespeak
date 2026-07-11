@@ -172,7 +172,7 @@ def register(
         repair_tables: bool = typer.Option(
             False,
             "--repair-tables",
-            help="Marker PDF only. After ingest, splice Docling's clean grid over any <br>-collapsed table (Marker sometimes jams a multi-column table into one cell). Off by default; requires pagespeak[pdf-docling]. Same fix as the standalone `pagespeak repair-tables` command, run inline. See docs/repair-tables.md.",
+            help="Marker PDF only. After ingest, splice Docling's clean grid over Marker-broken tables — both <br>-collapsed mega-cells (a multi-column table jammed into one cell) and split multi-line-cell tables (one row per wrapped line). Off by default; requires pagespeak[pdf-docling]. Same fix as the standalone `pagespeak repair-tables` command, run inline. See docs/repair-tables.md.",
         ),
         docx_backend: str = typer.Option(
             "markitdown",
@@ -391,12 +391,9 @@ def register(
         else:
             doc_stem = input_path.stem
 
-        # Only write the consolidated <stem>.md when the run produced final
-        # content (it ran through vision). A `--stop-after` at an earlier phase
-        # leaves `result.markdown` as an intermediate checkpoint (raw / cleaned
-        # / normalized / structured) that the phase already persisted to its
-        # own file — writing it to <stem>.md would CLOBBER the real final
-        # document (this knocked diagrams out twice).
+        # An early --stop-after leaves result.markdown as an intermediate
+        # checkpoint; the final <stem>.md is only written on completed runs
+        # (the guard lives in to_markdown, which owns the write).
         if stop_after not in (None, "vision", "split"):
             typer.echo(
                 f"stopped after '{stop_after}'; wrote the {stop_after} checkpoint "
@@ -415,9 +412,8 @@ def register(
             typer.echo(f"  diagrams     : {sum(1 for d in result.diagrams if d.mermaid)}")
             return
 
+        # to_markdown() wrote the master; report it.
         md_path = output_dir / f"{doc_stem}.md"
-        md_path.write_text(result.markdown, encoding="utf-8")
-
         typer.echo(f"wrote {md_path}")
         typer.echo(f"  format       : {result.source_format}")
         typer.echo(f"  images       : {len(result.images)}")

@@ -27,11 +27,7 @@ from ._invalidate import register as _register_invalidate
 from ._repair import register as _register_repair
 from ._vision_audit import register as _register_vision_audit
 
-# Logging is bootstrapped at `pagespeak/__init__.py` (the package root) so that
-# both CLI and library users hit the same configuration before any module-level
-# `get_logger(__name__)` call lazy-triggers pf-core's `setup_logging` with the
-# wrong `app_logger_name`. See the comment in `pagespeak/__init__.py` for the
-# full rationale.
+# Logging is bootstrapped at package import (see pagespeak/__init__.py).
 
 
 app = typer.Typer(
@@ -138,15 +134,8 @@ _register_repair(app)
 
 
 def main() -> None:
-    # Logging is bootstrapped at `pagespeak/__init__.py` (package import time).
-    #
-    # initialize the LLM-call tracking DB at CLI startup so
-    # every `invoke_agent` call during the run gets persisted to
-    # `llm_runs` (default: SQLite at `~/.pagespeak/llm_tracking.db`;
-    # override via `DATABASE_URL`). Failure is non-fatal — a bad
-    # `DATABASE_URL` should not block conversions. Library consumers
-    # opt-in by calling `pagespeak._db.init_db()` themselves; without
-    # it `_agent_runtime` skips the write.
+    # Init the llm_runs tracking DB (SQLite default; DATABASE_URL overrides).
+    # Non-fatal on failure; library consumers opt in via pagespeak._db.init_db().
     from .._db import init_db
 
     try:

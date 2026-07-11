@@ -33,7 +33,14 @@ def test_cli_convert_writes_markdown_file(tmp_path: Path) -> None:
     out = tmp_path / "out"
 
     fake_result = IngestResult(markdown="# hello\n", source_format="pdf")
-    with patch("pagespeak.cli._convert.to_markdown", return_value=fake_result):
+
+    def fake_to_markdown(path: object, *, output_dir: object = None, **kwargs: object):
+        # The library owns the master write (see test_dispatch); mirror it.
+        Path(str(output_dir)).mkdir(parents=True, exist_ok=True)
+        (Path(str(output_dir)) / "doc.md").write_text("# hello\n", encoding="utf-8")
+        return fake_result
+
+    with patch("pagespeak.cli._convert.to_markdown", side_effect=fake_to_markdown):
         result = runner.invoke(
             app,
             ["convert", str(src), "--output-dir", str(out), "--no-diagrams"],
@@ -303,17 +310,25 @@ def test_cli_convert_stop_after_early_does_not_clobber_final_md(tmp_path: Path) 
 
 
 def test_cli_convert_full_run_writes_final_md(tmp_path: Path) -> None:
-    """No --stop-after (full run) still writes the consolidated <stem>.md."""
+    """No --stop-after (full run) reports the consolidated <stem>.md the
+    library wrote (write ownership: to_markdown — see test_dispatch)."""
     src = tmp_path / "doc.pdf"
     src.write_bytes(b"%PDF-1.4\n")
     out = tmp_path / "out"
     final = IngestResult(markdown="# final\n", source_format="raw")
-    with patch("pagespeak.cli._convert.to_markdown", return_value=final):
+
+    def fake_to_markdown(path: object, *, output_dir: object = None, **kwargs: object):
+        Path(str(output_dir)).mkdir(parents=True, exist_ok=True)
+        (Path(str(output_dir)) / "doc.md").write_text("# final\n", encoding="utf-8")
+        return final
+
+    with patch("pagespeak.cli._convert.to_markdown", side_effect=fake_to_markdown):
         result = runner.invoke(
             app, ["convert", str(src), "--output-dir", str(out), "--no-diagrams"]
         )
     assert result.exit_code == 0, result.output
     assert (out / "doc.md").read_text() == "# final\n"
+    assert "wrote" in result.output
 
 
 # ============================================================================

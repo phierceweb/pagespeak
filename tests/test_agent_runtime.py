@@ -860,3 +860,15 @@ def test_get_client_for_backend_respects_env_timeout_override(
     with patch("pf_core.clients.claude_code.get_client") as mock_get_client:
         _get_client_for_backend("claude_code")
     assert mock_get_client.call_args.kwargs["timeout"] == 2400
+
+
+def test_pf_core_claude_code_client_isolates_by_default() -> None:
+    """Dependency-floor canary: pf-core >= 0.5.0 runs `claude --print` with
+    `--safe-mode` by default (`isolate=True`), so the cwd project's CLAUDE.md/
+    skills can't hijack a vision caption or normalize call. A downgrade below
+    that floor silently reintroduces the hijack — this catches it."""
+    import inspect
+
+    from pf_core.clients.claude_code import ClaudeCodeClient
+
+    assert inspect.signature(ClaudeCodeClient.__init__).parameters["isolate"].default is True

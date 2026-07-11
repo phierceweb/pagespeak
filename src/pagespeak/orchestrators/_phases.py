@@ -36,17 +36,10 @@ def _require_result(ctx: PipelineContext) -> IngestResult:
 
 
 def _load_input(c: PipelineContext, checkpoint: Path | None) -> None:
-    """Hydrate `c.result` from this phase's INPUT checkpoint when an
-    earlier phase didn't run (single-phase / `--from` start).
-
-    No-op in the full pipeline: the prior phase already populated
-    `c.result`, so this returns immediately — which is why a full-pipeline
-    run stays byte-identical (the load path never fires when phases run
-    in sequence).
-
-    Raises if started mid-pipeline with the input checkpoint absent —
-    a clear "produce the upstream checkpoint first" error instead of a
-    confusing downstream failure.
+    """Hydrate `c.result` from this phase's INPUT checkpoint when an earlier
+    phase didn't run (single-phase / `--from` start). No-op in the full
+    pipeline (the prior phase populated `c.result`), which keeps a full run
+    byte-identical. Raises when the needed checkpoint is absent.
     """
     if c.result is not None:
         return
@@ -94,9 +87,7 @@ class IngestPhase:
     name = "ingest"
 
     def is_fresh(self, ctx: object) -> bool:
-        # Resume is handled INSIDE run() (resume-or-backend), exactly as
-        # the monolith did. The phase always runs; it fast-paths via the
-        # raw checkpoint internally. Sequencer-driven skip is added later.
+        # Resume is handled inside run(); it fast-paths via the raw checkpoint.
         return False
 
     def run(self, ctx: object) -> None:
@@ -160,6 +151,13 @@ class IngestPhase:
                 )
 
             result.markdown = _maybe_repair_tables(c, result.markdown)
+            # Co-locate sibling images so vision's out/images glob sees them.
+            if out is not None and (suffix in _MARKITDOWN_SUFFIXES or suffix in _MARKDOWN_SUFFIXES):
+                from ..backends._local_images import localize_local_images_in_markdown
+
+                result.markdown, result.images = localize_local_images_in_markdown(
+                    result.markdown, out, source_path=src, images=result.images
+                )
             if raw_md_path is not None:
                 raw_md_path.write_text(result.markdown, encoding="utf-8")
 
@@ -202,14 +200,17 @@ class CleanupPhase:
                 result.markdown = cached_cleaned
                 return
 
-        # Localize a markdown/dir-mode source's remote image refs so vision can
-        # see them (HTML did this in IngestPhase; markdown skipped ingest). No-op
-        # on HTML (refs already local) or when the toggle is off.
+        # Localize remote + local-sibling image refs for sources that skipped
+        # ingest's pass (markdown / dir-mode resume); idempotent when already done.
         if c.out is not None:
+            from ..backends._local_images import localize_local_images_in_markdown
             from ..backends._remote_images import localize_remote_images_in_markdown
 
             result.markdown, result.images = localize_remote_images_in_markdown(
                 result.markdown, c.out, images=result.images
+            )
+            result.markdown, result.images = localize_local_images_in_markdown(
+                result.markdown, c.out, source_path=c.src, images=result.images
             )
 
         if c.strip_frontmatter and c.suffix in _MARKITDOWN_SUFFIXES:
@@ -345,13 +346,9 @@ class StructurePhase:
         from ..services._flat_source_demote import demote_flat_h1_runs
         from ..services._h1_ratio_rebalance import rebalance_orphan_h1s
 
-        # Nest enumerated-item runs (panel controls / wizard steps —
-        # `Foo (1)`, `Bar (Step 2)`) under their introducing section. Runs
-        # FIRST, while the original H1 section boundaries are intact:
-        # flat-demote demotes some section H1s to H2, which would let a
-        # nest run over-extend past them and over-collapse a control-heavy
-        # doc. Running before the orphan rebalance also drops the nested
-        # items out of the orphan-H1 count.
+        # Nest enumerated-item runs (`Foo (1)`, `Bar (Step 2)`) FIRST, while
+        # original H1 boundaries are intact — after flat-demote a run could
+        # over-extend; also keeps nested items out of the orphan-H1 count.
         result.markdown = nest_enumerated_item_runs(result.markdown)
 
         # Conservative pass: long pure-H1 runs (≥N consecutive, threshold

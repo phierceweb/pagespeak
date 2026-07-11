@@ -89,8 +89,9 @@ def to_markdown(
     Args:
         path: Source document (format by extension), or — directory mode — an
             existing output dir holding one `<stem>.raw.md` (skips ingest).
-        output_dir: Where images + checkpoints land (created if missing). None →
-            no images written and `diagrams` has no effect.
+        output_dir: Where the final `<stem>.md` master, images, and checkpoints
+            land (created if missing). None → nothing written to disk and
+            `diagrams` has no effect.
         preset: Curated bundle (`"rag-default"`/`"flat"`/`"textbook"`/
             `"archival"`) setting the split/cleanup/normalize flags; explicit
             kwargs win. See `docs/presets.md`.
@@ -248,12 +249,9 @@ def to_markdown(
         if rerun_from not in RERUN_STAGES:
             raise ValueError(f"unknown rerun_from stage: {rerun_from!r}. Valid: {RERUN_STAGES}")
 
-    # directory-input mode. When `path` is a directory, treat it
-    # as an existing output dir whose `<stem>.raw.md` is the backend output.
-    # Skip the backend phase entirely and jump straight to Phase 3.
-    # A QTI export is also a directory (or a .imscc file), but it is a
-    # *source* to convert (detected as `_qti_mode` above), so it never enters
-    # dir-mode ("resume from an existing output dir").
+    # Directory input = an existing output dir: resume from its <stem>.raw.md,
+    # skip the backend. A QTI export is also a dir but is a SOURCE (`_qti_mode`
+    # above), never dir-mode.
     _dir_mode = src.is_dir() and not _qti_mode
     _doc_stem: str | None = None  # overrides src.stem in dir-mode
     if _dir_mode:
@@ -291,11 +289,8 @@ def to_markdown(
     # Without `preset=`, fall back to the original to_markdown defaults.
     started_at = _now_utc_iso()
 
-    # Open the per-conversion LLM-call accumulator: every `invoke_agent` call
-    # (vision + heading normalize) appends a record, drained at the end into
-    # `.pagespeak-run.json`. Also stamp `source_basename` into the session
-    # metadata so every call's `llm_run_tags` attributes to this input doc —
-    # with the per-call `image_phash`, that gives full caption provenance.
+    # Per-conversion LLM-call accumulator: every invoke_agent call appends a
+    # record, drained into `.pagespeak-run.json`; source_basename tags each call.
     from .._agent_runtime import begin_call_recording
 
     _src = Path(path)
@@ -449,6 +444,13 @@ def to_markdown(
         from .. import __version__
         from ..services._provenance import persistable_source_identity
         from ..services._run_record import summarize_llm_calls, write_run_record
+
+        # The final master, written by the library so every consumer gets it
+        # (was CLI-only — a library-consumer trap). An earlier stop leaves
+        # result.markdown as an intermediate checkpoint; writing that would
+        # clobber the real final document.
+        if stop_after in (None, "vision", "split"):
+            (out / f"{effective_stem}.md").write_text(result.markdown, encoding="utf-8")
 
         finished_at = _now_utc_iso()
         resolved_flags = resolved_flags_from_ctx(ctx)

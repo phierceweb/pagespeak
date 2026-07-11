@@ -1455,3 +1455,49 @@ def test_dir_mode_split_keeps_original_source_file_from_identity(tmp_path: Path)
     assert 'source_file: "Widget Guide 2e.html"' in text
     assert 'source_id: "widget-guide-2e"' in text
     assert f'source_sha256: "{"a" * 64}"' in text
+
+
+def test_to_markdown_writes_master_doc(fake_docx: Path, tmp_path: Path) -> None:
+    """The library writes the final `<stem>.md` itself — a library consumer
+    (no CLI) must get the master, not only checkpoints + sections."""
+    fake_result = IngestResult(markdown="# Title\n\nBody.\n", source_format="docx")
+    out = tmp_path / "out"
+    with patch("pagespeak.backends._docx.convert_with_markitdown", return_value=fake_result):
+        result = to_markdown(fake_docx, output_dir=out, diagrams=False, cleanup="off")
+    master = out / f"{fake_docx.stem}.md"
+    assert master.exists()
+    assert master.read_text(encoding="utf-8") == result.markdown
+
+
+def test_to_markdown_early_stop_does_not_clobber_master(fake_docx: Path, tmp_path: Path) -> None:
+    """`stop_after` at an intermediate phase leaves `result.markdown` as a
+    checkpoint; writing it to `<stem>.md` would clobber the real final doc."""
+    fake_result = IngestResult(markdown="raw checkpoint", source_format="docx")
+    out = tmp_path / "out"
+    out.mkdir()
+    final = "# The real final document\n"
+    (out / f"{fake_docx.stem}.md").write_text(final, encoding="utf-8")
+    with patch("pagespeak.backends._docx.convert_with_markitdown", return_value=fake_result):
+        to_markdown(fake_docx, output_dir=out, diagrams=False, cleanup="off", stop_after="cleanup")
+    assert (out / f"{fake_docx.stem}.md").read_text(encoding="utf-8") == final
+
+
+def test_dir_mode_split_only_rerun_writes_master(tmp_path: Path) -> None:
+    """A `--from split` dir-mode re-run writes the master — the library-consumer
+    footgun where split-only runs produced sections but no `<stem>.md`."""
+    out = tmp_path / "out"
+    out.mkdir()
+    md = "# Widget Guide\n\n## Overview\n\nBody content that is long enough to keep.\n"
+    (out / "doc.raw.md").write_text(md, encoding="utf-8")
+    (out / "doc.visioned.md").write_text(md, encoding="utf-8")
+    to_markdown(
+        out,
+        output_dir=out,
+        start="split",
+        stop_after="split",
+        diagrams=False,
+        split_sections=True,
+    )
+    text = (out / "doc.md").read_text(encoding="utf-8")
+    assert "# Widget Guide" in text
+    assert "## Overview" in text

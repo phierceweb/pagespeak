@@ -6,12 +6,9 @@ import os as _os
 
 from pf_core.log import setup_logging as _setup_logging
 
-# Configure pf-core's structlog bridge BEFORE the sub-imports below: their
-# top-level `get_logger(__name__)` calls trigger pf-core's lazy
-# `setup_logging()` with a default `app_logger_name`, and pf-core guards
-# re-entry (first caller wins). Doing it here binds the handler to the
-# `pagespeak` logger root for both CLI and library entry. Library users can
-# call `pf_core.log.setup_logging(...)` themselves before `import pagespeak`.
+# Configure pf-core's structlog bridge BEFORE the sub-imports: their get_logger
+# calls lazy-init setup_logging (first caller wins), so bind the `pagespeak`
+# root here. Library users may call setup_logging() before importing.
 _setup_logging(
     level=_os.environ.get("PAGESPEAK_LOG_LEVEL"),
     app_logger_name="pagespeak",
@@ -37,7 +34,7 @@ from .services._heading_normalize import (  # noqa: E402
 )
 from .services._rerun import RERUN_STAGES  # noqa: E402
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 __all__ = [
     "ChunkState",
     "CleanupLevel",
