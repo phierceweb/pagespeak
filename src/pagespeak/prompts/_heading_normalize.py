@@ -10,13 +10,11 @@ plus the rendered user template with the headings block substituted.
 
 from __future__ import annotations
 
-from pf_core.llm.prompts import load_prompt_spec, render_spec
+from pf_core.llm.prompts import render_spec
 
-from ._loader import resolve_prompt_path
+from ._loader import load_pagespeak_spec
 
-_SPEC_PATH = resolve_prompt_path("heading_normalize")
-
-_spec = load_prompt_spec(_SPEC_PATH, expected_agent="heading_normalize")
+_spec = load_pagespeak_spec("heading_normalize")
 HEADING_NORMALIZE_PROMPT, HEADING_NORMALIZE_PROMPT_VERSION = render_spec(_spec, part="system")
 
 

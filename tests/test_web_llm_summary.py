@@ -11,7 +11,7 @@ from pagespeak.web import create_app
 def _reset_runtime_state():
     # pf_core caches agent_type_id/model_id in-process; across tests that each
     # build a fresh temp DB those cached ids go stale and cause FK failures.
-    from pf_core.llm.tracking._resolvers import clear_caches
+    from pf_core.llm.tracking import clear_resolver_caches as clear_caches
 
     clear_caches()
     yield

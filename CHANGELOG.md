@@ -2,6 +2,12 @@
 
 Notable changes to pagespeak, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## 0.5.1
+
+### Changed
+- Prompt specs load through pf-core's `load_prompt`: `prompts._loader.load_pagespeak_spec(slug)` replaces `resolve_prompt_path` (same override chain — `$PAGESPEAK_PROMPTS_DIR` → CWD `config/prompts/` → bundled default).
+- Tracking-resolver imports use the public `pf_core.llm.tracking` surface instead of the private `_resolvers` module.
+
 ## 0.5.0
 
 ### Fixed

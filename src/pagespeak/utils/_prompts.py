@@ -1,9 +1,8 @@
 """Stable re-export of the diagram prompt.
 
 The prompt is YAML-backed in `pagespeak.prompts.diagram.yaml`, loaded by
-`pagespeak.prompts._diagram` (which uses `pf_core.llm.prompts.load_prompt_spec`
-/ `render_spec`). This shim preserves the public import path used by
-`services/_diagrams.py`.
+`pagespeak.prompts._diagram` (via `load_pagespeak_spec` + `render_spec`).
+This shim preserves the public import path used by `services/_diagrams.py`.
 """
 
 from __future__ import annotations

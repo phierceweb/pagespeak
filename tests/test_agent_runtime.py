@@ -49,7 +49,7 @@ def _reset_runtime_state():
     # populated them against a different SQLite tmp_path, a later test
     # gets a cached id that doesn't exist in its fresh DB — FK INSERTs
     # downstream then fail. Clear before AND after each test.
-    from pf_core.llm.tracking._resolvers import clear_caches as _clear_resolver_caches
+    from pf_core.llm.tracking import clear_resolver_caches as _clear_resolver_caches
 
     _clear_resolver_caches()
     yield

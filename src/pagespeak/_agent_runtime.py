@@ -203,7 +203,7 @@ def invoke_agent(
             prompt template for this agent, e.g. ``DIAGRAM_PROMPT`` or
             ``HEADING_NORMALIZE_PROMPT``. When provided, gets registered
             (idempotently) in ``llm_prompts`` via pf-core's
-            :func:`pf_core.llm.tracking._resolvers.resolve_prompt_id` and
+            :func:`pf_core.llm.tracking.resolve_prompt_id` and
             the resulting id is set as ``llm_runs.system_prompt_id``.
             Pair with ``prompt_version`` to track template-version
             cohorts across runs. None skips the prompt-table write.
@@ -317,8 +317,8 @@ def _write_run_row(
         return None
 
     try:
-        from pf_core.llm.tracking import LlmRunRepo
-        from pf_core.llm.tracking._resolvers import (
+        from pf_core.llm.tracking import (
+            LlmRunRepo,
             resolve_agent_type_id,
             resolve_prompt_id,
         )

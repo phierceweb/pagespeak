@@ -14,7 +14,7 @@ def _reset_runtime_state():
     """
     from pf_core.db.connection import reset_engine
     from pf_core.jobs import clear_registry
-    from pf_core.llm.tracking._resolvers import clear_caches as _clear_resolver_caches
+    from pf_core.llm.tracking import clear_resolver_caches as _clear_resolver_caches
 
     import pagespeak._db as db_mod
 
