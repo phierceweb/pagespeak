@@ -1,5 +1,7 @@
 # pagespeak
 
+[![PyPI](https://img.shields.io/pypi/v/pagespeak)](https://pypi.org/project/pagespeak/)
+
 Convert PDF, Word, and other office formats to LLM-friendly markdown — with diagram extraction to Mermaid.
 
 ## Why
@@ -18,7 +20,7 @@ That structure is the payoff. It lets a *compound, cross-document* question — 
 
 It is new as a *public* project, not as code: these passes were hardened one real document at a time — convert, read the output, fix what broke — against a large working corpus well before this release. The worked examples below are the receipts.
 
-> **See it on real documents — [docs/worked-examples.md](docs/worked-examples.md).** One 18-page textbook chapter run through raw Marker, raw Docling, and pagespeak side by side (the heading-repair before/after, a real diagram→Mermaid, and a retrieval query the figure answers but the prose can't), then a 68-manual / ~6.1M-token library where one compound question is answered from ~1,600 retrieved tokens across three manuals — with the dated models and the honest misses reported, not hidden. It's the empirical case for everything above, and the best way to judge whether this fits your corpus.
+> **See it on real documents — [docs/worked-examples.md](https://github.com/phierceweb/pagespeak/blob/main/docs/worked-examples.md).** One 18-page textbook chapter run through raw Marker, raw Docling, and pagespeak side by side (the heading-repair before/after, a real diagram→Mermaid, and a retrieval query the figure answers but the prose can't), then a 68-manual / ~6.1M-token library where one compound question is answered from ~1,600 retrieved tokens across three manuals — with the dated models and the honest misses reported, not hidden. It's the empirical case for everything above, and the best way to judge whether this fits your corpus.
 
 ## Scope — where pagespeak fits
 
@@ -39,7 +41,7 @@ pip install pagespeak[tophat]               # adds the Top Hat quiz-export backe
 pip install pagespeak[web]                  # localhost web console (FastAPI + uvicorn)
 ```
 
-Pagespeak builds on [`pf-core`](https://github.com/phierceweb/pf-core) for its LLM clients (Anthropic / Claude Code / OpenRouter), structured logging, pipeline manifest helpers, CLI subcommand factories, and atomic-write utilities. `pf-core[image-phash]` is pulled in transitively — no separate install step required.
+Pagespeak builds on [`pf-core`](https://github.com/phierceweb/pf-core) ([PyPI](https://pypi.org/project/pf-core/)) for its LLM clients (Anthropic / Claude Code / OpenRouter), structured logging, pipeline manifest helpers, CLI subcommand factories, and atomic-write utilities. `pf-core[image-phash]` is pulled in transitively — no separate install step required.
 
 ## Quickstart
 
@@ -75,7 +77,7 @@ pagespeak convert manual.pdf -o ./out --preset rag-default
 pagespeak convert manual.pdf -o ./out --preset rag-default --normalize-headings-mode llm_full
 ```
 
-See [docs/presets.md](docs/presets.md) for the five built-in presets and [docs/choosing-defaults.md](docs/choosing-defaults.md) for the per-document-type triage (when to add `llm_full`, `--device cpu`, page-ranging, and more).
+See [docs/presets.md](https://github.com/phierceweb/pagespeak/blob/main/docs/presets.md) for the five built-in presets and [docs/choosing-defaults.md](https://github.com/phierceweb/pagespeak/blob/main/docs/choosing-defaults.md) for the per-document-type triage (when to add `llm_full`, `--device cpu`, page-ranging, and more).
 
 ## Output shape
 
@@ -102,7 +104,7 @@ flowchart TD
 - **Non-structural images** — photos, screenshots, and morphological figures (labeled illustrations, micrographs, chemical structures, charts) — get a caption instead of Mermaid; label-bearing illustrations get a caption that transcribes their visible labels.
 - **Repeated decorations** (page headers, footer logos) are detected via perceptual-hash clustering and stripped from the consolidated markdown.
 
-> **See it on a real document:** [docs/worked-examples.md](docs/worked-examples.md) runs one chapter of a CC-BY textbook through raw Marker, raw Docling, and pagespeak — the heading-repair before/after, a diagram→Mermaid, and a retrieval query the figure answers but the prose can't.
+> **See it on a real document:** [docs/worked-examples.md](https://github.com/phierceweb/pagespeak/blob/main/docs/worked-examples.md) runs one chapter of a CC-BY textbook through raw Marker, raw Docling, and pagespeak — the heading-repair before/after, a diagram→Mermaid, and a retrieval query the figure answers but the prose can't.
 
 ## Vision backends
 
@@ -112,7 +114,7 @@ flowchart TD
 | `anthropic` | Direct API; fastest | `ANTHROPIC_API_KEY` |
 | `openrouter` | Multi-provider unified billing (Gemini, Llama vision, …) | `OPENROUTER_API_KEY` |
 
-The default model is Claude Haiku 4.5 — $0 on the default `claude_code` backend, or typically $0.001–$0.005 per image on a paid backend. See [docs/diagrams.md](docs/diagrams.md) for backend mechanics, prompt versioning, and failure handling.
+The default model is Claude Haiku 4.5 — $0 on the default `claude_code` backend, or typically $0.001–$0.005 per image on a paid backend. See [docs/diagrams.md](https://github.com/phierceweb/pagespeak/blob/main/docs/diagrams.md) for backend mechanics, prompt versioning, and failure handling.
 
 Vision output is best-effort. A diagram's Mermaid is a model's *reading* of the image — usually faithful for clean structural figures, but it can be approximate or wrong on dense, hand-drawn, or low-resolution ones, and a confidently-wrong caption is worse than none. pagespeak keeps the original image beside every block, biases the prompt toward caption-only when a figure isn't cleanly structural, and for critical content you should spot-check the Mermaid against the source rather than trust it blindly. The worked examples report the real per-figure hit rate (e.g. organs named for 7 of 11 body systems), not a perfect one.
 
@@ -120,10 +122,10 @@ Vision output is best-effort. A diagram's Mermaid is a model's *reading* of the 
 
 | Format | Backend |
 |---|---|
-| `.pdf` | [Marker](https://github.com/VikParuchuri/marker) (default, fast) or [Docling](https://github.com/DS4SD/docling) (accuracy-first). See [docs/backends.md](docs/backends.md). |
+| `.pdf` | [Marker](https://github.com/VikParuchuri/marker) (default, fast) or [Docling](https://github.com/DS4SD/docling) (accuracy-first). See [docs/backends.md](https://github.com/phierceweb/pagespeak/blob/main/docs/backends.md). |
 | `.docx`, `.pptx`, `.xlsx`, `.html`, `.htm`, `.csv`, `.json`, `.xml`, `.epub` | [MarkItDown](https://github.com/microsoft/markitdown) |
-| Canvas QTI quiz export (directory or `.imscc`) | Built-in QTI backend → one markdown file per quiz with the answer key. See [docs/canvas-quizzes.md](docs/canvas-quizzes.md). |
-| Top Hat quiz-export PDF | `--pdf-backend tophat` → one `## Question N` block per question, correct answer marked when revealed, embedded figures extracted + captioned. See [docs/tophat-quizzes.md](docs/tophat-quizzes.md). |
+| Canvas QTI quiz export (directory or `.imscc`) | Built-in QTI backend → one markdown file per quiz with the answer key. See [docs/canvas-quizzes.md](https://github.com/phierceweb/pagespeak/blob/main/docs/canvas-quizzes.md). |
+| Top Hat quiz-export PDF | `--pdf-backend tophat` → one `## Question N` block per question, correct answer marked when revealed, embedded figures extracted + captioned. See [docs/tophat-quizzes.md](https://github.com/phierceweb/pagespeak/blob/main/docs/tophat-quizzes.md). |
 
 ## How it relates to other tools
 
@@ -144,34 +146,34 @@ The hardest part of PDF→markdown for RAG is the heading tree, because that's w
 | **Marker** (default) | 4-level pyramid in single-shot; **flattens in the chunked pipeline** (per-chunk font stats disagree). MPS crash on Apple Silicon → `--device cpu` | occasionally collapses a multi-column table into one cell | — |
 | **Docling** | **capped at 2 levels by design** — its layout model labels every section heading `level=1` | well-formed, TableFormer-grade | ~25% more figures on textbooks; formula → LaTeX |
 
-So no backend simply gets structure right, and "just use Marker" or "just use Docling" inherits that backend's specific failure. Recovering the structure is pagespeak's reason to exist: an optional LLM heading-renormalization stage rebuilds a flattened hierarchy, deterministic post-passes repair levels at $0, and `repair-tables` re-reads *just* a broken table's page through Docling and splices the clean grid back into Marker's output — one page, not a second full conversion. Pick the backend for its strengths; pagespeak patches its known weakness. The full trade-off and recipes: [docs/backends.md](docs/backends.md) and [docs/choosing-defaults.md](docs/choosing-defaults.md).
+So no backend simply gets structure right, and "just use Marker" or "just use Docling" inherits that backend's specific failure. Recovering the structure is pagespeak's reason to exist: an optional LLM heading-renormalization stage rebuilds a flattened hierarchy, deterministic post-passes repair levels at $0, and `repair-tables` re-reads *just* a broken table's page through Docling and splices the clean grid back into Marker's output — one page, not a second full conversion. Pick the backend for its strengths; pagespeak patches its known weakness. The full trade-off and recipes: [docs/backends.md](https://github.com/phierceweb/pagespeak/blob/main/docs/backends.md) and [docs/choosing-defaults.md](https://github.com/phierceweb/pagespeak/blob/main/docs/choosing-defaults.md).
 
 ## Docs
 
-- [docs/pipeline.md](docs/pipeline.md) — stage-by-stage walkthrough of what every command runs (spine)
-- [docs/worked-examples.md](docs/worked-examples.md) — end-to-end before/after on real documents: extraction, repair, retrieval, and the cross-document payoff
-- [docs/usage.md](docs/usage.md) — library + CLI examples, kwargs, env vars, common recipes
-- [docs/choosing-defaults.md](docs/choosing-defaults.md) — pre-ingest triage: canonical recipe, vendor patterns, when to deviate
-- [docs/presets.md](docs/presets.md) — config presets and `<output>/.pagespeak-run.json`
-- [docs/architecture.md](docs/architecture.md) — module layout, data flow
-- [docs/diagrams.md](docs/diagrams.md) — vision pass, prompt versioning
-- [docs/cleanup.md](docs/cleanup.md) — cleanup levels, cross-refs, section splitting
-- [docs/normalize-headings.md](docs/normalize-headings.md) — heading-level renormalization
-- [docs/audit.md](docs/audit.md) — `pagespeak audit`: scan converted output for conversion defects (read-only, $0)
-- [docs/repair-tables.md](docs/repair-tables.md) — `pagespeak repair-tables`: splice Docling's clean grid into Marker-collapsed tables (the fix for the audit's `collapsed_table`)
-- [docs/caching.md](docs/caching.md) — cache layers, `--rerun-from`, baselines, diff
-- [docs/backends.md](docs/backends.md) — Marker vs Docling for PDF
-- [docs/docx-backends.md](docs/docx-backends.md) — MarkItDown vs python-docx for DOCX
-- [docs/ingest.md](docs/ingest.md) — `pagespeak ingest`, chunked-parallel workers, resume semantics
-- [docs/format-support.md](docs/format-support.md) — per-format quirks
-- [docs/canvas-quizzes.md](docs/canvas-quizzes.md) — Canvas QTI quiz exports → one markdown file per quiz
-- [docs/tophat-quizzes.md](docs/tophat-quizzes.md) — Top Hat quiz-export PDFs → per-question markdown (`--pdf-backend tophat`)
-- [docs/operations.md](docs/operations.md) — sandbox / `ProcessPoolExecutor` gotchas
-- [docs/web.md](docs/web.md) — web console: upload/queue, per-phase cockpit, cost gate, LLM observability
+- [docs/pipeline.md](https://github.com/phierceweb/pagespeak/blob/main/docs/pipeline.md) — stage-by-stage walkthrough of what every command runs (spine)
+- [docs/worked-examples.md](https://github.com/phierceweb/pagespeak/blob/main/docs/worked-examples.md) — end-to-end before/after on real documents: extraction, repair, retrieval, and the cross-document payoff
+- [docs/usage.md](https://github.com/phierceweb/pagespeak/blob/main/docs/usage.md) — library + CLI examples, kwargs, env vars, common recipes
+- [docs/choosing-defaults.md](https://github.com/phierceweb/pagespeak/blob/main/docs/choosing-defaults.md) — pre-ingest triage: canonical recipe, vendor patterns, when to deviate
+- [docs/presets.md](https://github.com/phierceweb/pagespeak/blob/main/docs/presets.md) — config presets and `<output>/.pagespeak-run.json`
+- [docs/architecture.md](https://github.com/phierceweb/pagespeak/blob/main/docs/architecture.md) — module layout, data flow
+- [docs/diagrams.md](https://github.com/phierceweb/pagespeak/blob/main/docs/diagrams.md) — vision pass, prompt versioning
+- [docs/cleanup.md](https://github.com/phierceweb/pagespeak/blob/main/docs/cleanup.md) — cleanup levels, cross-refs, section splitting
+- [docs/normalize-headings.md](https://github.com/phierceweb/pagespeak/blob/main/docs/normalize-headings.md) — heading-level renormalization
+- [docs/audit.md](https://github.com/phierceweb/pagespeak/blob/main/docs/audit.md) — `pagespeak audit`: scan converted output for conversion defects (read-only, $0)
+- [docs/repair-tables.md](https://github.com/phierceweb/pagespeak/blob/main/docs/repair-tables.md) — `pagespeak repair-tables`: splice Docling's clean grid into Marker-collapsed tables (the fix for the audit's `collapsed_table`)
+- [docs/caching.md](https://github.com/phierceweb/pagespeak/blob/main/docs/caching.md) — cache layers, `--rerun-from`, baselines, diff
+- [docs/backends.md](https://github.com/phierceweb/pagespeak/blob/main/docs/backends.md) — Marker vs Docling for PDF
+- [docs/docx-backends.md](https://github.com/phierceweb/pagespeak/blob/main/docs/docx-backends.md) — MarkItDown vs python-docx for DOCX
+- [docs/ingest.md](https://github.com/phierceweb/pagespeak/blob/main/docs/ingest.md) — `pagespeak ingest`, chunked-parallel workers, resume semantics
+- [docs/format-support.md](https://github.com/phierceweb/pagespeak/blob/main/docs/format-support.md) — per-format quirks
+- [docs/canvas-quizzes.md](https://github.com/phierceweb/pagespeak/blob/main/docs/canvas-quizzes.md) — Canvas QTI quiz exports → one markdown file per quiz
+- [docs/tophat-quizzes.md](https://github.com/phierceweb/pagespeak/blob/main/docs/tophat-quizzes.md) — Top Hat quiz-export PDFs → per-question markdown (`--pdf-backend tophat`)
+- [docs/operations.md](https://github.com/phierceweb/pagespeak/blob/main/docs/operations.md) — sandbox / `ProcessPoolExecutor` gotchas
+- [docs/web.md](https://github.com/phierceweb/pagespeak/blob/main/docs/web.md) — web console: upload/queue, per-phase cockpit, cost gate, LLM observability
 
 ## Security
 
-[SECURITY.md](SECURITY.md) covers vulnerability reporting and safe-usage notes for shared environments (the console has no auth; remote-image fetching is SSRF-guarded).
+[SECURITY.md](https://github.com/phierceweb/pagespeak/blob/main/SECURITY.md) covers vulnerability reporting and safe-usage notes for shared environments (the console has no auth; remote-image fetching is SSRF-guarded).
 
 ## License
 

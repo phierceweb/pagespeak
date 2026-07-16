@@ -2,6 +2,11 @@
 
 Notable changes to pagespeak, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## 0.5.2
+
+### Changed
+- README carries a PyPI version badge and its doc/`SECURITY.md` links are now absolute `github.com/phierceweb/pagespeak/blob/main/...` URLs, so they resolve on the PyPI project page (relative links there 404).
+
 ## 0.5.1
 
 ### Changed
