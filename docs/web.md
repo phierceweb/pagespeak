@@ -28,7 +28,7 @@ bin/stop           # stop it   (bin/restart = stop + start)
 The console adopts the existing `conversions/` on-disk convention — it does not invent a private workspace root.
 
 - **`conversions/in/<name>.<ext>`** — source documents.
-- **`conversions/out/<dir>/`** — per-document output: phase checkpoints (`<stem>.raw.md` → `.cleaned.md` → `.normalized.md` → `.repaired.md` → `.visioned.md` → `<stem>.md`), `images/`, `.vision-cache/`, `.heading-normalize-cache/`, and `.pagespeak-run.json`.
+- **`conversions/out/<dir>/`** — per-document output: phase checkpoints (`<stem>.raw.md` → `.cleaned.md` → `.normalized.md` → `.repaired.md` → `.structured.md` → `.visioned.md` → `<stem>.md`), `images/`, `.vision-cache/`, `.heading-normalize-cache/`, and `.pagespeak-run.json`.
 - **`conversions/delivery/<dir>/`** — handoff-ready stripped copies produced by the **Deliver** action (master `.md` + `sections/` + `images/` only; no checkpoints, run records, or caches). Written only when you click Deliver — empty by default.
 
 **Dropping a file into `conversions/in/` via Finder is identical to uploading it through the web form.** Both produce the same Conversion entry in the queue. Web upload writes the file into `conversions/in/`; nothing else differs.

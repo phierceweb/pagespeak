@@ -10,6 +10,8 @@ pagespeak persists every expensive intermediate so a re-run only re-does the wor
 | `cleanup` | `<stem>.cleaned.md` | content+flags hash | own structural |
 | `decorations` | (in-memory; no persistent file) | always re-runs | — |
 | `normalize` | `.heading-normalize-cache/<hash>.json` (LLM mode), `<stem>.normalized.md` (snapshot) | content+model hash (cache); cascade (snapshot) | own (cache content-keyed, snapshot mtime-gated) |
+| `repair` | `<stem>.repaired.md` (snapshot; $0 deterministic — no content-keyed cache) | cascade (snapshot) | own structural |
+| `structure` | `<stem>.structured.md` (snapshot; $0 deterministic — no content-keyed cache) | cascade (snapshot) | own structural |
 | `vision` | `<stem>.visioned.md` (structural snapshot, post-inject + TOC), `.vision-cache/<phash>.json` (content-keyed) | image phash change (cache; **engine-independent** — a description is reused regardless of which backend/model made it); cascade (snapshot) | own structural + own content-keyed cache; `.vision-cache` preserved **and reused** across *upstream* cascade |
 | `split` | `sections/`, `INDEX.md` | always | structural |
 
@@ -89,7 +91,7 @@ pagespeak convert ./out --from normalize --stop-after normalize
 
 `--from` vs `--rerun-from`: `--from` *trusts* upstream checkpoints and starts there; `--rerun-from` *invalidates* the stage (+downstream structural) then runs to the end. Use `--from`/`--stop-after` for methodical phase-by-phase iteration; `--rerun-from` to force a stale stage to recompute.
 
-All six phases write a structural checkpoint, so any one runs standalone from its real input — `--from split` splits the true post-vision `visioned.md`. (`decorations` deliberately has no standalone checkpoint: it is a `cleanup` sub-step, not a phase, and promoting it to a reordered standalone phase would be behaviour- changing — see `_rerun.py`.)
+All seven phases write a structural checkpoint, so any one runs standalone from its real input — `--from split` splits the true post-vision `visioned.md`. (`decorations` deliberately has no standalone checkpoint: it is a `cleanup` sub-step, not a phase, and promoting it to a reordered standalone phase would be behaviour- changing — see `_rerun.py`.)
 
 ## Resume-from-cleaned
 
@@ -100,8 +102,7 @@ A re-run with no `--rerun-from` flag will resume from `<stem>.cleaned.md` IFF:
 3. The cleanup-affecting flags in the previous run.json match the current resolved flags.
 4. The run did not explicitly start at cleanup. `--from cleanup` forces a fresh cleanup re-run — the shortcut is for the normal full run, not an explicit per-stage start, otherwise per-stage iteration on cleanup would silently reuse the stale cache and never run the code under test.
 
-When resume hits, the log includes `resume_from_cleaned path=...`. The ingest phase and cleanup are skipped. Only decorations + normalize
-+ vision + TOC regen + split run.
+When resume hits, the log includes `resume_from_cleaned path=...`. The ingest and cleanup phases are skipped — including the decorations sub-step, since `cleaned.md` is already post-decoration. Normalize, repair, structure, vision (with TOC regen), and split run.
 
 ## `<stem>.raw.md` is truly raw
 
@@ -119,7 +120,7 @@ A baseline preserves a result for later comparison — useful when you want to r
 └── .pagespeak-run.json # snapshot of resolved config + counts
 ```
 
-What's NOT in a baseline (cheap to rebuild from caches; would bloat storage): raw.md, post-cleanup.md, pre-normalize.md, vision-cache, heading-normalize-cache, images.
+What's NOT in a baseline (cheap to rebuild from caches; would bloat storage): the stage checkpoints (`raw.md`, `cleaned.md`, `normalized.md`, `repaired.md`, `structured.md`, `visioned.md`), vision-cache, heading-normalize-cache, images.
 
 ### Two ways to baseline
 

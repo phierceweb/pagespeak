@@ -11,7 +11,7 @@ Opt-in pre-split pass that fixes flattened heading hierarchy in PDF extractions.
 
 Short non-prose margin-code fragments (`EN`, `FR`) that a backend promoted to headings are demoted in cleanup (`services/_fragments.py`) before normalize runs, so normalize sees a cleaner heading set.
 
-Residual heading slips this pass leaves (or introduces) are cleaned up **after** it by the `$0` deterministic **repair** stage (`services/_normalize_repair.py`, writes `<stem>.repaired.md`), which runs between normalize and vision — see [pipeline-repair.md](pipeline-repair.md). Repair is the cheap deterministic counterpart to this (sometimes paid) LLM pass: freeze the LLM output, iterate repair for free.
+Residual heading slips this pass leaves (or introduces) are cleaned up **after** it by the `$0` deterministic **repair** stage (`services/_normalize_repair.py`, writes `<stem>.repaired.md`), which runs immediately after normalize (before the structure and vision stages) — see [pipeline-repair.md](pipeline-repair.md). Repair is the cheap deterministic counterpart to this (sometimes paid) LLM pass: freeze the LLM output, iterate repair for free.
 
 ## Auto mode
 
@@ -108,23 +108,18 @@ When `normalize_headings=True` and `output_dir` is set:
 | Path | When written | Contents |
 |------|--------------|----------|
 | `<stem>.raw.md` | After backend, always | Raw Marker / Docling / MarkItDown output, pre-everything |
-| `<stem>.pre-normalize.md` | After cleanup, before normalize | Post-cleanup, pre-rewrite. Diff against `<stem>.md` to see exactly what normalize changed. Written in both modes. |
-| `<stem>.md` | End of run (CLI writes this) | Final output |
+| `<stem>.cleaned.md` | After cleanup, always | Post-cleanup, pre-normalize — the "before" side of the diff |
+| `<stem>.normalized.md` | After normalize, always | Post heading-rewrite (== `cleaned.md` content when normalize is off) |
+| `<stem>.md` | End of run | Final output |
 | `.heading-normalize-cache/<hash>.json` | LLM mode only, after successful call | Cached response, reused on re-run |
 
-The pre-normalize snapshot is the **review/revert path**. To see the edits:
+The cleaned/normalized checkpoint pair is the **review/revert path**. To see the edits:
 
 ```bash
-diff <(cat textbook.pre-normalize.md) <(cat textbook.md) | head -50
+diff textbook.cleaned.md textbook.normalized.md | head -50
 ```
 
-To revert without re-running (e.g. if the rewrites looked wrong):
-
-```bash
-mv textbook.md textbook.normalized.md
-cp textbook.pre-normalize.md textbook.md
-# then re-run with --no-normalize-headings (and split)
-```
+To revert (e.g. if the rewrites looked wrong): re-run with `--no-normalize-headings` — the downstream phases regenerate from the cleaned checkpoint. Match the original run's output-shaping flags per [caching.md](caching.md).
 
 ## Caching (LLM mode only)
 

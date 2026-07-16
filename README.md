@@ -56,7 +56,7 @@ result.diagrams   # list[Diagram(image_path, caption, mermaid, diagram_type)]
 ```
 
 ```bash
-# One command: ingest + Phase 3 (cleanup, normalize, vision, split)
+# One command: ingest + Phase 3 (cleanup, normalize, repair, structure, vision, split)
 pagespeak convert manual.pdf -o ./out
 pagespeak convert report.docx -o ./out --no-diagrams
 

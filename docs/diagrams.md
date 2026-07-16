@@ -60,13 +60,13 @@ Then `_inject_diagrams()` does a markdown rewrite: for each `![...](path)` refer
 - Replaces the image's alt text with the caption (structurally extractable by downstream parsers and read by screen readers).
 - Appends a fenced Mermaid block tagged `pagespeak-image="<path>"` on the info string when `mermaid` is non-null. Renderers ignore the tag; parsers can pair the Mermaid with its source image.
 
-The single-shot and phased pipelines both dedupe via perceptual hash: identical or near-identical images across pages (chapter-opener decorations, repeated icons, the same figure rasterized at different resolutions) collapse to one vision call. Saves 30–60% of calls on textbooks.
+The single-shot and phased pipelines both dedupe via perceptual hash: identical or near-identical images across pages (chapter-opener decorations, repeated icons, the same figure rasterized at different resolutions) collapse to one vision call. Typically saves 30–60% of calls on textbooks (observed across real conversions; varies by document).
 
 ## Backends
 
 Three backends, all implementing the same `VisionBackend` Protocol:
 
-| Backend | Transport | Cost | Latency / image | Notes |
+| Backend | Transport | Cost | Typical latency / image | Notes |
 |---|---|---|---|---|
 | `anthropic` | Anthropic SDK | API tokens | ~500 ms | Direct API; supports prompt caching when prompt grows |
 | `claude_code` (default) | `claude --print` subprocess | $0 (uses your Claude Code session) | 1-3 s | Pass `vision_model` to override the session default — strongly recommended (Opus is overkill for image captioning) |
@@ -118,7 +118,7 @@ Many source documents already ship a description for each figure — the `<img>`
 
 The image stays the ground truth — on any conflict the model follows the image, and a wrong identity in the source text is never carried forward (the don't-invent rules still win). This replaced v1's behavior of overwriting *every* alt from the image alone, which downgraded already-good source captions (truncating a complete multi-system figure, or restating a correct one less precisely) while only helping the thin/placeholder ones. The alt map is built by `services/_diagrams.alt_text_by_basename()` and passed to `gather_diagrams(alt_by_basename=…)` by the vision phase.
 
-**Refreshing an existing conversion.** The vision cache is keyed by image phash only, *not* by prompt version (so cached captions are reused across engines — see [caching](caching.md)). A prompt bump therefore does **not** auto-invalidate the cache: to re-caption an already-visioned doc with the new prompt, bust the vision cache explicitly with `--rerun-from vision` (or `pagespeak invalidate <dir> vision`).
+**Refreshing an existing conversion.** The vision cache is keyed by image phash only — *not* by prompt version, model, or engine (so cached captions are reused across engines — see [caching](caching.md)). Neither a prompt bump nor a model/backend switch auto-invalidates it: to re-caption an already-visioned doc with a new prompt or a stronger model, bust the vision cache explicitly with `--rerun-from vision` (or `pagespeak invalidate <dir> vision`).
 
 ## Faithful mode (`--preserve-alt`)
 
@@ -132,7 +132,9 @@ The vision LLM still runs and the caption is still **cached** — it is just not
 
 Per-image cost on Claude Haiku 4.5: ~$0.001–0.005, dominated by the image-token count (which depends on resolution).
 
-A short user manual with a dozen diagrams runs around five cents end-to-end. A large technical manual with ~50 figures runs around fifteen to twenty cents. For larger ingests, override the model: Sonnet costs ~10× more but is meaningfully more accurate on dense architecture diagrams.
+A short user manual with a dozen diagrams runs around five cents end-to-end. A large technical manual with ~50 figures runs around fifteen to twenty cents. These are operating estimates from real conversions, not benchmark output — resolution and figure density move them.
+
+For larger ingests, override the model: Sonnet costs ~10× more but is meaningfully more accurate on dense architecture diagrams. A model switch only applies to images **not already cached** — the vision cache is phash-keyed, so re-running a finished conversion under a stronger model is 100% cache hits and changes nothing. Bust the cache first (`--rerun-from vision`) to actually re-analyse.
 
 ## Failure handling
 

@@ -2,6 +2,14 @@
 
 Notable changes to pagespeak, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## 0.5.3
+
+### Fixed
+- **Docs re-synced to the seven-phase pipeline.** Corrected vision's input checkpoint (`structured.md`, not `repaired.md`) and every stage/checkpoint enumeration that omitted `structure`; refreshed stale checkpoint filenames (including the removed `pre-normalize.md` snapshot — heading-normalize review/revert is now documented against `cleaned.md`/`normalized.md`); completed `docs/architecture.md`'s module tables (all eight CLI subcommands, ~40 missing modules, a new `prompts/` section, two mis-pathed rows); labeled vision cost/latency figures as operating estimates and documented the model-switch × phash-cache interaction (`--rerun-from vision` to re-analyse under a different model).
+
+### Added
+- **Docs-drift guard** (`tests/test_docs_sync.py`): phase lists, stage sequences, checkpoint chains, `consumed by` notes, and the architecture module inventory are verified against `build_phases()` and the stage registry — a pipeline change now fails the suite naming each stale doc.
+
 ## 0.5.2
 
 ### Changed

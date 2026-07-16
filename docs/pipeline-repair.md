@@ -20,7 +20,7 @@ The artifact passes **and the level-gap close** are corpus-verified to fire only
 ## Inputs / outputs
 
 - Input checkpoint: `<stem>.normalized.md`.
-- Output checkpoint: `<stem>.repaired.md` (consumed by `vision`).
+- Output checkpoint: `<stem>.repaired.md` (consumed by `structure`).
 - Rerun key: `repair` (`--rerun-from repair` / `pagespeak invalidate <out> repair`) — busts `repaired.md` + downstream structural files.
 
 ## What it deliberately is NOT (yet)

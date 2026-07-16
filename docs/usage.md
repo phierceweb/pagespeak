@@ -112,9 +112,9 @@ Two input modes:
 | `--from <phase>` | none | Begin at this phase using the existing upstream checkpoint as input (does **not** bust caches — that's `--rerun-from`). Phases: `ingest \| cleanup \| normalize \| repair \| structure \| vision \| split`. Errors if the input checkpoint is absent. |
 | `--stop-after <phase>` | none | Halt after this phase — its checkpoint is written, nothing downstream runs. Same phase names as `--from`. Run one phase at a time to validate the pipeline methodically. `--from X --stop-after X` runs exactly phase X. `--from split` splits the post-vision `visioned.md` checkpoint. |
 
-Conversion writes `<output_dir>/<stem>.md` (from the library layer, so `to_markdown()` consumers get it too) plus `<output_dir>/images/`. With `--split-sections`, also `<output_dir>/sections/`. With `--normalize-headings`, also `<output_dir>/<stem>.pre-normalize.md` (post-cleanup pre-LLM snapshot for diff/revert).
+Conversion writes `<output_dir>/<stem>.md` (from the library layer, so `to_markdown()` consumers get it too) plus `<output_dir>/images/`. With `--split-sections`, also `<output_dir>/sections/`.
 
-Side files for re-test ergonomics: `<stem>.raw.md` (backend output checkpoint), `<stem>.cleaned.md` (post-cleanup snapshot for resume), `<stem>.normalized.md` (post-normalize snapshot), `.vision-cache/<phash>.json` (per-image vision cache), `.heading-normalize-cache/<hash>.json` (LLM-mode normalize cache), `.pagespeak-run.json` (resolved config + counts). See [docs/caching.md](caching.md).
+Side files for re-test ergonomics: the stage checkpoints (`<stem>.raw.md`, `.cleaned.md`, `.normalized.md`, `.repaired.md`, `.structured.md`, `.visioned.md`), `.vision-cache/<phash>.json` (per-image vision cache), `.heading-normalize-cache/<hash>.json` (LLM-mode normalize cache), `.pagespeak-run.json` (resolved config + counts). See [docs/caching.md](caching.md).
 
 ## Project script wrappers
 
