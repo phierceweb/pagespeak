@@ -68,7 +68,7 @@ The detail page splits into two tabs — **Document** (the checkpoint viewer, fu
 
 ### Checkpoint viewer (Document tab)
 
-Shows any phase checkpoint (`raw`, `cleaned`, `normalized`, `repaired`, `visioned`, final) with a **Rendered / Raw text** toggle:
+Shows any phase checkpoint (`raw`, `cleaned`, `normalized`, `repaired`, `structured`, `visioned`, final) with a **Rendered / Raw text** toggle:
 
 - **Rendered** — full markdown (headings, tables, code, inline images) rendered by the [`zero-md`](https://github.com/zerodevx/zero-md) web component (GitHub-style CSS + syntax highlighting, self-contained). The component fetches the checkpoint markdown from `/c/<dir>/md/<view>`, which rewrites relative `images/…` refs to the image route so figures load. Fenced ```mermaid blocks are **drawn as diagrams** (zero-md renders them via mermaid.js, configured `securityLevel: 'antiscript'` — HTML labels like the LLM's `<br/>` still render, scripts are stripped).
 - **Raw text** — the literal checkpoint file content, for comparison.

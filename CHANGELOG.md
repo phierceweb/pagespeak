@@ -2,6 +2,11 @@
 
 Notable changes to pagespeak, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## 0.5.4
+
+### Fixed
+- Web console: the `structure` phase now appears in the checkpoint viewer and the help-page phase table (the route already served it).
+
 ## 0.5.3
 
 ### Fixed

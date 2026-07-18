@@ -59,7 +59,7 @@
 
 <div id="tab-document">
   <div class="flex flex-wrap items-center gap-2 text-xs mb-2">
-    {% for v in ["ingest","cleanup","normalize","repair","vision","final"] %}
+    {% for v in ["ingest","cleanup","normalize","repair","structure","vision","final"] %}
     <a href="?view={{ v }}" class="px-2 py-1 rounded {{ 'bg-blue-600 text-white' if view==v else 'bg-slate-100 text-slate-500' }}">{{ v }}</a>
     {% endfor %}
     {% if markdown %}

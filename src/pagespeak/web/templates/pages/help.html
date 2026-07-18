@@ -52,6 +52,7 @@
         <tr><td class="p-2 border-b mono">cleanup</td><td class="p-2 border-b">Tidy markdown: dedup repeated page decorations, strip converter artifacts, normalize whitespace.</td><td class="p-2 border-b mono">.cleaned.md</td></tr>
         <tr><td class="p-2 border-b mono">normalize</td><td class="p-2 border-b">Optional: fix flattened heading levels (textbook-style docs where everything is one depth). Off unless enabled.</td><td class="p-2 border-b mono">.normalized.md</td></tr>
         <tr><td class="p-2 border-b mono">repair</td><td class="p-2 border-b">Deterministic ($0) post-normalize heading fixes.</td><td class="p-2 border-b mono">.repaired.md</td></tr>
+        <tr><td class="p-2 border-b mono">structure</td><td class="p-2 border-b">Deterministic ($0) whole-document heading restructuring (demote flat sources, rebalance stray top-level headings); no-op when the hierarchy is already healthy.</td><td class="p-2 border-b mono">.structured.md</td></tr>
         <tr><td class="p-2 border-b mono">vision</td><td class="p-2 border-b">Run the vision LLM on each extracted image; embed a Mermaid diagram + caption for diagrams, caption-only for photos/screenshots. <strong>This is the LLM-spending phase.</strong></td><td class="p-2 border-b mono">.visioned.md → &lt;stem&gt;.md</td></tr>
         <tr><td class="p-2 mono">split</td><td class="p-2">Optional: also write one file per section under <span class="mono">sections/</span>.</td><td class="p-2 mono">sections/</td></tr>
       </tbody>

@@ -76,6 +76,20 @@ def test_detail_view_specific_checkpoint(monkeypatch, tmp_path):
     assert "Raw only" in r.text
 
 
+def test_detail_view_pills_cover_all_served_views(monkeypatch, tmp_path):
+    # Every checkpoint view the route layer serves must have a clickable pill.
+    from pagespeak.web.api.pages import _VIEW_SUFFIX
+
+    client, conv = _client(monkeypatch, tmp_path)
+    out = conv / "out" / "doc"
+    out.mkdir()
+    (out / "Doc.raw.md").write_text("# raw", encoding="utf-8")
+    r = client.get("/c/doc")
+    assert r.status_code == 200
+    for v in _VIEW_SUFFIX:
+        assert f'href="?view={v}"' in r.text
+
+
 def test_queue_partial_shows_active_jobs(monkeypatch, tmp_path):
     client, conv = _client(monkeypatch, tmp_path)
     (conv / "in" / "Doc.pdf").write_text("x", encoding="utf-8")
@@ -145,6 +159,10 @@ def test_help_page_renders(monkeypatch, tmp_path):
     assert "help" in r.text.lower()
     assert "which AI looks at images" in r.text  # options documented (plain English)
     assert "Cost &amp; safety" in r.text or "Cost & safety" in r.text
+    # Pipeline table lists the structure phase between repair and vision.
+    assert (
+        r.text.index(".repaired.md") < r.text.index(".structured.md") < r.text.index(".visioned.md")
+    )
 
 
 def test_partial_phase_strip_renders(monkeypatch, tmp_path):
