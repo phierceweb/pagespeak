@@ -79,7 +79,7 @@ Thumbnails from `images/`. **Click any thumbnail — or any image inline in the 
 
 ### Run record (its own tab)
 
-A dedicated tab rendering `.pagespeak-run.json` in a readable form: a plain-English intro, a **What happened** table (when it ran, pagespeak version, source file, sections/images produced, AI calls + cost), a **Settings used** table (the `resolved_flags`, formatted — `true`→yes, `null`→default), and the full raw JSON in a collapsible. These are the exact settings the last run used; re-running reuses them. This is the rerun-safety guarantee: a re-run from an upstream phase carries the same `split_sections` / `nested_split` / `preset` / `normalize_headings*` flags as the original, never bare defaults that would silently wipe `sections/`.
+A dedicated tab rendering `.pagespeak-run.json` in a readable form: a plain-English intro, a **What happened** table (when it ran, pagespeak version, source file, sections/images produced, AI calls + cost), a **Settings used** table (the `resolved_flags`, formatted — `true`→yes, `null`→default), and the full raw JSON in a collapsible. These are the exact settings the last run used; re-running reuses them. This is the rerun-safety guarantee: a re-run from an upstream phase carries the same `split_sections` / `nested_split` / `preset` / `normalize_headings*` flags as the original, never bare defaults that would silently wipe `sections/`. (The CLI itself applies the same rule on any re-run — see [caching.md](caching.md) § "Re-run flag inheritance".)
 
 ### Options / run form
 

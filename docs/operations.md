@@ -41,11 +41,10 @@ The traceback may point into Marker or `concurrent.futures`, not pagespeak direc
 
 After changing a Phase-3 stage (cleanup, normalize, split, …) you usually want to re-run the pipeline against already-converted output dirs and confirm the change did what you intended. Do it in this order — skipping the last step is the canonical way to ship a regression.
 
-1. **Read the original flags.** For each output dir, read `.pagespeak-run.json` → `resolved_flags`. Note `split_sections`, `nested_split`, `preset`, `normalize_headings*`, etc.
-2. **Re-run with the SAME flags.** `pagespeak convert <dir> --rerun-from <stage>` **plus** the original output-shaping flags (`--split-sections --nested-split`, the preset, …). `--rerun-from` deletes downstream structural outputs (`sections/`, `INDEX.md`); omitting the flags that produce them leaves them deleted. See [docs/caching.md](caching.md) § "Destructive".
-3. **Read the output by eye.** Open the rendered `<stem>.md` and a `sections/` sample for several representative docs and *read them*. A zero diff-count or a passing token-grep is a gate, not a verdict — the prior output may already be wrong. Pin the read as the definition of done.
+1. **Re-run and check the inheritance notice.** `pagespeak convert <dir> --rerun-from <stage>` — output-shaping flags you don't pass default to the dir's `.pagespeak-run.json` → `resolved_flags`, and the command echoes a `defaults inherited from .pagespeak-run.json: …` line naming them. Confirm the notice lists the flags you expect (`split_sections`, `nested_split`, the normalize mode, …); a missing notice means the record is absent or unreadable, and the run is on bare defaults. Only `--no-inherit` (or a deleted record) reproduces the old wipe-and-never-rebuild trap. See [docs/caching.md](caching.md) § "Re-run flag inheritance".
+2. **Read the output by eye.** Open the rendered `<stem>.md` and a `sections/` sample for several representative docs and *read them*. A zero diff-count or a passing token-grep is a gate, not a verdict — the prior output may already be wrong. Pin the read as the definition of done.
 
-**Symptom this prevents.** `--rerun-from normalize` run without `--split-sections` once deleted `sections/` across an entire batch of converted documents; a separate re-validation pass then declared the output "fine" on a 0-diff while the heading hierarchy had been broken upstream the whole time. Both are detectable only by steps 1–3 above.
+**Symptom this prevents.** A bare `--rerun-from normalize` once deleted `sections/` across an entire batch of converted documents (flag inheritance now rebuilds them, but a bad or absent record still won't); a separate re-validation pass then declared the output "fine" on a 0-diff while the heading hierarchy had been broken upstream the whole time. Both are detectable only by steps 1–2 above.
 
 ## Adding to this page
 

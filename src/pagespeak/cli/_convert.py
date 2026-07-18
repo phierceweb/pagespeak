@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import typer
 
@@ -16,19 +16,11 @@ from ..orchestrators._dispatch import resolve_dir_mode_stem
 from ..services._cleanup import CleanupLevel, CrossRefs
 from ..services._diagrams import VisionBackendName
 from ..services._normalize_decision import NormalizeModeOption
-
-# Names of typer params that the preset can supply. CLI passes None to
-# `to_markdown` for any of these the user didn't explicitly set, so the
-# library-side preset+default resolver kicks in.
-_PRESET_CONTROLLED_FLAGS = (
-    "cleanup",
-    "split_sections",
-    "nested_split",
-    "split_min_level",
-    "normalize_headings",
-    "normalize_headings_mode",
-    "strip_frontmatter",
-    "provenance",
+from ._inherit import (
+    INHERITABLE_FLAGS,
+    _is_commandline_source,
+    apply_run_record_defaults,
+    explicit_command_line_params,
 )
 
 
@@ -105,7 +97,7 @@ def register(
         ),
         force_ocr: bool = typer.Option(
             False,
-            "--force-ocr",
+            "--force-ocr/--no-force-ocr",
             help="PDF only: force OCR even on text-bearing PDFs.",
         ),
         device: str | None = typer.Option(
@@ -136,12 +128,12 @@ def register(
         ),
         split_sections: bool = typer.Option(
             False,
-            "--split-sections",
+            "--split-sections/--no-split-sections",
             help="Also write one file per section under <output_dir>/sections/.",
         ),
         nested_split: bool = typer.Option(
             False,
-            "--nested-split",
+            "--nested-split/--no-nested-split",
             help="With --split-sections, nest numbered files in numeric-prefix folders.",
         ),
         split_min_level: int | None = typer.Option(
@@ -161,7 +153,7 @@ def register(
         ),
         english_only: bool = typer.Option(
             False,
-            "--english-only",
+            "--english-only/--no-english-only",
             help="With --split-sections, drop sections classified as clearly non-English (a multilingual manual's translated appendix). Conservative — short/ambiguous sections are kept. Off by default.",
         ),
         pdf_backend: str = typer.Option(
@@ -171,7 +163,7 @@ def register(
         ),
         repair_tables: bool = typer.Option(
             False,
-            "--repair-tables",
+            "--repair-tables/--no-repair-tables",
             help="Marker PDF only. After ingest, splice Docling's clean grid over Marker-broken tables — both <br>-collapsed mega-cells (a multi-column table jammed into one cell) and split multi-line-cell tables (one row per wrapped line). Off by default; requires pagespeak[pdf-docling]. Same fix as the standalone `pagespeak repair-tables` command, run inline. See docs/repair-tables.md.",
         ),
         docx_backend: str = typer.Option(
@@ -224,10 +216,15 @@ def register(
             "--source-label",
             help='Human source title for the provenance frontmatter (e.g. "Quick Start Guide"). Emits frontmatter the same as --source-type.',
         ),
+        inherit: bool = typer.Option(
+            True,
+            "--inherit/--no-inherit",
+            help="When the output dir holds a .pagespeak-run.json, flags you don't pass default to that record's resolved_flags (explicit flags and an explicit --preset win; LLM/engine flags never inherit). --no-inherit ignores the record: bare defaults. See docs/caching.md.",
+        ),
         rerun_from: str | None = typer.Option(
             None,
             "--rerun-from",
-            help="Bust caches at this stage and re-run from there. Stages: ingest | cleanup | decorations | normalize | vision | split. See docs/caching.md.",
+            help="Bust caches at this stage and re-run from there. Stages: ingest | cleanup | decorations | normalize | vision | split. Unspecified output-shaping flags come from the run record (see --inherit). See docs/caching.md.",
         ),
         start: str | None = typer.Option(
             None,
@@ -255,7 +252,6 @@ def register(
 
         Single-process by default (--workers 1). Pass --workers N to use
         parallel chunked ingest for very large PDFs."""
-        cross_refs = validate_cross_refs(cross_refs)
         # validate only if the user passed --vision-backend.
         # When unset (None), `to_markdown` defers to `PAGESPEAK_VISION_BACKEND`
         # env var (via `gather_diagrams` → `_agent_runtime.resolve_backend`),
@@ -263,7 +259,6 @@ def register(
         # `--normalize-headings-backend` validation below.
         if vision_backend is not None:
             vision_backend = validate_vision_backend(vision_backend)
-        pdf_backend = validate_pdf_backend(pdf_backend)
         preset = validate_preset(preset)
 
         # --normalize-headings-backend writes to the per-task env
@@ -277,24 +272,6 @@ def register(
 
             _os.environ["PAGESPEAK_HEADING_NORMALIZE_BACKEND"] = normalize_headings_backend
             _os.environ["PAGESPEAK_HEADING_NORMALIZE_FULL_BACKEND"] = normalize_headings_backend
-
-        # detect which preset-controlled flags the user passed
-        # explicitly. For ones they didn't pass, send `None` to
-        # `to_markdown` so its preset+default resolver picks the value
-        # (preset's, if --preset is set; original default otherwise).
-        # `cleanup` and `normalize_headings_mode` only need validation
-        # when the user explicitly passed them.
-        explicit = _explicit_preset_flags(ctx)
-
-        cleanup_arg: CleanupLevel | None = None
-        if "cleanup" in explicit:
-            cleanup_arg = cast(CleanupLevel, validate_cleanup(cleanup))
-
-        nh_mode_arg: NormalizeModeOption | None = None
-        if "normalize_headings_mode" in explicit:
-            nh_mode_arg = cast(
-                NormalizeModeOption, validate_normalize_mode(normalize_headings_mode)
-            )
 
         if rerun_from is not None:
             from ..services._rerun import RERUN_STAGES
@@ -336,6 +313,50 @@ def register(
             if not _is_commandline_source(_diag_src):
                 diagrams = False
 
+        # Which params came from the command line: the run record must never
+        # override an explicit flag, nor a preset-controlled flag when
+        # --preset itself is explicit. Non-explicit preset-controlled flags
+        # stay None toward `to_markdown` so its preset+default resolver picks
+        # the value — unless the record supplies one below.
+        explicit = explicit_command_line_params(ctx, INHERITABLE_FLAGS + ("preset",))
+
+        # Run-record inheritance: unspecified flags default to the previous
+        # run's resolved_flags (a bare --rerun-from used to wipe sections/
+        # and never rebuild it). A QTI export is a source dir, never a
+        # re-run target.
+        inherited: dict[str, Any] = {}
+        if inherit and not is_qti_export(input_path):
+            inherited = apply_run_record_defaults(
+                output_dir=output_dir,
+                explicit=explicit,
+                validators={
+                    "cleanup": validate_cleanup,
+                    "cross_refs": validate_cross_refs,
+                    "normalize_headings_mode": validate_normalize_mode,
+                    "pdf_backend": validate_pdf_backend,
+                },
+                echo=typer.echo,
+            )
+
+        def _flag(name: str, fallback: Any) -> Any:
+            return inherited.get(name, fallback)
+
+        cross_refs = validate_cross_refs(_flag("cross_refs", cross_refs))
+        pdf_backend = validate_pdf_backend(_flag("pdf_backend", pdf_backend))
+
+        cleanup_val = _flag("cleanup", cleanup if "cleanup" in explicit else None)
+        cleanup_arg: CleanupLevel | None = None
+        if cleanup_val is not None:
+            cleanup_arg = cast(CleanupLevel, validate_cleanup(cleanup_val))
+
+        nh_mode_val = _flag(
+            "normalize_headings_mode",
+            normalize_headings_mode if "normalize_headings_mode" in explicit else None,
+        )
+        nh_mode_arg: NormalizeModeOption | None = None
+        if nh_mode_val is not None:
+            nh_mode_arg = cast(NormalizeModeOption, validate_normalize_mode(nh_mode_val))
+
         try:
             result = to_markdown(
                 input_path,
@@ -349,29 +370,47 @@ def register(
                 vision_concurrency=vision_concurrency,
                 vision_cache_only=vision_cache_only,
                 preserve_alt=preserve_alt,
-                force_ocr=force_ocr,
+                force_ocr=_flag("force_ocr", force_ocr),
                 device=device,
-                page_range=page_range,
-                html_base_url=html_base_url,
+                page_range=_flag("page_range", page_range),
+                html_base_url=_flag("html_base_url", html_base_url),
                 cleanup=cleanup_arg,
                 cross_refs=cast(CrossRefs, cross_refs),
-                split_sections=split_sections if "split_sections" in explicit else None,
-                nested_split=nested_split if "nested_split" in explicit else None,
-                split_min_level=split_min_level if "split_min_level" in explicit else None,
-                split_max_level=split_max_level,
-                split_target_kb=split_target_kb,
-                english_only=english_only,
+                split_sections=_flag(
+                    "split_sections", split_sections if "split_sections" in explicit else None
+                ),
+                nested_split=_flag(
+                    "nested_split", nested_split if "nested_split" in explicit else None
+                ),
+                split_min_level=_flag(
+                    "split_min_level", split_min_level if "split_min_level" in explicit else None
+                ),
+                split_max_level=_flag("split_max_level", split_max_level),
+                split_target_kb=_flag("split_target_kb", split_target_kb),
+                min_body_chars=_flag("min_body_chars", None),
+                english_only=_flag("english_only", english_only),
+                regenerate_toc=_flag("regenerate_toc", True),
+                decoration_threshold=_flag("decoration_threshold", None),
+                decoration_hamming_distance=_flag("decoration_hamming_distance", None),
                 pdf_backend=cast(PdfBackendName, pdf_backend),
-                repair_tables=repair_tables,
-                docx_backend=cast(DocxBackendName, docx_backend),
-                docx_outline_heading_depth=docx_outline_heading_depth,
-                normalize_headings=normalize_headings if "normalize_headings" in explicit else None,
+                repair_tables=_flag("repair_tables", repair_tables),
+                docx_backend=cast(DocxBackendName, _flag("docx_backend", docx_backend)),
+                docx_outline_heading_depth=_flag(
+                    "docx_outline_heading_depth", docx_outline_heading_depth
+                ),
+                normalize_headings=_flag(
+                    "normalize_headings",
+                    normalize_headings if "normalize_headings" in explicit else None,
+                ),
                 normalize_headings_mode=nh_mode_arg,
                 normalize_headings_model=normalize_headings_model,
-                strip_frontmatter=strip_frontmatter if "strip_frontmatter" in explicit else None,
-                provenance=provenance if "provenance" in explicit else None,
-                source_type=source_type,
-                source_label=source_label,
+                strip_frontmatter=_flag(
+                    "strip_frontmatter",
+                    strip_frontmatter if "strip_frontmatter" in explicit else None,
+                ),
+                provenance=_flag("provenance", provenance if "provenance" in explicit else None),
+                source_type=_flag("source_type", source_type),
+                source_label=_flag("source_label", source_label),
                 rerun_from=rerun_from,
                 start=start,
                 stop_after=stop_after,
@@ -424,37 +463,3 @@ def register(
         sections_dir = output_dir / "sections"
         if sections_dir.is_dir():
             typer.echo(f"  sections     : {sections_dir}")
-
-
-def _is_commandline_source(source: object) -> bool:
-    """True if a Click/Typer parameter source is COMMANDLINE.
-
-    Compared by enum *name*, not identity: typer >= 0.26 vendors its own
-    Click (`typer._click`), so `ctx.get_parameter_source()` returns a
-    `typer._click.core.ParameterSource` member that is never equal to
-    `click.core.ParameterSource.COMMANDLINE`. A name comparison is robust
-    across both the stdlib-click and vendored-click enums (and any future
-    revendoring), and avoids importing a Click enum whose identity is no
-    longer stable.
-    """
-    return getattr(source, "name", None) == "COMMANDLINE"
-
-
-def _explicit_preset_flags(ctx: typer.Context) -> set[str]:
-    """Return the set of preset-controlled CLI param names that came from
-    the COMMAND LINE (not the typer default). Uses Click's
-    `get_parameter_source` so default-equal explicit passes still count
-    as user-set.
-
-    Falls back to the empty set on any unexpected error so a Click API
-    change doesn't crash the convert command.
-    """
-    explicit: set[str] = set()
-    try:
-        for name in _PRESET_CONTROLLED_FLAGS:
-            source = ctx.get_parameter_source(name)
-            if _is_commandline_source(source):
-                explicit.add(name)
-    except (AttributeError, TypeError):
-        pass
-    return explicit

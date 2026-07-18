@@ -221,3 +221,34 @@ def make_docx(tmp_path: Path):
         return path
 
     return _build
+
+
+@pytest.fixture
+def make_run_record():
+    """Factory: write a minimal `.pagespeak-run.json` with the given
+    `resolved_flags` into a directory (created if missing). Returns the
+    record path. Extra keyword args override top-level record fields."""
+
+    def _write(out: Path, resolved_flags: dict | None = None, **top_level):
+        import json
+
+        from pagespeak.services._run_record import RUN_RECORD_FILENAME
+
+        out.mkdir(parents=True, exist_ok=True)
+        record = {
+            "version": "0.0.0-test",
+            "preset": None,
+            "resolved_flags": {} if resolved_flags is None else resolved_flags,
+            "input": "doc.pdf",
+            "input_sha256": "0" * 64,
+            "started_at": "2026-01-01T00:00:00Z",
+            "finished_at": "2026-01-01T00:00:01Z",
+            "section_count": None,
+            "image_count": 0,
+            **top_level,
+        }
+        target = out / RUN_RECORD_FILENAME
+        target.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+        return target
+
+    return _write

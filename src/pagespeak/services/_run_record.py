@@ -17,20 +17,36 @@ preserves the public API.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
 from pf_core.pipeline.run_record import file_sha256
+from pf_core.pipeline.run_record import read_run_record as _read_run_record
 from pf_core.pipeline.run_record import write_run_record as _write_run_record
 
 __all__ = [
     "RUN_RECORD_FILENAME",
     "file_sha256",
+    "read_run_record",
     "summarize_llm_calls",
     "write_run_record",
 ]
 
 RUN_RECORD_FILENAME = ".pagespeak-run.json"
+
+
+def read_run_record(output_dir: Path) -> dict[str, Any] | None:
+    """Read `<output_dir>/.pagespeak-run.json` defensively.
+
+    Returns None when the file is missing, unreadable, malformed JSON, or
+    not a JSON object — a bad record must never break the consumers that
+    merely *prefer* it (provenance recovery, re-run flag inheritance)."""
+    try:
+        record = _read_run_record(output_dir, filename=RUN_RECORD_FILENAME)
+    except (OSError, json.JSONDecodeError):
+        return None
+    return record if isinstance(record, dict) else None
 
 
 def summarize_llm_calls(records: list[dict[str, Any]]) -> dict[str, Any]:

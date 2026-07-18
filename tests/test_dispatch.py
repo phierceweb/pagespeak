@@ -1020,6 +1020,10 @@ def test_to_markdown_writes_run_record(fake_docx: Path, tmp_path: Path) -> None:
     assert rf["split_min_level"] == 2
     assert rf["normalize_headings"] is True
     assert rf["normalize_headings_mode"] == "heuristic"
+    # Output-shaping flags recorded for re-run flag inheritance.
+    assert rf["english_only"] is False
+    assert rf["docx_backend"] == "markitdown"
+    assert rf["docx_outline_heading_depth"] == 0
     # Input metadata.
     assert record["input"] == fake_docx.name
     assert isinstance(record["input_sha256"], str)

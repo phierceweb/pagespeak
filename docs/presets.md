@@ -58,9 +58,10 @@ For each preset-controlled flag, the resolver picks (in order):
 
 1. **Explicit caller value** — non-`None` library kwarg or command-line flag (detected via Click's `ctx.get_parameter_source(name) == ParameterSource.COMMANDLINE`).
 2. **Preset value** — when `preset=` / `--preset` is set.
-3. **Original to_markdown default** — `cleanup="basic"`, `split_sections=False`, `nested_split=False`, `split_min_level=None`, `normalize_headings=False`, `normalize_headings_mode="heuristic"`.
+3. **Recorded run value** — CLI only: re-targeting an output dir that holds a `.pagespeak-run.json` inherits its `resolved_flags` for flags neither passed explicitly nor covered by an explicit `--preset` (`--no-inherit` opts out). See [caching.md](caching.md) § "Re-run flag inheritance".
+4. **Original to_markdown default** — `cleanup="basic"`, `split_sections=False`, `nested_split=False`, `split_min_level=None`, `normalize_headings=False`, `normalize_headings_mode="heuristic"`.
 
-Non-preset-controlled flags (`vision_backend`, `vision_model`, `cross_refs`, `pdf_backend`, etc.) aren't affected by presets — they use their own defaults and explicit values.
+Non-preset-controlled flags (`vision_backend`, `vision_model`, `cross_refs`, `pdf_backend`, etc.) aren't affected by presets — they use their own defaults and explicit values (many of them do participate in run-record inheritance; the engine/model flags never do).
 
 ## Re-run reproducibility (`<output>/.pagespeak-run.json`)
 
@@ -81,6 +82,8 @@ After every successful run, pagespeak writes `<output_dir>/.pagespeak-run.json`:
 ```
 
 Two runs against the same input file should produce the same `input_sha256`. Differences in `section_count` / `image_count` / `resolved_flags` between two runs reveal what changed.
+
+The record is also the input to **re-run flag inheritance**: a later `pagespeak convert` into the same output dir defaults unspecified flags to these `resolved_flags`, so re-runs reproduce the original shape without re-typing the flag set. A run whose flags were inherited records them as its own resolved values (with `preset: null` — the concrete flags, not the preset name, carry forward). See [caching.md](caching.md) § "Re-run flag inheritance".
 
 The file is written even when `--no-split-sections` is set — the `section_count` field is `null` in that case.
 

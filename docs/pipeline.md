@@ -67,7 +67,7 @@ Each structural checkpoint is a plain `.md` snapshot of the document at that poi
 
 `pagespeak convert <outdir> --rerun-from <stage>` (or `pagespeak invalidate <outdir> <stage>`) deletes that stage's cache plus every **downstream** stage's structural files, then re-runs from there.
 
-> **Footgun:** re-running an existing output dir with bare defaults can wipe `sections/` and never rebuild it, because `--split-sections` defaults to off. Always read `<outdir>/.pagespeak-run.json` → `resolved_flags` and pass the same flags. See [caching.md](caching.md).
+Deleted outputs are rebuilt with the **original run's flags by default**: when the output dir holds a `.pagespeak-run.json`, every output-shaping flag you don't pass explicitly is taken from that record's `resolved_flags` (so a bare `--rerun-from normalize` re-splits `sections/` exactly as before). The convert command echoes one `defaults inherited from .pagespeak-run.json: …` line naming what it took. Explicit flags — and an explicit `--preset`, for the preset-controlled flags — always win; `--no-inherit` ignores the record for old-style bare defaults. LLM/engine flags (`--diagrams`, `--vision-*`, models, `--device`) are never inherited. See [caching.md](caching.md) § "Re-run flag inheritance".
 
 ## Where to go deeper
 

@@ -39,7 +39,7 @@ vision → TOC regen → **split** → `(done)`
 
 `--rerun-from split` / `pagespeak invalidate <outdir> split` deletes `sections/` and `INDEX.md`, then re-splits the consolidated markdown.
 
-> **Footgun:** `--split-sections` defaults to **off**. If you re-run an existing output dir with bare defaults, `sections/` is deleted and never rebuilt — a silent, empty `sections/`. Before re-running, read `<outdir>/.pagespeak-run.json` → `resolved_flags` and pass the same `split_sections` / `nested_split` / `split_min_level` / `preset` values. Re-running an existing output dir is destructive of downstream artifacts — re-run only with the same flags the original run used.
+> Re-running an existing output dir is destructive of downstream artifacts, but the split flags are restored by default: a re-run inherits `split_sections` / `nested_split` / `split_min_level` / … from `<outdir>/.pagespeak-run.json` → `resolved_flags` and re-splits in the original shape (a notice line names the inherited flags). Only `--no-inherit` — or a missing record — reproduces the old trap, where `--split-sections` defaults **off** and a deleted `sections/` is never rebuilt. See [caching.md](caching.md) § "Re-run flag inheritance".
 
 ## Deep dive
 

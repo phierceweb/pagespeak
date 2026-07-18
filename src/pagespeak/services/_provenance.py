@@ -20,7 +20,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from ._run_record import RUN_RECORD_FILENAME, file_sha256
+from ._run_record import file_sha256, read_run_record
 
 # Filename-stem cleaning: collapse `_`/`-` separators and whitespace runs.
 _SEPARATOR_RE = re.compile(r"[_\-]+")
@@ -62,14 +62,7 @@ def _read_run_record(out: Path | None) -> dict[str, Any] | None:
     """The out-dir's run record as a dict, or None when absent/unreadable."""
     if out is None:
         return None
-    record_path = out / RUN_RECORD_FILENAME
-    if not record_path.is_file():
-        return None
-    try:
-        record = json.loads(record_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    return record if isinstance(record, dict) else None
+    return read_run_record(out)
 
 
 def _identity_from_record(record: dict[str, Any] | None) -> dict[str, str] | None:

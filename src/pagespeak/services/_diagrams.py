@@ -113,13 +113,15 @@ def _process_one_image(
     cache_dir: Path | None,
     cache_only: bool = False,
     original_alt: str = "",
-) -> tuple[Diagram | None, bool, bool, bool]:
+) -> tuple[Diagram | None, bool, bool, bool, str | None]:
     """Phash → cache lookup → backend call (on miss) → cache write.
 
     Pure per-image work — no shared state, safe to run concurrently across
     a thread pool. Returns `(diagram, was_cache_hit, was_backend_failure,
-    was_skipped)` so the orchestrator can keep hits/misses/failures/skipped
-    counters without re-doing work. `diagram` is None for a cache-only skip:
+    was_skipped, cached_model)` so the orchestrator can keep hits/misses/
+    failures/skipped counters without re-doing work. `cached_model` is a
+    hit's recorded provenance model (None otherwise), aggregated into the
+    model-mismatch warning. `diagram` is None for a cache-only skip:
     no handoff entry, so inject leaves the ref's authored alt untouched.
     """
     # compute phash up front so it's available both for the
@@ -144,7 +146,8 @@ def _process_one_image(
             cache_path = cache_dir / f"{cache_phash}.json"
             hit = vcache.load(cache_path)
             if hit is not None:
-                return vcache.diagram_from_cache(hit, image_path), True, False, False
+                diagram = vcache.diagram_from_cache(hit, image_path)
+                return diagram, True, False, False, hit.get("model")
         except Exception as e:
             # Cache lookup failure is never fatal; fall through to live call.
             logger.warning("vision_cache_lookup_failed path=%s error=%s", image_path, e)
@@ -154,7 +157,7 @@ def _process_one_image(
         # Enforced zero-call mode: a miss is skipped, never sent to the model —
         # and produces NO diagram, so the figure keeps its authored alt verbatim
         # (a skip placeholder must never ship as content).
-        return None, False, False, True
+        return None, False, False, True, None
 
     try:
         diagram = backend.analyze(image_path, phash=cache_phash, original_alt=original_alt)
@@ -177,6 +180,7 @@ def _process_one_image(
             False,  # not a hit
             True,  # failed
             False,  # not skipped
+            None,  # no cached model
         )
 
     if cache_path is not None:
@@ -194,7 +198,7 @@ def _process_one_image(
         except Exception as e:
             logger.warning("vision_cache_write_failed path=%s error=%s", cache_path, e)
 
-    return diagram, False, False, False
+    return diagram, False, False, False, None
 
 
 def _any_cache_miss(
@@ -253,9 +257,10 @@ def gather_diagrams(
 
     `cache_dir`, if given, is used as a per-image checkpoint store:
     each successful call writes `<cache_dir>/<phash>.json`, content-keyed
-    so the same image rasterized at two paths still hits one entry.
-    Cross-backend / cross-model cache invalidation is handled inside
-    `_vision_cache.load()`.
+    so the same image rasterized at two paths still hits one entry —
+    regardless of backend/model (`_vision_cache.load()` never gates on
+    them). A model switch served from cache is surfaced by one aggregate
+    `vision_cache_model_mismatch` warning, log-only.
 
     `concurrency` controls the per-image worker pool. None resolves to
     `$PAGESPEAK_VISION_CONCURRENCY` then `DEFAULT_VISION_CONCURRENCY=6`.
@@ -297,6 +302,7 @@ def gather_diagrams(
     cache_misses = 0
     backend_failures = 0
     skipped_basenames: list[str] = []
+    hit_models: dict[str | None, int] = {}
 
     log_every = max(10, total // 20)
 
@@ -317,7 +323,7 @@ def gather_diagrams(
         for completed_count, future in enumerate(as_completed(futures), start=1):
             image_path = futures[future]
             try:
-                diagram, hit, failed, skipped = future.result()
+                diagram, hit, failed, skipped, cached_model = future.result()
             except Exception as e:
                 # Belt-and-suspenders: _process_one_image swallows backend
                 # failures into a placeholder Diagram, so this only fires
@@ -331,12 +337,14 @@ def gather_diagrams(
                 hit = False
                 failed = True
                 skipped = False
+                cached_model = None
             if diagram is not None:
                 by_basename[diagram.image_path.name] = diagram
             if skipped:
                 skipped_basenames.append(image_path.name)
             if hit:
                 cache_hits += 1
+                hit_models[cached_model] = hit_models.get(cached_model, 0) + 1
             else:
                 cache_misses += 1
             if failed:
@@ -368,6 +376,9 @@ def gather_diagrams(
             cache_misses,
             cache_hits + cache_misses,
         )
+        from . import _vision_cache as vcache
+
+        vcache.warn_on_model_mismatch(hit_models, active_model=model)
 
     # End-of-run failure-rate summary. INFO when failures are 0 (so an
     # all-cache-hit run still logs one "0 failures" line), ERROR when the

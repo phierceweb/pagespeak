@@ -1234,7 +1234,7 @@ class _RecordingBackend:
         raise AssertionError("backend.analyze must not be called under cache_only")
 
 
-def _seed_cache(cache_dir: Path, image_path: Path) -> None:
+def _seed_cache(cache_dir: Path, image_path: Path, model: str | None = None) -> None:
     """Write a vision-cache entry keyed by image_path's phash."""
     from pagespeak.services import _vision_cache as vcache
     from pagespeak.utils._phash import compute_phash
@@ -1245,7 +1245,7 @@ def _seed_cache(cache_dir: Path, image_path: Path) -> None:
         cache_dir / f"{phash}.json",
         diagram=Diagram(image_path=image_path, caption="cached caption", mermaid=None),
         backend="claude_code",
-        model=None,
+        model=model,
         phash=phash,
         source_paths=[image_path.name],
     )
@@ -1267,6 +1267,60 @@ def test_gather_cache_only_all_hits_makes_no_calls(tmp_path: Path) -> None:
     )
     assert backend.calls == 0
     assert out[img.name].caption == "cached caption"
+
+
+def test_gather_warns_when_cached_model_differs_from_active(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A finished conversion re-run under a different model is 100% cache
+    hits — the hit is still served (zero live calls; keying untouched), but
+    ONE aggregate mismatch warning must say the model switch changed nothing."""
+    import logging  # noqa: PLC0415
+
+    from pagespeak.services._diagrams import gather_diagrams
+
+    img = _phashable_image(tmp_path / "img.png")
+    cache_dir = tmp_path / ".vision-cache"
+    _seed_cache(cache_dir, img, model="model-a")
+    backend = _RecordingBackend()
+    with caplog.at_level(logging.WARNING):
+        out = gather_diagrams(
+            [img],
+            backend=backend,
+            backend_name="claude_code",
+            model="model-b",
+            cache_dir=cache_dir,
+        )
+    assert backend.calls == 0
+    assert out[img.name].caption == "cached caption"
+    matches = [r for r in caplog.records if "vision_cache_model_mismatch" in r.message]
+    assert len(matches) == 1
+    msg = matches[0].message
+    assert "cached=model-a" in msg
+    assert "active=model-b" in msg
+    assert "images=1" in msg
+    assert "--rerun-from vision" in msg
+
+
+def test_gather_no_mismatch_warning_when_models_match(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    import logging  # noqa: PLC0415
+
+    from pagespeak.services._diagrams import gather_diagrams
+
+    img = _phashable_image(tmp_path / "img.png")
+    cache_dir = tmp_path / ".vision-cache"
+    _seed_cache(cache_dir, img, model="model-a")
+    with caplog.at_level(logging.WARNING):
+        gather_diagrams(
+            [img],
+            backend=_RecordingBackend(),
+            backend_name="claude_code",
+            model="model-a",
+            cache_dir=cache_dir,
+        )
+    assert "vision_cache_model_mismatch" not in caplog.text
 
 
 def test_gather_cache_only_miss_skips_and_warns(

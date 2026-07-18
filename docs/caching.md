@@ -57,8 +57,17 @@ pagespeak convert manual.pdf -o ./out --rerun-from cleanup
 
 Deletes the cleanup cache and everything downstream, then runs from the start. Useful when you've changed code and want to re-test the affected phase against the existing upstream caches.
 
-> **Destructive — `--rerun-from` deletes downstream structural outputs.** `--rerun-from <stage>` removes that stage's cache **plus every downstream structural artifact**, including `sections/` and `INDEX.md`. If you re-run without the same output-shaping flags the original run used (`--split-sections`, `--nested-split`, `--preset`, …), those outputs are deleted and **not regenerated** — you silently end up with no `sections/`.
-> Before re-running an existing output dir, read its `.pagespeak-run.json` → `resolved_flags` and pass the same flags. See `docs/operations.md` § "Re-validating a Phase-3 change".
+> **Destructive, but self-healing by default.** `--rerun-from <stage>` removes that stage's cache **plus every downstream structural artifact**, including `sections/` and `INDEX.md`. Re-run flag inheritance (below) rebuilds them with the original run's flags, so a bare `--rerun-from` no longer strands you without `sections/`. The one way to reproduce the old trap is `--no-inherit` (or deleting the run record) — with bare defaults, deleted outputs are **not regenerated** because `--split-sections` defaults to off.
+
+### Re-run flag inheritance
+
+When `pagespeak convert` targets an output dir that holds a `.pagespeak-run.json`, every flag you don't pass on the command line defaults to that record's `resolved_flags` — a re-run reproduces the original run's shape without re-typing `--split-sections --nested-split --split-min-level …`. One notice line names everything taken: `defaults inherited from .pagespeak-run.json: split_sections=True, … (explicit flags win; --no-inherit for bare defaults)`.
+
+Precedence per flag: **explicit CLI flag** > **explicit `--preset`** (for the preset-controlled flags) > **recorded `resolved_flags`** > built-in default. The inheritable single-form switches have `--no-` forms (`--no-split-sections`, `--no-nested-split`, `--no-english-only`, `--no-repair-tables`, `--no-force-ocr`) so an inherited `true` is overridable per flag; `--no-inherit` disables the mechanism wholesale.
+
+What inherits: the deterministic, $0, output-shaping flags — cleanup/cross-refs, the whole splitter family (including `english_only` and the library-level `min_body_chars` / `regenerate_toc` / decoration knobs), `pdf`/`docx` backend selection, `repair_tables`, `force_ocr`, `page_range`, `html_base_url`, normalize on/off + mode, and the provenance flags. What never inherits: LLM/engine/spend selection (`diagrams`, `vision_backend`/`vision_model`/`vision_concurrency`/`vision_cache_only`, `preserve_alt`, `normalize_headings_model`) and machine-specific runtime (`device`, `--workers`) — engine choice stays a per-invocation decision, so a record can never silently select a paid backend.
+
+A missing or unreadable record inherits nothing (a warning is logged); a recorded value the CLI would reject (e.g. an unknown cleanup level) fails loudly naming the record. The record itself survives `--rerun-from` and `pagespeak invalidate` — invalidation never deletes `.pagespeak-run.json`.
 
 ### Out-of-band: `pagespeak invalidate`
 

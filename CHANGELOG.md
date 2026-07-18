@@ -2,6 +2,17 @@
 
 Notable changes to pagespeak, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## 0.6.0
+
+### Changed
+- **Re-runs inherit the previous run's flags from the run record.** When `convert` targets an output dir holding a `.pagespeak-run.json`, every output-shaping flag not passed on the command line defaults to that record's `resolved_flags`, and the command echoes one `defaults inherited from .pagespeak-run.json: …` line naming what it took. A bare `--rerun-from <stage>` therefore rebuilds the structural outputs it deletes (`sections/` with its `INDEX.md`) in the original shape, instead of silently dropping them because `--split-sections` defaults to off. Explicit flags win; an explicit `--preset` wins over the record for the preset-controlled flags; `--no-inherit` restores bare-defaults semantics. LLM/engine/runtime selection (`--diagrams`, `--vision-*`, `--normalize-headings-model`, `--device`) never inherits — engine choice and spend stay per-invocation decisions. An invalid recorded value fails loudly naming the record; a missing or corrupt record inherits nothing. See docs/caching.md § "Re-run flag inheritance".
+
+### Added
+- **`--no-` forms for the inheritable single-form switches** — `--no-split-sections`, `--no-nested-split`, `--no-english-only`, `--no-repair-tables`, `--no-force-ocr` — so an inherited `true` is overridable per flag.
+- The run record's `resolved_flags` now also captures `english_only`, `docx_backend`, and `docx_outline_heading_depth`.
+- Library: `read_run_record()` in `services/_run_record.py` — defensive reader (`None` on missing/corrupt/non-object), shared by provenance recovery and flag inheritance.
+- A model switch served entirely from the vision cache is now surfaced: when cache hits were recorded under a different model than the active one, the vision pass logs one aggregate `vision_cache_model_mismatch` warning with a `--rerun-from vision` hint. Log-only — phash-keyed reuse is unchanged.
+
 ## 0.5.4
 
 ### Fixed

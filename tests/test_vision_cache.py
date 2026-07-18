@@ -12,7 +12,10 @@ different file) or an explicit cache delete (`--rerun-from vision` /
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
+
+import pytest
 
 from pagespeak.models._models import Diagram
 from pagespeak.services import _vision_cache as vcache
@@ -111,3 +114,83 @@ def test_diagram_from_cache_reconstructs(tmp_path: Path) -> None:
 def test_diagram_from_cache_defaults_caption_when_missing() -> None:
     d = vcache.diagram_from_cache({}, Path("img.png"))
     assert d.caption == "Image at img.png."
+
+
+# --- warn_on_model_mismatch ---------------------------------------------
+# Switching to a stronger model on a finished conversion is 100% cache hits
+# and silently changes nothing. One aggregate WARNING surfaces that; reuse
+# itself stays unconditional (log-only, never a gate).
+
+_LOGGER = "pagespeak.services._vision_cache"
+
+
+def _mismatch_records(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
+    return [r for r in caplog.records if "vision_cache_model_mismatch" in r.message]
+
+
+def test_warn_on_model_mismatch_emits_one_aggregate_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level(logging.WARNING, logger=_LOGGER):
+        vcache.warn_on_model_mismatch({"model-a": 3}, active_model="model-b")
+    records = _mismatch_records(caplog)
+    assert len(records) == 1
+    assert records[0].levelname == "WARNING"
+    msg = records[0].message
+    assert "cached=model-a" in msg
+    assert "active=model-b" in msg
+    assert "images=3" in msg
+    assert "--rerun-from vision" in msg
+
+
+def test_warn_on_model_mismatch_silent_when_models_match(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level(logging.WARNING, logger=_LOGGER):
+        vcache.warn_on_model_mismatch({"model-a": 5}, active_model="model-a")
+    assert not _mismatch_records(caplog)
+
+
+def test_warn_on_model_mismatch_silent_when_no_hits(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level(logging.WARNING, logger=_LOGGER):
+        vcache.warn_on_model_mismatch({}, active_model="model-a")
+    assert not _mismatch_records(caplog)
+
+
+def test_warn_on_model_mismatch_fires_when_cache_predates_model_choice(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A cache built without an explicit model records `model: null`. A later
+    run that DOES pin a model must be told its choice is being served by the
+    old captions — the exact docs-recommended-upgrade scenario."""
+    with caplog.at_level(logging.WARNING, logger=_LOGGER):
+        vcache.warn_on_model_mismatch({None: 4}, active_model="model-b")
+    records = _mismatch_records(caplog)
+    assert len(records) == 1
+    assert "cached=None" in records[0].message
+    assert "images=4" in records[0].message
+
+
+def test_warn_on_model_mismatch_silent_when_neither_pins_a_model(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """model=None on both sides is the common default re-run — must stay quiet."""
+    with caplog.at_level(logging.WARNING, logger=_LOGGER):
+        vcache.warn_on_model_mismatch({None: 7}, active_model=None)
+    assert not _mismatch_records(caplog)
+
+
+def test_warn_on_model_mismatch_aggregates_across_cached_models(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Still ONE line with a mixed-provenance cache: mismatched models are
+    joined, their counts summed; hits matching the active model are excluded."""
+    with caplog.at_level(logging.WARNING, logger=_LOGGER):
+        vcache.warn_on_model_mismatch({None: 2, "model-a": 1, "model-b": 4}, active_model="model-b")
+    records = _mismatch_records(caplog)
+    assert len(records) == 1
+    msg = records[0].message
+    assert "cached=None,model-a" in msg
+    assert "images=3" in msg

@@ -104,6 +104,72 @@ def test_convert_dir_mode_respects_explicit_output_dir(tmp_path, monkeypatch):
     assert captured["output_dir"] == other
 
 
+def test_convert_negation_flags_pass_explicit_false(monkeypatch, tmp_path: Path) -> None:
+    """Inheritable single-form bools gained `/--no-` counterparts so an
+    inherited True is overridable; each negation must reach to_markdown as
+    an explicit False."""
+    from pagespeak.cli import _convert
+    from pagespeak.models._models import IngestResult
+
+    captured: dict[str, object] = {}
+
+    def fake_to_markdown(path, **kwargs):
+        captured.update(kwargs)
+        return IngestResult(markdown="x", images=[], diagrams=[], source_format="md")
+
+    monkeypatch.setattr(_convert, "to_markdown", fake_to_markdown)
+    src = tmp_path / "doc.md"
+    src.write_text("# Doc\n", encoding="utf-8")
+    result = runner.invoke(
+        app,
+        [
+            "convert",
+            str(src),
+            "-o",
+            str(tmp_path / "o"),
+            "--no-split-sections",
+            "--no-nested-split",
+            "--no-english-only",
+            "--no-repair-tables",
+            "--no-force-ocr",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert captured["split_sections"] is False
+    assert captured["nested_split"] is False
+    assert captured["english_only"] is False
+    assert captured["repair_tables"] is False
+    assert captured["force_ocr"] is False
+
+
+def test_convert_bare_rerun_from_rebuilds_sections(tmp_path: Path) -> None:
+    """The rerun-safety regression, end to end with the real pipeline: a
+    bare `--rerun-from` over a recorded `--split-sections` run used to wipe
+    `sections/` + `INDEX.md` forever; recorded flags must now rebuild them."""
+    src = tmp_path / "doc.html"
+    src.write_text(
+        "<h1>One</h1><p>alpha content long enough to survive the section body filter</p>"
+        "<h2>Two</h2><p>beta content long enough to survive the section body filter</p>",
+        encoding="utf-8",
+    )
+    out = tmp_path / "out"
+
+    first = runner.invoke(
+        app, ["convert", str(src), "-o", str(out), "--split-sections", "--no-diagrams"]
+    )
+    assert first.exit_code == 0, first.output
+    assert (out / "sections").is_dir()
+    assert (out / "sections" / "INDEX.md").exists()
+
+    rerun = runner.invoke(app, ["convert", str(out), "--rerun-from", "normalize"])
+    assert rerun.exit_code == 0, rerun.output
+    assert (out / "sections").is_dir(), "sections/ deleted by --rerun-from and never rebuilt"
+    assert list((out / "sections").rglob("*.md")), "sections/ rebuilt empty"
+    assert (out / "sections" / "INDEX.md").exists(), (
+        "INDEX.md deleted by --rerun-from and never rebuilt"
+    )
+
+
 def test_docx_backend_flag_passed(monkeypatch, tmp_path: Path) -> None:
     """CLI: --docx-backend flag is passed through to to_markdown as docx_backend kwarg."""
     from pagespeak.cli import _convert

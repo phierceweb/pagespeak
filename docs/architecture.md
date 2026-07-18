@@ -175,6 +175,7 @@ Versioned LLM-facing prompts: each YAML (`diagram.yaml`, `heading_normalize.yaml
 |---|---|---|
 | `cli/__init__.py` | Typer app, validators, `main()` entry point. | — |
 | `cli/_convert.py` | `convert` subcommand — accepts a file path (runs ingest + Phase 3) or an output dir with `<stem>.raw.md` (Phase 3 only). | — |
+| `cli/_inherit.py` | Run-record flag inheritance for `convert` — output-shaping flags not passed explicitly default to the dir's `.pagespeak-run.json` `resolved_flags`; `--no-inherit` disables. Engine/spend flags never inherit. | — |
 | `cli/_ingest.py` | `ingest` subcommand — backend phase only (`--workers` flag for chunked-parallel PDF). | — |
 | `cli/_invalidate.py` | `invalidate` subcommand — bust caches at a stage (plus downstream structural files) without re-running. | — |
 | `cli/_baseline.py` | `baseline` subcommand (`save` / `list` / `diff`) — snapshot a run's deliverables; compare runs. | — |

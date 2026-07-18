@@ -136,6 +136,8 @@ A short user manual with a dozen diagrams runs around five cents end-to-end. A l
 
 For larger ingests, override the model: Sonnet costs ~10× more but is meaningfully more accurate on dense architecture diagrams. A model switch only applies to images **not already cached** — the vision cache is phash-keyed, so re-running a finished conversion under a stronger model is 100% cache hits and changes nothing. Bust the cache first (`--rerun-from vision`) to actually re-analyse.
 
+On an already-converted document, switching the model alone changes nothing — every image is served from `.vision-cache/` (keyed by image content, not model), and the run logs one aggregate `vision_cache_model_mismatch` warning naming the cached and active models. To actually re-analyse under the new model, pair the switch with `--rerun-from vision`.
+
 ## Failure handling
 
 The contract: a single image's failure does not abort the whole ingest.

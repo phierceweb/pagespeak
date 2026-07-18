@@ -12,7 +12,9 @@ cached description on every later run, **regardless of which backend or
 model produced it**. A diagram description is a function of the image
 (captured by the phash), so switching engines must never silently re-spend
 on images already analysed. `backend`/`model` are recorded for provenance
-(a human can see which engine made a caption) but are NOT a reuse gate.
+(a human can see which engine made a caption) but are NOT a reuse gate; a
+model switch served from cache is surfaced by `warn_on_model_mismatch`,
+never acted on.
 
 To force fresh descriptions, delete the cache explicitly — `--rerun-from
 vision` or `pagespeak invalidate <dir> vision`. Tinkering with upstream
@@ -92,6 +94,30 @@ def write(
         "source_paths": list(source_paths) if source_paths else [],
     }
     atomic_write_json(cache_path, payload)
+
+
+def warn_on_model_mismatch(
+    hit_models: dict[str | None, int],
+    *,
+    active_model: str | None,
+) -> None:
+    """One aggregate WARNING when served cache hits were recorded under a
+    different model than this run's — e.g. the docs-recommended "switch to a
+    stronger model for dense diagrams" on a finished conversion, which is
+    100% cache hits and would otherwise change nothing silently. Log-only:
+    reuse stays unconditional (see module docstring); `hit_models` maps each
+    hit's recorded provenance model → hit count.
+    """
+    mismatched = {m: n for m, n in hit_models.items() if m != active_model}
+    if not mismatched:
+        return
+    logger.warning(
+        "vision_cache_model_mismatch cached=%s active=%s images=%d "
+        'hint="--rerun-from vision to re-analyse"',
+        ",".join(sorted(str(m) for m in mismatched)),
+        active_model,
+        sum(mismatched.values()),
+    )
 
 
 def diagram_from_cache(cached: dict[str, Any], image_path: Path) -> Diagram:

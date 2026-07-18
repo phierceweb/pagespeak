@@ -14,6 +14,7 @@ from pathlib import Path
 
 from pagespeak.services._run_record import (
     RUN_RECORD_FILENAME,
+    read_run_record,
     write_run_record,
 )
 
@@ -22,6 +23,45 @@ def test_run_record_filename_is_pagespeak_specific() -> None:
     """Pagespeak's hidden-file convention. Changing this breaks
     downstream baseline/diff/resume code that hardcodes the name."""
     assert RUN_RECORD_FILENAME == ".pagespeak-run.json"
+
+
+# --- read_run_record ----------------------------------------------
+
+
+def test_read_run_record_roundtrips_written_record(tmp_path: Path) -> None:
+    src = tmp_path / "doc.pdf"
+    src.write_bytes(b"fake pdf bytes")
+    out = tmp_path / "out"
+    out.mkdir()
+    write_run_record(
+        out,
+        version="0.1.0",
+        preset="rag-default",
+        resolved_flags={"split_sections": True},
+        input_path=src,
+        started_at="2026-05-10T00:00:00Z",
+        finished_at="2026-05-10T00:00:30Z",
+        section_count=1,
+        image_count=0,
+    )
+    record = read_run_record(out)
+    assert record is not None
+    assert record["preset"] == "rag-default"
+    assert record["resolved_flags"] == {"split_sections": True}
+
+
+def test_read_run_record_missing_returns_none(tmp_path: Path) -> None:
+    assert read_run_record(tmp_path) is None
+
+
+def test_read_run_record_corrupt_returns_none(tmp_path: Path) -> None:
+    (tmp_path / RUN_RECORD_FILENAME).write_text("{definitely not json", encoding="utf-8")
+    assert read_run_record(tmp_path) is None
+
+
+def test_read_run_record_non_dict_returns_none(tmp_path: Path) -> None:
+    (tmp_path / RUN_RECORD_FILENAME).write_text('["a", "list"]', encoding="utf-8")
+    assert read_run_record(tmp_path) is None
 
 
 def test_write_run_record_uses_pagespeak_filename(tmp_path: Path) -> None:
