@@ -14,6 +14,8 @@ bin/stop           # stop it   (bin/restart = stop + start)
 
 `bin/start` runs the server detached (`nohup`), writes its PID + log to `logs/.pagespeak-web.{pid,log}`, and returns your prompt — there is no foreground process to keep open. It deliberately does **not** use `--reload`: a file-watch restart would kill the worker mid-conversion and strand the job.
 
+Outside a repo checkout (plain `pip install pagespeak[web]`), launch it directly: `uvicorn pagespeak.web:create_app --factory --host 127.0.0.1 --port 8810`.
+
 ### Environment variables
 
 | Var | Default | Purpose |
@@ -33,7 +35,7 @@ The console adopts the existing `conversions/` on-disk convention — it does no
 
 **Dropping a file into `conversions/in/` via Finder is identical to uploading it through the web form.** Both produce the same Conversion entry in the queue. Web upload writes the file into `conversions/in/`; nothing else differs.
 
-A **Conversion** is keyed on its output directory. The durable source↔output link is the stem embedded in the checkpoint filenames (e.g. `conversions/out/adat-manual/Adat_Manual.raw.md` → stem `Adat_Manual` → source `conversions/in/Adat_Manual.pdf`), not the directory name, which may be hand-chosen. A source in `conversions/in/` with no matching output directory surfaces as "not yet converted" — droppable, ready to run.
+A **Conversion** is keyed on its output directory. The durable source↔output link is the stem embedded in the checkpoint filenames (e.g. `conversions/out/mixer-manual/Mixer_Manual.raw.md` → stem `Mixer_Manual` → source `conversions/in/Mixer_Manual.pdf`), not the directory name, which may be hand-chosen. A source in `conversions/in/` with no matching output directory surfaces as "not yet converted" — droppable, ready to run.
 
 For a new conversion the app names the output directory from the source stem (lowercased, spaces/underscores→hyphens). When a source already has a matching output directory, it reuses it.
 
@@ -68,7 +70,7 @@ The detail page splits into two tabs — **Document** (the checkpoint viewer, fu
 
 Shows any phase checkpoint (`raw`, `cleaned`, `normalized`, `repaired`, `visioned`, final) with a **Rendered / Raw text** toggle:
 
-- **Rendered** — full markdown (headings, tables, code, inline images) rendered by the [`zero-md`](https://github.com/zerodevx/zero-md) web component (GitHub-style CSS + syntax highlighting, self-contained). The component fetches the checkpoint markdown from `/c/<dir>/md/<view>`, which rewrites relative `images/…` refs to the image route so figures load. Fenced ```mermaid blocks are **drawn as diagrams** (zero-md renders them via mermaid.js, configured `securityLevel: loose` so the LLM's `<br/>` labels break correctly).
+- **Rendered** — full markdown (headings, tables, code, inline images) rendered by the [`zero-md`](https://github.com/zerodevx/zero-md) web component (GitHub-style CSS + syntax highlighting, self-contained). The component fetches the checkpoint markdown from `/c/<dir>/md/<view>`, which rewrites relative `images/…` refs to the image route so figures load. Fenced ```mermaid blocks are **drawn as diagrams** (zero-md renders them via mermaid.js, configured `securityLevel: 'antiscript'` — HTML labels like the LLM's `<br/>` still render, scripts are stripped).
 - **Raw text** — the literal checkpoint file content, for comparison.
 
 ### Image gallery (Images tab)

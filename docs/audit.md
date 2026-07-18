@@ -2,7 +2,7 @@
 
 Scan converted markdown output for known conversion-defect shapes — read-only, $0, no LLM calls.
 
-Do not confuse the three QA layers: **`bin/lint`** checks the *code* (ruff, mypy, file-size guard); **`bin/validate`** checks whether a *code change altered output* relative to a baseline; **`pagespeak audit`** checks whether *converted output is defective* — absolute, per-document or corpus-wide, no baseline needed.
+Do not confuse the three QA layers: **`bin/lint`** checks the *code* (ruff, mypy, file-size guard); **`pagespeak baseline save|diff`** checks whether a *code change altered output* relative to a saved baseline; **`pagespeak audit`** checks whether *converted output is defective* — absolute, per-document or corpus-wide, no baseline needed.
 
 A sibling command, **`pagespeak vision-audit`**, checks a different surface — whether a *vision caption* describes its figure as the wrong thing (a squirrel captioned as a lemur) — by comparing each generated caption to the author's source alt text. Same read-only, $0, no-LLM charter; it is not part of this document's markdown-defect scan. See `docs/usage.md`.
 

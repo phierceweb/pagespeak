@@ -102,7 +102,7 @@ Versioned LLM-facing prompts: each YAML (`diagram.yaml`, `heading_normalize.yaml
 |---|---|---|
 | `utils/_phash.py` | `compute_phash`, `cluster_phashes`, `detect_decoration_basenames`, `hamming_distance_hex`. Shared by single-shot and pipeline paths. | `imagehash`/`PIL` only inside `compute_phash` |
 | `utils/_mathml.py` | Presentation-MathML → LaTeX pre-pass for the HTML ingest path (prevents body-text equation flattening). | — |
-| `utils/_prompts.py` | `DIAGRAM_PROMPT` (versioned). | — |
+| `utils/_prompts.py` | Re-export shim for `prompts/_diagram.py`'s `DIAGRAM_PROMPT` (stable import path). | — |
 | `utils/_html.py` | `html_fragment_to_markdown()` — sanitize + convert an inline HTML fragment to markdown (drop hidden/editor cruft, equation-image→LaTeX, media-token resolve, heading→bold, sub/sup flatten). Used by the QTI backend; available to any caller with inline HTML. | — |
 
 ### `services/`
@@ -208,7 +208,7 @@ Optional layer, behind the `pagespeak[web]` extra (FastAPI + uvicorn + jinja2). 
 
 | Module | Responsibility |
 |---|---|
-| `__init__.py` | Re-exports public API: `to_markdown`, `ingest`, dataclasses, type aliases. |
+| `__init__.py` | Re-exports public API: `to_markdown`, `ingest`, `chunk`, dataclasses, type aliases. |
 | `_agent_config.py` | Agent config resolution: per-task model + backend selection from `config/model_router.yaml`. |
 | `_agent_runtime.py` | Per-task LLM call infrastructure with pf-core `llm_runs` tracking integration. |
 | `_db.py` | Pagespeak DB configuration — thin wrapper over pf-core's connection helpers (`DATABASE_URL`). |
@@ -221,7 +221,7 @@ Lazy imports matter: a consumer that only ever processes DOCX never pays the cos
 2. **MarkItDown side-effect.** For office zip formats (DOCX/PPTX/XLSX), `_docx.py` extracts everything under `word/media/`, `ppt/media/`, or `xl/media/` into `output_dir/images/`. For EPUB it pulls embedded images out of the zip by extension; for HTML (where images are remote `<img>` URLs) it downloads each one via `_remote_images.py` and retargets the ref to `images/<name>` — both so the vision pass has local files to process. Local sibling refs (a saved-webpage bundle's `images/` dir next to the source) are copied into `output_dir/images/` by `_local_images.py` at the end of ingest (and again idempotently at cleanup for resume paths). If MarkItDown's markdown lacks image refs but images were extracted, an "Extracted Images" section is appended so the diagram pass has anchors.
 3. **Phase pipeline — sequential, deterministic.** `to_markdown()` builds a `PipelineContext` and calls `orchestrators/_sequencer.run_pipeline()` over the ordered `Phase` list from `orchestrators/_phases.build_phases()`. Each phase reads its input checkpoint and writes its output checkpoint, so the sequencer can run any contiguous slice — `--from <phase>` (begin there, hydrating from the on-disk checkpoint), `--stop-after <phase>` (halt after), `--from X --stop-after X` (exactly one phase). The default run executes every phase in this order, which preserves correctness:
    - **Cleanup** (`services/_cleanup.py`) — begins with an outline reconstruction pre-pass (`services/_outline.promote_outline`) that converts Word multilevel-list indentation to heading/list structure; then per-line normalizations; numbered headings run through `_heading_sanity.demote_prose_heading` to undo wrong promotions. Snapshot to `<stem>.cleaned.md`.
-   - **Strip decoration refs** (`orchestrators/_decorations.py`) — perceptual-hash clustering identifies repeated page headers / footer logos; their refs are removed.
+   - **Strip decoration refs** (`services/_decorations.py`) — runs at the start of the cleanup phase, before the line transforms: perceptual-hash clustering identifies repeated page headers / footer logos; their refs are removed.
    - **Gather + apply normalize** (`services/_heading_normalize.py`, opt-in) — heuristic computation OR one LLM call. Snapshot to `<stem>.normalized.md`.
    - **Repair** (`services/_normalize_repair.py`) — $0 deterministic detect→correct heading fixes on the frozen `normalized.md` (numbered-depth lock, span-strip, number-only / doubled / spaced-divider demotes); no-op by diagnosis on a clean doc. Snapshot to `<stem>.repaired.md`. Being its own phase lets `--from repair --stop-after repair` iterate the fixes for free without re-paying normalize.
    - **Structure** (`services/_enumerated_nest.py` + `services/_flat_source_demote.py` + `services/_h1_ratio_rebalance.py`) — $0 holistic doc-level passes on the frozen `repaired.md` (enumerated-item nesting, flat-H1-run demote, orphan-H1 rebalance); no-op on docs with a healthy heading pyramid. Snapshot to `<stem>.structured.md`.

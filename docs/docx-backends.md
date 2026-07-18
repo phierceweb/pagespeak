@@ -63,10 +63,10 @@ Reads Word's explicit structure signals using membership in the outline (`numPr`
 - **Outline membership** (`w:numPr` at `ilvl`) — decides structure. Paragraph at `ilvl==0` becomes a single `#` section heading. Paragraph at `ilvl>=1` becomes a nested ordered/bulleted list at depth `ilvl-1`, with per-section list numbering restart.
 - **Heading styles** (`Heading 1`, `Heading 2`, etc.) → honored **only for non-outline paragraphs** (no `numPr`), enforced as literal heading depth (`Heading N` → `#`×N)
 - **Body-placed images** → extracted to `images/`; images in headers/footers are skipped
-- **Tables** → currently stubbed as `<!-- TABLE: RxC omitted ... -->` (full extraction deferred)
+- **Tables** → rendered as GFM tables (see [Tables](#tables) below)
 - **Hard fail fallback** → if parsing fails, falls back to MarkItDown automatically
 
-Faithful path honors outline membership over heading style (avoiding style-name noise on outline items). Structure is heading-based for top-level organization (outline `ilvl==0`), with nested lists for sub-structure. Validated on real lecture DOCX to recover proper chapter hierarchy lost by MarkItDown's list collapse.
+Faithful path honors outline membership over heading style (avoiding style-name noise on outline items). Structure is heading-based for top-level organization (outline `ilvl==0`), with nested lists for sub-structure. Validated on real outline-numbered DOCX to recover proper chapter hierarchy lost by MarkItDown's list collapse.
 
 **`.docx` only** — `.doc` / `.ppt` / `.xlsx` / `.html` must use MarkItDown.
 
@@ -88,11 +88,11 @@ Word tables are rendered as GFM (GitHub Flavored Markdown) tables. Row 0 becomes
 
 ## Heading-quality normalization (python-docx)
 
-The faithful outline→heading mapping is only the *spine*. Lecture authors mix non-section content (quiz prompts, figure-label lists, reaction-diagram fragments, trailing resource links) into the same Word outline level as real section titles, and Word splits one visual token across several runs. `backends/_docx_quality.py` is a pure-text pass the structured reader runs to clean this:
+The faithful outline→heading mapping is only the *spine*. Real-world authors mix non-section content (quiz prompts, figure-label lists, diagram fragments, trailing resource links) into the same Word outline level as real section titles, and Word splits one visual token across several runs. `backends/_docx_quality.py` is a pure-text pass the structured reader runs to clean this:
 
 | Concern | Behaviour |
 |---|---|
-| **Shattered runs** | Adjacent same-format runs are coalesced before wrapping, so `CO₂` renders `**CO2**`, not `**CO****2****`. Equation-dense docs (e.g. carbonic-anhydrase buffer) are readable. |
+| **Shattered runs** | Adjacent same-format runs are coalesced before wrapping, so `CO₂` renders `**CO2**`, not `**CO****2****`. Equation-dense docs are readable. |
 | **Redundant heading emphasis** | `# **Definition**` → `# Definition` (bold/italic is redundant inside an ATX heading). |
 | **Headless documents** | The first all-bold plain-body paragraph (a title typed outside the outline) is promoted to the document `#` — only when the doc has real headings and nothing structural preceded it. The promoted title is protected from later demotion. |
 | **Junk `#` (text signal)** | A would-be heading that ends in `.`/`?`, has a `___` fill-in blank, or contains a markdown link is demoted to body. |

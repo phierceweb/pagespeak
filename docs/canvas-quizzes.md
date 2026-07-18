@@ -33,7 +33,7 @@ Detection is structural — `backends/_qti.is_qti_export()` returns True for a d
 CLI — point `convert` at the export directory or the `.imscc`. Per-quiz files are produced for any QTI input; the `qti` preset just turns off the (irrelevant) cleanup/normalize passes:
 
 ```bash
-pagespeak convert biol-2420-quiz-export/ -o ./out --preset qti
+pagespeak convert bio-101-quiz-export/ -o ./out --preset qti
 # or the archive form:
 pagespeak convert course.imscc -o ./out --preset qti
 ```

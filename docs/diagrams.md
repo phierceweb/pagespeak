@@ -142,7 +142,7 @@ The contract: a single image's failure does not abort the whole ingest.
 
 If `backend.analyze()` raises (network error, parse failure, subprocess exit-code, timeout), the orchestrator catches it, logs at WARNING, and substitutes a `Diagram(caption=f"Image at {name} (extraction failed).", mermaid=None)`. The image stays in the markdown unchanged; only the augmentation is skipped.
 
-In the phased pipeline, vision-call failures are recorded in `manifest.vision.failed_image_phashes` so a re-invocation of `pagespeak vision` retries them without re-running successful calls.
+In the phased pipeline, failed images are **not** written to `.vision-cache`, so re-running the conversion (`pagespeak convert <outdir>`) retries just the failures — already-successful images hit the cache and are not re-called.
 
 If the JSON parser inside `_parse_response()` fails, it returns a "description unavailable" caption rather than crashing. The model very rarely returns malformed JSON, but it happens.
 

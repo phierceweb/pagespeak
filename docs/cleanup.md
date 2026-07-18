@@ -1,6 +1,6 @@
 # Cleanup
 
-`to_markdown()` runs a cleanup pipeline after the backend conversion and the diagram-enrichment pass. It normalizes raw Marker / MarkItDown output into LLM-friendly markdown.
+`to_markdown()` runs a cleanup pipeline after the backend conversion and before the vision/diagram pass. It normalizes raw Marker / MarkItDown output into LLM-friendly markdown.
 
 ## Levels
 
@@ -57,7 +57,7 @@ Patterns that aren't safe to apply universally but are worth a flag for clean si
 
 | Step | Why aggressive | What it does |
 |---|---|---|
-| 10. Drop image-only lines | A page-decoration `![](path)` that's not a real diagram should be dropped; doing so before the diagram pass would lose real diagrams. Cleanup runs **after** diagrams, so anything still bare here is decoration. Only matches `![](...)` with empty alt text — captioned images are preserved. | Lines matching `^\s*!\[\]\([^)]+\)\s*$` are removed |
+| 10. Drop image-only lines | Only matches `![](...)` with **empty** alt text — captioned images are preserved. Cleanup runs **before** vision, so a bare ref dropped here is gone before captions are injected; enable only on documents whose alt-less image lines are decoration (the phash decoration pass already strips the repeated ones). | Lines matching `^\s*!\[\]\([^)]+\)\s*$` are removed |
 | 11. Normalize "Table of Contents" heading | The literal string "Table of Contents" anywhere on a line becomes `## Table of Contents`. The body that follows is preserved (the TOC regenerator replaces it later with a generated bullet list). | Heading promoted; body preserved |
 | 12. Strip `<span id="page-X-Y"></span>` anchors | Marker emits these as cross-ref targets; they render as nothing but pollute the source. | Regex strip |
 | 13. Strip all non-ASCII characters | Some PDFs leak placeholder Greek/math glyphs from font tables (`Δ`, etc.). **Caveat:** also strips en-dashes, `©`, `®`, smart quotes — only enable on documents you know are ASCII-only. | `Δ` → *(removed)* |
@@ -69,15 +69,21 @@ to_markdown(path, ...) / pagespeak convert ...
   ├── ingest phase (_ingest.py)
   │     └── backend (Marker / MarkItDown / Docling)
   │           → <stem>.raw.md
-  └── Phase 3 (_dispatch.py)
-        ├── services._cleanup.cleanup_markdown(text, level)
+  └── Phase 3 (orchestrators/_phases.py)
+        ├── cleanup: services._decorations.detect_and_strip_decorations()
+        │            + services._cleanup.cleanup_markdown(text, level)
         │     → <stem>.cleaned.md  (snapshot)
-        ├── orchestrators._decorations.strip_decoration_refs()
-        ├── services._heading_normalize (if normalize_headings=True)
+        ├── normalize: services._heading_normalize  (if normalize_headings=True)
         │     → <stem>.normalized.md  (snapshot)
-        ├── services._diagrams.gather_diagrams / inject_diagrams  (if diagrams=True)
-        ├── services._toc.regenerate_toc()
-        └── services._split.split_into_sections(text, dir, nested)  (if split_sections=True)
+        ├── repair: deterministic heading repair
+        │     → <stem>.repaired.md  (snapshot)
+        ├── structure: holistic doc-level passes
+        │     → <stem>.structured.md  (snapshot)
+        ├── vision: services._diagrams.gather_diagrams / inject_diagrams  (if diagrams=True)
+        │          + services._toc.regenerate_toc()
+        │     → <stem>.visioned.md  (snapshot)
+        └── split: services._split.split_into_sections  (if split_sections=True)
+              → sections/ + INDEX.md
 ```
 
 Cleanup runs **before** vision so:
@@ -113,13 +119,13 @@ Refs to slugs that don't match any section heading, real anchors, and URLs are p
 
 Opt-in via `split_sections=True` (plus optional `nested_split=True` and `split_min_level=N`).
 
-- **Default mode** (`split_min_level=None`): only numbered headings start sections (`# 1. ARCHITECTURE`, `## 1.4. …`, `### 1.4.1. …`). Best for textbook-style docs.
+- **Default** (`split_min_level` unset): `to_markdown()` and the CLI resolve it to `1` — split on **every** heading, numbered and semantic alike. (Only a direct low-level `split_into_sections(min_level=None)` call keeps the old numbered-headings-only behavior.)
 - **Semantic mode** (`split_min_level=N`): also split on any heading at depth ≥ N. `split_min_level=2` is the right choice for product manuals that use `## Quick Start`-style headings. Numbered sections get `<number>. <title>.md` filenames; semantic ones use the heading text only (`Quick Start.md`).
 - **Capped depth** (`split_max_level=N`): headings deeper than N stay inline as content of their enclosing section instead of splitting out. `split_max_level=2` yields one file per H2 (section-level chunks) with `### `+ subsections inline — the fix for textbook-shaped docs (a single `# Title`, numbered `## N.M` sections, plus unnumbered back-matter H2) that otherwise over-fragment into thousands of tiny per-heading files. Opt-in per doc, since the right cap depends on how much content lives below the section heading.
 - **Nested mode** (`nested_split=True`): sections nest by heading hierarchy. Numbered sections use the number string for folder names (`1/1.4/1.4.1. RingCentral Triggers.md`); semantic sections use the sanitized heading title (`Quick Start/Foot Switches.md`). Top-level sections land in their own folder named after themselves.
 - **`INDEX.md`** lists top-level sections.
 - **Breadcrumb header** — each non-root section file starts with `> ↑ [Root](root.md) / [Parent](parent.md)` so an LLM that retrieves a single chunk knows where it fits.
-- **Empty-body filter** — sections whose body has fewer than `min_body_chars` non-whitespace chars are dropped (default `30` from `to_markdown()` / `stitch()`; `0` if calling `split_into_sections()` directly). This drops front-matter TOC entries that the backend promotes to `#`-headings, which would otherwise become empty "chapter shell" files.
+- **Empty-body filter** — sections whose body has fewer than `min_body_chars` non-whitespace chars are dropped (default `30` from `to_markdown()`; `0` if calling `split_into_sections()` directly). This drops front-matter TOC entries that the backend promotes to `#`-headings, which would otherwise become empty "chapter shell" files.
 - **English-only filter** (opt-in, `--english-only` / `english_only=True`) — drops a multilingual manual's translated branches (German / French / Italian / Spanish / Chinese / Cyrillic / Korean copies of the same content), keeping the English. Judged by **subtree**, not per-section: every section is grouped under its top-level branch and the branch's *aggregated* text is classified (`services._language`), recursing into kept English branches so a non-English block nested under an English chapter is still caught. The aggregate lets it catch a translation fragmented into terse sections that a per-section check misses. A branch is dropped only on a strong signal — >30% non-Latin script, OR sparse English **and** a real density of distinctively-foreign function words; that foreign-evidence half keeps a stopword-poor English specs table (model numbers, MHz/dB units) that sparse-English alone would wrongly flag. Removes the major Latin languages + all non-Latin scripts; a 24-EU-language boilerplate block (minor languages whose short function words collide with English) is the known gap. **OFF by default** — a content heuristic, kept behind the flag per the project charter.
 - **Ancestor-only chapter shells** — chapter shells with an empty body but kept descendants are preserved as parents in the breadcrumb chain (a `_Section.is_ancestor_only` flag) so descendants render with a real chapter ancestor.
 - **Stale-file cleanup** — re-running removes section files no longer in the write set. Empty `nested_split` subdirectories are pruned. Non-`.md` files are left alone.

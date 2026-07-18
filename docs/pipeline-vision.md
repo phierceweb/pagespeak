@@ -7,7 +7,7 @@ Runs each extracted image through a vision model and embeds the result — a cap
 1. **Gather** — for each image: compute its phash, look it up in `<outdir>/.vision-cache/<phash>.json`, and on a miss fire one backend call. Calls fan out across a thread pool (`vision_concurrency`, default 6). One image's failure is non-fatal — it yields a caption-only result and the pass continues.
 2. **Inject** — rewrite the markdown, matching cached results to image references by basename and inserting the caption + Mermaid block.
 
-Backends (`vision_backend`): `anthropic` (default API), `claude_code` (local `claude --print`, $0/call but slower), `openrouter`. Default model is Claude Haiku 4.5.
+Backends (`vision_backend`): `claude_code` (default — local `claude --print`, $0/call), `anthropic` (direct API), `openrouter`. Default model is Claude Haiku 4.5.
 
 ## When it runs
 
@@ -16,19 +16,19 @@ Backends (`vision_backend`): `anthropic` (default API), `claude_code` (local `cl
 
 ## Inputs
 
-`<stem>.normalized.md` content + `images/`. Vision runs **after** normalize so captions are injected into the cleaned, normalized heading shape.
+`<stem>.structured.md` content + `images/`. Vision runs **after** repair and structure so captions are injected into the final heading shape.
 
 ## Outputs
 
-No structural `.md` checkpoint — the captions/Mermaid are injected into the final consolidated markdown the command returns. The persisted artifact is the content-keyed cache `.vision-cache/<phash>.json` (records backend + model, so a backend/model swap invalidates cleanly).
+`<stem>.visioned.md` — the post-inject + post-TOC checkpoint, always written (even when vision/TOC were no-ops) so `--from split` can run from the real post-vision state. The other persisted artifact is the content-keyed cache `.vision-cache/<phash>.json` — keyed by image phash ONLY; the `backend`/`model` in each entry are provenance, never a reuse gate.
 
 ## Position
 
-normalize → **vision** → TOC regen → split
+structure → **vision** (inject + TOC regen) → split
 
 ## Re-running just this stage
 
-`--rerun-from vision` / `pagespeak invalidate <outdir> vision` busts `.vision-cache` and downstream structural files, then re-gathers. A backend / model change auto-invalidates the cache without an explicit rerun.
+`--rerun-from vision` / `pagespeak invalidate <outdir> vision` busts `.vision-cache` and downstream structural files, then re-gathers. A backend / model change does **not** auto-invalidate the cache — cached descriptions are reused across engines; bust explicitly to re-analyse (see [caching.md](caching.md)).
 
 ## Deep dive
 

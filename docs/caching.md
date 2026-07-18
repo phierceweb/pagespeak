@@ -29,7 +29,7 @@ Two caches — `.vision-cache/<phash>.json` and `.heading-normalize-cache/<hash>
 
 So the cascade rule is: `--rerun-from <stage>` busts the target stage's OWN cache (whether structural or content-keyed) plus every downstream stage's STRUCTURAL files. Downstream content-keyed caches are PRESERVED.
 
-Concrete: `--rerun-from ingest` invalidates raw.md + images + the downstream snapshot files (cleaned.md, normalized.md, visioned.md) + the split output, but **leaves `.vision-cache/` and `.heading-normalize-cache/` intact**. On re-run, Marker may produce identical-by-phash images that hit the vision cache for free, and the normalize LLM call may hit the heading-normalize cache if the heading list is unchanged.
+Concrete: `--rerun-from ingest` invalidates raw.md + images + the downstream snapshot files (cleaned.md, normalized.md, repaired.md, structured.md, visioned.md) + the split output, but **leaves `.vision-cache/` and `.heading-normalize-cache/` intact**. On re-run, Marker may produce identical-by-phash images that hit the vision cache for free, and the normalize LLM call may hit the heading-normalize cache if the heading list is unchanged.
 
 To force a brand-new run with all caches gone, use `rm -rf <output_dir>` or chain `--rerun-from vision` after `--rerun-from ingest` (each invalidation is composable).
 

@@ -14,7 +14,7 @@ Runtime environments where pagespeak behaves differently than on a normal develo
 
 ## Sandboxed shells block `ProcessPoolExecutor`
 
-**Symptom.** `pagespeak convert` or `pagespeak pipeline` / `pagespeak chunk` fails during PDF work with a traceback through `concurrent/futures/process.py` and `PermissionError`, often mentioning `os.sysconf` or `_check_system_limits`:
+**Symptom.** `pagespeak convert` or `pagespeak ingest --workers N` fails during PDF work with a traceback through `concurrent/futures/process.py` and `PermissionError`, often mentioning `os.sysconf` or `_check_system_limits`:
 
 ```text
 PermissionError: [Errno 1] Operation not permitted
@@ -45,7 +45,7 @@ After changing a Phase-3 stage (cleanup, normalize, split, …) you usually want
 2. **Re-run with the SAME flags.** `pagespeak convert <dir> --rerun-from <stage>` **plus** the original output-shaping flags (`--split-sections --nested-split`, the preset, …). `--rerun-from` deletes downstream structural outputs (`sections/`, `INDEX.md`); omitting the flags that produce them leaves them deleted. See [docs/caching.md](caching.md) § "Destructive".
 3. **Read the output by eye.** Open the rendered `<stem>.md` and a `sections/` sample for several representative docs and *read them*. A zero diff-count or a passing token-grep is a gate, not a verdict — the prior output may already be wrong. Pin the read as the definition of done.
 
-**Symptom this prevents.** `--rerun-from normalize` run without `--split-sections` once deleted `sections/` on 25 converted decks; a separate session declared lecture-note output "fine" on a 0-diff while the heading hierarchy had been broken upstream the whole time. Both are detectable only by steps 1–3 above.
+**Symptom this prevents.** `--rerun-from normalize` run without `--split-sections` once deleted `sections/` across an entire batch of converted documents; a separate re-validation pass then declared the output "fine" on a 0-diff while the heading hierarchy had been broken upstream the whole time. Both are detectable only by steps 1–3 above.
 
 ## Adding to this page
 

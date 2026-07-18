@@ -149,7 +149,7 @@ The pass is **non-fatal** in both modes: if anything goes wrong, we log a warnin
 
 ## Prompt versioning
 
-The prompt lives in `services/_heading_normalize.py` as `NORMALIZE_PROMPT` with `NORMALIZE_PROMPT_VERSION` as an integer. Per the prompt-authoring convention:
+The prompt is versioned YAML — `src/pagespeak/prompts/heading_normalize.yaml` (and `heading_normalize_full.yaml` for `llm_full`), rendered by the sibling `prompts/_heading_normalize*.py` stubs with an integer version. Per the prompt-authoring convention:
 
 - Bump the version on every material edit to the prompt body.
 - Whitespace / typo-only edits don't bump.

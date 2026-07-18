@@ -30,7 +30,7 @@ Gathers the document's structural heading list, computes a level rewrite, and ap
 
 ## Position
 
-cleanup → **normalize** → vision → …
+cleanup → **normalize** → repair → structure → vision → …
 
 ## Re-running just this stage
 

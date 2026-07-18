@@ -21,7 +21,7 @@ The post-frontmatter markdown plus `images/` (the phash source).
 
 ## Outputs
 
-No structural file of its own — the stripped markdown flows into `<stem>.cleaned.md` (owned by the [cleanup](pipeline-cleanup.md) stage). Its only persisted artifact is the content-keyed cache `.decoration-cache`.
+No structural file of its own — the stripped markdown flows into `<stem>.cleaned.md` (owned by the [cleanup](pipeline-cleanup.md) stage). Detection is recomputed in-memory each run; it persists no cache file of its own.
 
 ## Position
 
@@ -29,7 +29,7 @@ cleanup (frontmatter) → **decorations** → cleanup (line transforms) → norm
 
 ## Re-running just this stage
 
-`--rerun-from decorations` / `pagespeak invalidate <outdir> decorations` busts `.decoration-cache` and the downstream structural checkpoints, then re-detects decorations. The exact cascade (which files are deleted vs. self-invalidated) is defined by the stage registry and documented in [caching.md](caching.md).
+`--rerun-from decorations` / `pagespeak invalidate <outdir> decorations` busts the downstream structural checkpoints, then re-detects decorations (in-memory — there is no decoration cache file to clear). The exact cascade (which files are deleted vs. self-invalidated) is defined by the stage registry and documented in [caching.md](caching.md).
 
 ## Deep dive
 

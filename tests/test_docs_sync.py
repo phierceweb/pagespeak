@@ -98,6 +98,8 @@ def test_phase_count_words_match() -> None:
     word = _NUM_WORDS[len(_PHASE_NAMES)]
     pattern = re.compile(r"\b(?:All|The) (\w+) (?:concrete )?(?:pipeline )?phases\b")
     for doc in [*_tracked_docs(), _ROOT / "CLAUDE.md"]:
+        if not doc.exists():  # CLAUDE.md is gitignored — absent in worktrees/CI
+            continue
         for match in pattern.finditer(doc.read_text(encoding="utf-8")):
             assert match.group(1) == word, (
                 f"{doc.name}: says {match.group(1)!r} phases; build_phases() has "

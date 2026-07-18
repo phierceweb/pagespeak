@@ -1,6 +1,6 @@
 # The ingest command
 
-`pagespeak ingest` is the backend phase: it converts a source document to `<stem>.raw.md` + `images/`. Phase 3 (cleanup → normalize → vision → split) runs separately via `pagespeak convert`.
+`pagespeak ingest` is the backend phase: it converts a source document to `<stem>.raw.md` + `images/`. Phase 3 (cleanup → normalize → repair → structure → vision → split) runs separately via `pagespeak convert`.
 
 ## When to use `ingest` directly
 

@@ -13,9 +13,9 @@ Structured like `cleanup`: a **detect→correct** engine. Each pass is self-diag
 - **demote number-only headings** — `# 780` → body (kills garbage one-line sections from stray page numbers).
 - **dedupe doubled heading text** — `# X X` → `# X`.
 - **demote spaced-letter dividers** — `# S K E L E T A L` → body.
-- **close heading level-gaps** — promote an orphan over-deep heading so no level is skipped (`## Topic` → `#### Task` with no `### ` becomes `### Task`), cascading the shift through the subtree and keeping siblings consistent. Closes the skips `llm_full` normalize leaves on big flattened PDFs (a 204-pp HTML-export user guide: 125 skips → 0). Conservative: the baseline heading keeps its level (never forced to H1), a contiguous hierarchy is a no-op, the pass is idempotent, and fenced code blocks are ignored.
+- **close heading level-gaps** — promote an orphan over-deep heading so no level is skipped (`## Topic` → `#### Task` with no `### ` becomes `### Task`), cascading the shift through the subtree and keeping siblings consistent. Closes the skips `llm_full` normalize leaves on big flattened PDFs. Conservative: the baseline heading keeps its level (never forced to H1), a contiguous hierarchy is a no-op, the pass is idempotent, and fenced code blocks are ignored.
 
-The artifact passes **and the level-gap close** are corpus-verified to fire only on PDF-converted docs (textbooks and AV guides) and never on the structure-faithful decks: the phase runs them under `is_outline_doc=False` only, so a Word author's intentional level-skip is never second-guessed.
+The artifact passes **and the level-gap close** are corpus-verified to fire only on PDF-converted docs and never on structure-faithful outline documents: the phase runs them under `is_outline_doc=False` only, so a Word author's intentional level-skip is never second-guessed.
 
 ## Inputs / outputs
 

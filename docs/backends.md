@@ -48,8 +48,8 @@ mf = chunk(
 
 ```bash
 pagespeak convert textbook.pdf -o ./out --pdf-backend docling
-pagespeak chunk textbook.pdf -o ./out --pdf-backend docling --workers 4
-pagespeak pipeline textbook.pdf -o ./out --pdf-backend docling [...]
+pagespeak ingest textbook.pdf -o ./out --pdf-backend docling --workers 4   # backend phase only, chunked-parallel
+pagespeak convert ./out                                                    # then Phase 3 on the existing raw.md
 ```
 
 ## Common surface — what's identical across backends
@@ -107,7 +107,7 @@ to_markdown(
 
 Mixing two backends in one pipeline output dir is unsafe — markdown conventions and image filenames differ subtly enough to break anchor maps at stitch time.
 
-`pagespeak chunk` / `pipeline` records each chunk's backend in `manifest.json`. A second invocation with a different `--pdf-backend` raises:
+`pagespeak ingest --workers` (and the `chunk()` library API) records each chunk's backend in `manifest.json`. A second invocation with a different `--pdf-backend` raises:
 
 ```
 ValueError: Output dir ./out has chunks completed with backend(s) ['marker'];

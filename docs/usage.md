@@ -268,7 +268,7 @@ For RAG-shaped output, prefer `--preset rag-default` — it bundles sensible def
 
 ```bash
 # Point at the unzipped export directory or the .imscc archive.
-pagespeak convert biol-2420-quiz-export/ -o ./out --preset qti
+pagespeak convert bio-101-quiz-export/ -o ./out --preset qti
 ```
 
 This writes one full-pipeline document per exam under `./out/<Exam>/` — each with its own stage checkpoints, master doc, `images/`, and a `sections/` per-question split (rich provenance frontmatter), so each exam ingests into a RAG DB like any other document. Pass `--no-answer-key` for blank quizzes. Vision is off by default for QTI (figures copied + linked with alt text); pass `--diagrams` to opt in. See [docs/canvas-quizzes.md](canvas-quizzes.md).

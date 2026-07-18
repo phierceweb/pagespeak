@@ -41,7 +41,7 @@ pip install pagespeak[tophat]               # adds the Top Hat quiz-export backe
 pip install pagespeak[web]                  # localhost web console (FastAPI + uvicorn)
 ```
 
-Pagespeak builds on [`pf-core`](https://github.com/phierceweb/pf-core) ([PyPI](https://pypi.org/project/pf-core/)) for its LLM clients (Anthropic / Claude Code / OpenRouter), structured logging, pipeline manifest helpers, CLI subcommand factories, and atomic-write utilities. `pf-core[image-phash]` is pulled in transitively — no separate install step required.
+Pagespeak builds on [`pf-core`](https://github.com/phierceweb/pf-core) ([PyPI](https://pypi.org/project/pf-core/)) for its LLM clients (Anthropic / Claude Code / OpenRouter), structured logging, pipeline manifest helpers, CLI subcommand factories, and atomic-write utilities. `pf-core[image-phash,tracking,llm]` is installed with it as a direct dependency — no separate install step required.
 
 ## Quickstart
 

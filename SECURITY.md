@@ -20,7 +20,7 @@ pagespeak is a document-conversion library and CLI, not a multi-tenant service. 
 
 ### The web console has no authentication
 
-The optional web console (`pagespeak[web]`, `bin/start`) is a local operator tool. It binds to **`127.0.0.1` by default** (loopback only) and has **no login**. Anyone who can reach its port can upload and convert documents, trigger LLM calls (which cost money or quota on paid backends), and read converted output.
+The optional web console (`pagespeak[web]` — `bin/start` in a checkout, or `uvicorn pagespeak.web:create_app --factory`) is a local operator tool. It binds to **`127.0.0.1` by default** (loopback only) and has **no login**. Anyone who can reach its port can upload and convert documents, trigger LLM calls (which cost money or quota on paid backends), and read converted output.
 
 - **Do not bind it to a public interface.** Setting `PAGESPEAK_WEB_HOST=0.0.0.0` (or a LAN address) exposes it with no auth. If you need remote access, put it behind an authenticating reverse proxy or reach it over an SSH tunnel rather than exposing the port directly.
 - **The rendered preview executes document content.** The console renders a converted document's markdown — including any raw HTML it contains and the Mermaid diagrams the vision model produced from its images — in your browser. Mermaid runs with `securityLevel: 'antiscript'` (scripts stripped), but raw HTML embedded in a hostile document can still execute in the preview. Treat opening a converted document's preview like opening the source itself: only render documents you trust, and keep the console on loopback.
