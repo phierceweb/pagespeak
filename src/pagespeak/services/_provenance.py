@@ -20,13 +20,13 @@ import re
 from pathlib import Path
 from typing import Any
 
+from pf_core.utils.slugify import slugify
+
 from ._run_record import file_sha256, read_run_record
 
 # Filename-stem cleaning: collapse `_`/`-` separators and whitespace runs.
 _SEPARATOR_RE = re.compile(r"[_\-]+")
 _WHITESPACE_RE = re.compile(r"\s+")
-# source_id slugging: anything non-alphanumeric collapses to a single `-`.
-_SOURCE_ID_RE = re.compile(r"[^a-z0-9]+")
 
 
 def clean_source_label(stem: str) -> str:
@@ -51,11 +51,11 @@ def clean_source_label(stem: str) -> str:
 
 
 def source_id_from_name(name: str) -> str:
-    """Stable machine slug of a source filename: stem lowercased, non-alnum
-    runs collapsed to `-`. The cross-conversion join key for one source work
-    (stays constant however the out-dir is named)."""
+    """Stable machine slug of a source filename (pf-core ``slugify`` of
+    the stem). The cross-conversion join key for one source work (stays
+    constant however the out-dir is named)."""
     stem = Path(name).stem if name else ""
-    return _SOURCE_ID_RE.sub("-", stem.lower()).strip("-")
+    return slugify(stem)
 
 
 def _read_run_record(out: Path | None) -> dict[str, Any] | None:

@@ -2,6 +2,11 @@
 
 Notable changes to pagespeak, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## 0.8.0
+
+### Changed
+- `source_id_from_name` uses pf-core's `slugify` (floor raised to `~=0.9.0`). ASCII filenames slug identically; accented names fold to ASCII (`Café Guide.pdf` → `cafe-guide`). Existing conversions keep their recorded ids; only a fresh conversion of a non-ASCII-named source mints a new id.
+
 ## 0.7.0
 
 ### Changed

@@ -113,6 +113,11 @@ def test_source_id_from_name_empty_or_all_separators_returns_empty() -> None:
     assert source_id_from_name("___") == ""
 
 
+def test_source_id_from_name_folds_diacritics() -> None:
+    assert source_id_from_name("Café Guide.pdf") == "cafe-guide"
+    assert source_id_from_name("Straße Handbuch.docx") == "strasse-handbuch"
+
+
 def test_resolve_source_identity_file_mode_hashes_source(tmp_path: Path) -> None:
     src = tmp_path / "Widget Guide 2e.html"
     src.write_text("<html></html>", encoding="utf-8")
