@@ -61,21 +61,20 @@ class OpenRouterVisionBackend:
         base_url: str | None = None,
         client: OpenRouterClient | None = None,
     ) -> None:
-        # model resolution — explicit `model=` > YAML
-        # `agents.vision.backends.openrouter.model` > class `DEFAULT_MODEL`.
-        # Bypasses `_agent_runtime._HARDCODED_FALLBACKS` for the no-YAML edge
-        # case: its Anthropic-native slug would 404 against OpenRouter, so this
-        # class's OpenRouter-shaped `DEFAULT_MODEL` is used instead.
+        # model resolution — explicit `model=` > YAML > class `DEFAULT_MODEL`.
+        # The class default guards the no-config edge (YAML missing the vision
+        # agent): an Anthropic-shaped fallback slug would 404 on OpenRouter.
         if model is not None:
             self._model = model
         else:
-            from .._agent_runtime import _load_yaml_config
+            from pf_core.exceptions import ConfigurationError
+            from pf_core.llm.router import get_agent_config
 
-            yaml_data = _load_yaml_config()
-            vision_block = (yaml_data.get("agents") or {}).get("vision") or {}
-            backends_block = vision_block.get("backends") or {}
-            openrouter_cfg = backends_block.get("openrouter") or {}
-            self._model = openrouter_cfg.get("model") or self.DEFAULT_MODEL
+            try:
+                cfg = get_agent_config("vision", backend="openrouter")
+                self._model = cfg.get("model") or self.DEFAULT_MODEL
+            except ConfigurationError:
+                self._model = self.DEFAULT_MODEL
         if client is None:
             resolved_key = api_key or os.environ.get("OPENROUTER_API_KEY")
             if not resolved_key:

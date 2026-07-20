@@ -85,10 +85,10 @@ class AnthropicVisionBackend:
         model: str | None = None,
         api_key: str | None = None,
     ) -> None:
-        # Model resolution: explicit `model=` > YAML > DEFAULT_VISION_MODEL.
-        from .._agent_runtime import resolve_agent_config
+        # Model resolution: explicit `model=` > YAML (bundled copy = the floor).
+        from pf_core.llm.router import get_agent_config
 
-        cfg = resolve_agent_config("vision", model_override=model, backend="anthropic")
+        cfg = get_agent_config("vision", backend="anthropic", model_override=model)
         self._model = cfg["model"]
         if client is None:
             resolved_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
@@ -164,8 +164,8 @@ class ClaudeCodeVisionBackend:
     `ClaudeCodeClient`, which runs the subprocess with `--safe-mode` by default
     so the cwd project's CLAUDE.md/skills can't hijack a caption.
 
-    Model resolution: explicit `model=` > YAML > `DEFAULT_VISION_MODEL`
-    (haiku); the resolved model is always passed as `--model` — **never None**.
+    Model resolution: explicit `model=` > YAML (bundled default: haiku);
+    the resolved model is always passed as `--model` — **never None**.
     Cost protection: without `--model`, `claude --print` uses the interactive
     session model (Sonnet/Opus on Max), and a 1000-image pass would quietly
     burn a day's quota.
@@ -178,10 +178,10 @@ class ClaudeCodeVisionBackend:
         model: str | None = None,
         client: ClaudeCodeClient | None = None,
     ) -> None:
-        # Model resolution: explicit `model=` > YAML > hardcoded fallback.
-        from .._agent_runtime import resolve_agent_config
+        # Model resolution: explicit `model=` > YAML (bundled copy = the floor).
+        from pf_core.llm.router import get_agent_config
 
-        cfg = resolve_agent_config("vision", model_override=model, backend="claude_code")
+        cfg = get_agent_config("vision", backend="claude_code", model_override=model)
         self._model = cfg["model"]
         # Resolve the binary eagerly so a missing install fails with a clear
         # message here, not deep inside chat().

@@ -7,8 +7,9 @@ timestamps. Makes re-run drift diagnosable: a one-line diff
 between two `.pagespeak-run.json` files shows exactly what config
 differs.
 
-It also includes an `llm_calls` per-task summary aggregated from
-the `LLMCallRecord` accumulator in `_agent_runtime`. The schema is
+It also includes an `llm_calls` per-task summary aggregated from the
+per-call summaries drained out of pf-core's recording window
+(`pf_core.llm.recording`, re-exported by `_agent_runtime`). The schema is
 documented in `docs/presets.md` § "Re-run reproducibility".
 
 Binds the pagespeak-specific filename (`.pagespeak-run.json`) and
@@ -50,8 +51,9 @@ def read_run_record(output_dir: Path) -> dict[str, Any] | None:
 
 
 def summarize_llm_calls(records: list[dict[str, Any]]) -> dict[str, Any]:
-    """Aggregate a list of `LLMCallRecord`-shaped dicts into a per-task
-    summary suitable for ``.pagespeak-run.json``.
+    """Aggregate pf-core recording-window summaries (`agent_type` /
+    `provider` / usage fields) into the per-task `by_task` summary stored
+    in ``.pagespeak-run.json``.
 
     Empty `records` returns a zero-valued summary with empty `by_task`.
     """
@@ -74,9 +76,9 @@ def summarize_llm_calls(records: list[dict[str, Any]]) -> dict[str, Any]:
         completion_tokens = int(r.get("completion_tokens", 0))
         cost_usd = float(r.get("cost_usd", 0.0))
         duration_ms = int(r.get("duration_ms", 0))
-        task = str(r.get("task", "unknown"))
+        task = str(r.get("agent_type") or "unknown")
         model = str(r.get("model", ""))
-        backend = str(r.get("backend", ""))
+        backend = str(r.get("provider") or "")
 
         summary["successful"] += int(success)
         summary["total_prompt_tokens"] += prompt_tokens

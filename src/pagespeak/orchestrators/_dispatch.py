@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any
 
 from pf_core.log import get_logger
+from pf_core.pipeline.sequencer import Phase as SequencedPhase
+from pf_core.pipeline.sequencer import run_pipeline
 
 from ..backends._docx_dispatch import DEFAULT_DOCX_BACKEND, DocxBackendName
 from ..backends._pdf_dispatch import DEFAULT_PDF_BACKEND, PdfBackendName
@@ -29,8 +31,8 @@ from ._dispatch_setup import (
 )
 from ._ingest import PDF_SUFFIXES as _PDF_SUFFIXES
 from ._ingest import ingest as _ingest_orchestrator
+from ._phase import Phase
 from ._phases import build_phases
-from ._sequencer import run_pipeline
 
 logger = get_logger(__name__)
 
@@ -423,7 +425,14 @@ def to_markdown(
         source_label=source_label,
         start_phase=start,
     )
-    run_pipeline(build_phases(), ctx=ctx, start=start, stop_after=stop_after)
+    phases: list[SequencedPhase] = list(build_phases())
+    run_pipeline(
+        phases,
+        ctx=ctx,
+        start=start,
+        stop_after=stop_after,
+        skip_fresh=lambda p: isinstance(p, Phase) and p.is_fresh(ctx),
+    )
     if ctx.result is None:  # ingest phase always sets it
         raise RuntimeError("pipeline produced no result")
     result = ctx.result

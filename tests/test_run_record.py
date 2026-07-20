@@ -105,8 +105,8 @@ def test_summarize_llm_calls_aggregates_per_task() -> None:
 
     records = [
         {
-            "task": "vision",
-            "backend": "claude_code",
+            "agent_type": "vision",
+            "provider": "claude_code",
             "model": "claude-haiku-4-5-20251001",
             "prompt_version": 2,
             "prompt_tokens": 100,
@@ -117,8 +117,8 @@ def test_summarize_llm_calls_aggregates_per_task() -> None:
             "run_id": 1,
         },
         {
-            "task": "vision",
-            "backend": "claude_code",
+            "agent_type": "vision",
+            "provider": "claude_code",
             "model": "claude-haiku-4-5-20251001",
             "prompt_version": 2,
             "prompt_tokens": 150,
@@ -129,8 +129,8 @@ def test_summarize_llm_calls_aggregates_per_task() -> None:
             "run_id": 2,
         },
         {
-            "task": "heading_normalize_full",
-            "backend": "openrouter",
+            "agent_type": "heading_normalize_full",
+            "provider": "openrouter",
             "model": "google/gemini-2.5-flash",
             "prompt_version": 1,
             "prompt_tokens": 5000,
@@ -170,8 +170,8 @@ def test_summarize_llm_calls_dedups_models_and_backends_per_task() -> None:
 
     records = [
         {
-            "task": "vision",
-            "backend": "claude_code",
+            "agent_type": "vision",
+            "provider": "claude_code",
             "model": "claude-haiku-4-5-20251001",
             "prompt_tokens": 0,
             "completion_tokens": 0,
@@ -180,8 +180,8 @@ def test_summarize_llm_calls_dedups_models_and_backends_per_task() -> None:
             "success": True,
         },
         {
-            "task": "vision",
-            "backend": "openrouter",
+            "agent_type": "vision",
+            "provider": "openrouter",
             "model": "google/gemini-2.5-flash",
             "prompt_tokens": 0,
             "completion_tokens": 0,

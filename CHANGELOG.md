@@ -2,6 +2,15 @@
 
 Notable changes to pagespeak, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## 0.7.0
+
+### Changed
+- **Local pipeline sequencer retired.** `orchestrators/_sequencer.py` deleted; `to_markdown` runs the phases via `pf_core.pipeline.sequencer.run_pipeline`, with resume freshness injected as a `skip_fresh` closure over each phase's `is_fresh`. Slice semantics (`--from` / `--stop-after` / `--rerun-from` / resume-skip) unchanged.
+- **Agent config + LLM call plumbing retired onto pf-core.** `_agent_config.py` deleted; `config/model_router.yaml` is read by `pf_core.llm.router` (new top-level keys: `env_prefix: PAGESPEAK`, `default_client: claude_code`, `non_chat_keys: [max_input_tokens]`). `_agent_runtime.py` is now a thin seam: `invoke_agent` records through `tracked_messages_call` (run rows, prompt registration, tags/metrics split, failure rows), and pf-core's ContextVar recording window replaces the module-global call accumulator — vision-pass workers join it via `contextvars.copy_context()` at the pool fan-out. `.pagespeak-run.json`'s `llm_calls` schema is unchanged.
+- **Config errors fail fast.** An unknown agent slug, or a `MODEL_ROUTER_CONFIG` pointing at a missing/malformed file, now raises `ConfigurationError` instead of silently falling back to a hardcoded model. Wheel installs without any config still work: the seam points the router at the bundled `model_router.yaml`. YAML edits hot-reload within `MODEL_ROUTER_RELOAD_SECONDS` (default 60).
+- **`PAGESPEAK_<TASK>_BACKEND` env values are case-sensitive and no longer raise on an unknown value** — a value that doesn't name a declared backend falls back to the YAML `default_client` (`claude_code`).
+- **pf-core floor: `~=0.8.0`** (sequencer / router / tracked-call / recording APIs). Retroactive note: v0.5.1 had already raised the floor to `~=0.6.0` without a changelog entry.
+
 ## 0.6.0
 
 ### Changed

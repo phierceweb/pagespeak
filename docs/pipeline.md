@@ -24,7 +24,7 @@ ingest ─▶ cleanup ─▶ decorations ─▶ normalize ─▶ repair ─▶ s
 
 The stage names above are exactly the values accepted by `--rerun-from <stage>` and `pagespeak invalidate <outdir> <stage>`.
 
-A run is a list of `Phase` objects executed by the sequencer (`orchestrators/_sequencer.run_pipeline`); each phase reads its input checkpoint and writes its output one. So you can run **any contiguous slice**, not just "from X to the end":
+A run is a list of `Phase` objects executed by pf-core's sequencer (`pf_core.pipeline.sequencer.run_pipeline`); each phase reads its input checkpoint and writes its output one. So you can run **any contiguous slice**, not just "from X to the end":
 
 - `--stop-after <phase>` — run normally, halt after `<phase>`.
 - `--from <phase>` — begin at `<phase>`, hydrating its input from the existing on-disk checkpoint (trusts caches; does **not** bust them — that is `--rerun-from`).

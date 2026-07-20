@@ -74,6 +74,31 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
         )
 
 
+@pytest.fixture(autouse=True)
+def _fresh_model_router_cache():
+    """pf-core's model-router cache is process-global and keyed by the
+    RELATIVE config path, so a chdir'd test that writes its own
+    config/model_router.yaml would otherwise be served a previous test's
+    cached doc for up to the 60s reload TTL. Clear around every test.
+
+    Also restore MODEL_ROUTER_CONFIG: the seam's `_ensure_router_config`
+    bootstrap sets it via os.environ (not monkeypatch) whenever a test
+    runs in a config-less cwd — without restoration that leaks the
+    packaged-YAML path into every later test."""
+    import os
+
+    from pf_core.llm.router import clear_cache
+
+    prior = os.environ.get("MODEL_ROUTER_CONFIG")
+    clear_cache()
+    yield
+    if prior is None:
+        os.environ.pop("MODEL_ROUTER_CONFIG", None)
+    else:
+        os.environ["MODEL_ROUTER_CONFIG"] = prior
+    clear_cache()
+
+
 @pytest.fixture
 def fake_docx(tmp_path: Path) -> Path:
     """Build a minimal docx-shaped zip with two embedded images and a document.xml."""

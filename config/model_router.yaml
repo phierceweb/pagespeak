@@ -1,8 +1,9 @@
 # Per-agent model + sampling config for pagespeak's LLM-calling tasks.
 #
-# Read by `pagespeak._agent_runtime.resolve_agent_config(slug, backend)`.
-# Schema is per-backend so each task can use a different model depending
-# on which backend is active:
+# Read by pf-core's model router (`pf_core.llm.router`); pagespeak's
+# `_agent_runtime` seam points the router here (the copy bundled in the
+# wheel is the fallback). Nested schema — each task declares a model per
+# backend:
 #
 #   agents:
 #     <agent_slug>:
@@ -18,18 +19,23 @@
 #       # temperature: 0.0
 #       # max_tokens: 4000
 #
-# Backend selection at call time is governed by
-# `PAGESPEAK_<SLUG>_BACKEND` env var (default `claude_code`).
+# Backend precedence: per-call `backend=` kwarg > `PAGESPEAK_<SLUG>_BACKEND`
+# env var (enabled by `env_prefix`) > top-level `default_client`. An env
+# value naming an undeclared backend falls through to the default.
 #
-# Precedence for resolving the model (highest first):
-#   1. Explicit kwarg passed to the task
-#      (e.g. `to_markdown(vision_model=…)`)
-#   2. CLI flag `--<task>-model`
-#   3. Env var `PAGESPEAK_<TASK>_MODEL`
-#   4. This YAML's backend-specific entry
-#   5. Hardcoded fallback in `_agent_runtime.py` (haiku-4-5)
+# Model precedence: per-call override (`to_markdown(vision_model=…)` /
+# CLI `--<task>-model`) > the active backend's `model` entry.
+#
+# `non_chat_keys` names YAML keys that are pagespeak-side options, not
+# client.chat() kwargs — the router strips them from resolved configs;
+# read them via `pagespeak._agent_runtime.agent_option`.
 #
 # Override the YAML path with `MODEL_ROUTER_CONFIG=path/to/file.yaml`.
+# Edits hot-reload within MODEL_ROUTER_RELOAD_SECONDS (default 60).
+
+env_prefix: PAGESPEAK
+default_client: claude_code
+non_chat_keys: [max_input_tokens]
 
 agents:
   vision:

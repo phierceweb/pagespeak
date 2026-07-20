@@ -1,15 +1,19 @@
-"""Tests for `pagespeak._agent_runtime` — invoke_agent seam.
+"""Tests for `pagespeak._agent_runtime` — the seam over pf-core's router,
+tracked calls, and recording.
 
 Covers:
 
-- `resolve_agent_config`: precedence between override-kwarg, env var,
-  per-backend YAML entry, and hardcoded fallback.
-- `resolve_backend`: env-var resolution to one of
-  `claude_code | anthropic | openrouter`; rejection of unknown values.
+- config resolution via `pf_core.llm.router.get_agent_config` (as wired by
+  pagespeak's YAML: `env_prefix` / `default_client` / `non_chat_keys`) and
+  the packaged-YAML bootstrap (`_ensure_router_config`).
+- `resolve_backend`: env-var selection narrowed to
+  `claude_code | anthropic | openrouter`; undeclared env values fall back
+  to the YAML `default_client`.
 - `invoke_agent`: dispatch to the right pf-core client; capture of
   usage/duration/error into the returned tuple.
 - DB tracking: when `pagespeak._db.init_db()` has been called, every
-  successful invoke writes one `llm_runs` row.
+  successful invoke writes one `llm_runs` row (via
+  `tracked_messages_call`).
 """
 
 from __future__ import annotations
@@ -60,18 +64,19 @@ def _reset_runtime_state():
     _clear_resolver_caches()
 
 
-# --- resolve_agent_config -------------------------------------------------
+# --- config resolution (pf_core.llm.router as wired by pagespeak) ---------
 
 
-def test_resolve_agent_config_picks_backend_specific_model(
+def test_get_agent_config_picks_backend_specific_model(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The backend env var selects which subtree of the agent's
-    `backends:` block is read."""
+    """The backend env var (enabled by `env_prefix`) selects which subtree
+    of the agent's `backends:` block is read."""
     monkeypatch.chdir(tmp_path)
     (tmp_path / "config").mkdir()
     (tmp_path / "config" / "model_router.yaml").write_text(
-        """agents:
+        """env_prefix: PAGESPEAK
+agents:
   vision:
     backends:
       claude_code:
@@ -81,88 +86,98 @@ def test_resolve_agent_config_picks_backend_specific_model(
 """,
         encoding="utf-8",
     )
-    from pagespeak._agent_runtime import resolve_agent_config
-
-    monkeypatch.delenv("PAGESPEAK_VISION_MODEL", raising=False)
+    from pf_core.llm.router import get_agent_config
 
     monkeypatch.setenv("PAGESPEAK_VISION_BACKEND", "claude_code")
-    assert resolve_agent_config("vision")["model"] == "haiku-via-claude-code"
+    assert get_agent_config("vision")["model"] == "haiku-via-claude-code"
 
     monkeypatch.setenv("PAGESPEAK_VISION_BACKEND", "openrouter")
-    assert resolve_agent_config("vision")["model"] == "gemini-via-openrouter"
+    assert get_agent_config("vision")["model"] == "gemini-via-openrouter"
 
 
-def test_resolve_agent_config_explicit_override_wins(
+def test_get_agent_config_explicit_override_wins(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A `model_override` kwarg beats env var beats YAML beats hardcoded."""
-    from pagespeak._agent_runtime import resolve_agent_config
+    """A `model_override` kwarg beats the YAML entry (repo YAML at cwd)."""
+    from pf_core.llm.router import get_agent_config
 
-    monkeypatch.setenv("PAGESPEAK_VISION_MODEL", "from-env")
-    cfg = resolve_agent_config("vision", model_override="from-arg")
+    cfg = get_agent_config("vision", model_override="from-arg")
     assert cfg["model"] == "from-arg"
 
 
-def test_resolve_agent_config_ignores_legacy_env_model_var(
+def test_get_agent_config_ignores_legacy_env_model_var(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The legacy `PAGESPEAK_<SLUG>_MODEL` env var is no
-    longer consulted. YAML is the single source of truth for model
-    config; env vars are reserved for backend selection only."""
+    """The legacy `PAGESPEAK_<SLUG>_MODEL` env var is not consulted. YAML
+    is the single source of truth for model config; env vars are reserved
+    for backend selection only."""
     monkeypatch.chdir(tmp_path)
     (tmp_path / "config").mkdir()
     (tmp_path / "config" / "model_router.yaml").write_text(
+        "env_prefix: PAGESPEAK\n"
         "agents:\n  vision:\n    backends:\n      claude_code:\n        model: from-yaml\n",
         encoding="utf-8",
     )
     monkeypatch.setenv("PAGESPEAK_VISION_MODEL", "from-env-ignored")
     monkeypatch.setenv("PAGESPEAK_VISION_BACKEND", "claude_code")
-    from pagespeak._agent_runtime import resolve_agent_config
+    from pf_core.llm.router import get_agent_config
 
-    assert resolve_agent_config("vision")["model"] == "from-yaml"
+    assert get_agent_config("vision")["model"] == "from-yaml"
 
 
-def test_resolve_agent_config_falls_back_to_hardcoded_haiku_when_config_empty(
+def test_get_agent_config_missing_config_raises(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """When the resolved config yields no model — MODEL_ROUTER_CONFIG points
-    at a missing file, so neither the cwd config nor the packaged default is
-    read — resolution ends at the hardcoded haiku fallback."""
+    """An explicit MODEL_ROUTER_CONFIG pointing at a missing file is a hard
+    ConfigurationError, not a silent model fallback. (The packaged-YAML
+    bootstrap never fires when the operator chose an explicit path.)"""
+    from pf_core.exceptions import ConfigurationError
+
     monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("PAGESPEAK_VISION_MODEL", raising=False)
-    monkeypatch.delenv("PAGESPEAK_VISION_BACKEND", raising=False)
     monkeypatch.setenv("MODEL_ROUTER_CONFIG", str(tmp_path / "missing.yaml"))
-    from pagespeak._agent_runtime import resolve_agent_config
+    from pf_core.llm.router import get_agent_config
 
-    cfg = resolve_agent_config("vision")
-    assert cfg["model"] == "claude-haiku-4-5-20251001"
+    with pytest.raises(ConfigurationError):
+        get_agent_config("vision")
 
 
-def test_resolve_agent_config_uses_packaged_default_when_no_cwd_or_env(
+def test_packaged_default_bootstrap_when_no_cwd_or_env(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """An installed copy — no MODEL_ROUTER_CONFIG env and no cwd
-    config/model_router.yaml — falls back to the model_router.yaml bundled in
-    the package, so the tuned defaults ship (not the hardcoded haiku)."""
-    monkeypatch.chdir(tmp_path)  # no config/ here → forces the packaged default
+    config/model_router.yaml — gets `_ensure_router_config`'s bootstrap:
+    the env var is pointed at the model_router.yaml bundled in the
+    package, so the tuned defaults ship."""
+    monkeypatch.chdir(tmp_path)  # no config/ here → bootstrap must fire
     monkeypatch.delenv("MODEL_ROUTER_CONFIG", raising=False)
-    from pagespeak._agent_runtime import resolve_agent_config
+    from pf_core.llm.router import get_agent_config
 
-    cfg = resolve_agent_config("heading_normalize_full", backend="claude_code")
-    # The packaged default sets claude_code → opus for llm_full; the
-    # hardcoded fallback would instead be claude-haiku-4-5-20251001.
+    from pagespeak._agent_runtime import _ensure_router_config, agent_option
+
+    _ensure_router_config()
+    import os
+
+    assert os.environ["MODEL_ROUTER_CONFIG"].endswith("model_router.yaml")
+    assert "pagespeak" in os.environ["MODEL_ROUTER_CONFIG"]
+
+    cfg = get_agent_config("heading_normalize_full", backend="claude_code")
+    # The packaged default sets claude_code → opus for llm_full.
     assert cfg["model"] == "opus"
-    assert cfg["max_input_tokens"] == 800000  # a packaged-default kwarg
+    # `max_input_tokens` is a non_chat_keys option: stripped from chat
+    # kwargs, read via the seam's agent_option instead.
+    assert "max_input_tokens" not in cfg
+    assert agent_option("heading_normalize_full", "max_input_tokens") == 800000
 
 
-def test_resolve_agent_config_unknown_slug_raises() -> None:
-    from pagespeak._agent_runtime import resolve_agent_config
+def test_get_agent_config_unknown_slug_raises() -> None:
+    from pf_core.exceptions import ConfigurationError
+    from pf_core.llm.router import get_agent_config
 
-    with pytest.raises(KeyError):
-        resolve_agent_config("nonexistent_agent")
+    with pytest.raises(ConfigurationError):
+        get_agent_config("nonexistent_agent")
 
 
-def test_resolve_agent_config_shared_kwargs_overlay_with_backend_specific(
+def test_get_agent_config_shared_kwargs_overlay_with_backend_specific(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Top-level agent kwargs (temperature, max_tokens) apply to all
@@ -170,7 +185,8 @@ def test_resolve_agent_config_shared_kwargs_overlay_with_backend_specific(
     monkeypatch.chdir(tmp_path)
     (tmp_path / "config").mkdir()
     (tmp_path / "config" / "model_router.yaml").write_text(
-        """agents:
+        """env_prefix: PAGESPEAK
+agents:
   vision:
     temperature: 0.5
     max_tokens: 4000
@@ -183,17 +199,16 @@ def test_resolve_agent_config_shared_kwargs_overlay_with_backend_specific(
 """,
         encoding="utf-8",
     )
-    monkeypatch.delenv("PAGESPEAK_VISION_MODEL", raising=False)
-    from pagespeak._agent_runtime import resolve_agent_config
+    from pf_core.llm.router import get_agent_config
 
     monkeypatch.setenv("PAGESPEAK_VISION_BACKEND", "claude_code")
-    cfg = resolve_agent_config("vision")
+    cfg = get_agent_config("vision")
     assert cfg["model"] == "shared-temp-model"
     assert cfg["temperature"] == 0.5
     assert cfg["max_tokens"] == 4000
 
     monkeypatch.setenv("PAGESPEAK_VISION_BACKEND", "openrouter")
-    cfg = resolve_agent_config("vision")
+    cfg = get_agent_config("vision")
     assert cfg["model"] == "override-temp-model"
     assert cfg["temperature"] == 0.1  # backend-specific overrides shared
     assert cfg["max_tokens"] == 4000  # shared still applies
@@ -204,12 +219,15 @@ def test_invoke_agent_strips_pagespeak_only_keys_before_chat(
 ) -> None:
     """Pagespeak-side YAML keys like `max_input_tokens` must
     not leak into `client.chat()` as kwargs (the underlying SDK would
-    reject them as unknown). The key remains visible on
-    `resolve_agent_config(slug)` for pagespeak callers to read."""
+    reject them as unknown). The key remains readable via the seam's
+    `agent_option` — `get_agent_config` strips declared `non_chat_keys`,
+    and `invoke_agent` strips them defensively even when a custom YAML
+    omits the declaration (as here)."""
     monkeypatch.chdir(tmp_path)
     (tmp_path / "config").mkdir()
     (tmp_path / "config" / "model_router.yaml").write_text(
-        """agents:
+        """env_prefix: PAGESPEAK
+agents:
   heading_normalize_full:
     max_input_tokens: 250000
     backends:
@@ -220,12 +238,10 @@ def test_invoke_agent_strips_pagespeak_only_keys_before_chat(
     )
     monkeypatch.setenv("PAGESPEAK_HEADING_NORMALIZE_FULL_BACKEND", "claude_code")
 
-    from pagespeak._agent_runtime import invoke_agent, resolve_agent_config
+    from pagespeak._agent_runtime import agent_option, invoke_agent
 
-    # Visible on resolve_agent_config().
-    cfg = resolve_agent_config("heading_normalize_full")
-    assert cfg["max_input_tokens"] == 250000
-    assert cfg["model"] == "haiku-test"
+    # Visible via agent_option() (agent-level fallback: no per-backend entry).
+    assert agent_option("heading_normalize_full", "max_input_tokens") == 250000
 
     # Not passed to chat().
     captured: list[dict] = []
@@ -247,10 +263,12 @@ def test_invoke_agent_strips_pagespeak_only_keys_before_chat(
 def test_resolve_backend_returns_three_way_enum(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Env picks a declared backend; unset falls to the repo YAML's
+    top-level `default_client: claude_code`."""
     from pagespeak._agent_runtime import resolve_backend
 
     monkeypatch.delenv("PAGESPEAK_VISION_BACKEND", raising=False)
-    assert resolve_backend("vision") == "claude_code"  # default
+    assert resolve_backend("vision") == "claude_code"  # YAML default_client
 
     monkeypatch.setenv("PAGESPEAK_VISION_BACKEND", "anthropic")
     assert resolve_backend("vision") == "anthropic"
@@ -259,18 +277,25 @@ def test_resolve_backend_returns_three_way_enum(
     assert resolve_backend("vision") == "openrouter"
 
 
-def test_resolve_backend_rejects_unknown(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolve_backend_invalid_env_value_falls_back_to_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An env value naming a backend the agent doesn't declare is ignored;
+    resolution falls through to the YAML `default_client`. A typo'd backend
+    var thus lands on the $0 default rather than crashing — or silently
+    picking a paid backend."""
     from pagespeak._agent_runtime import resolve_backend
 
     monkeypatch.setenv("PAGESPEAK_VISION_BACKEND", "bogus")
-    with pytest.raises(ValueError, match="unknown backend"):
-        resolve_backend("vision")
+    assert resolve_backend("vision") == "claude_code"
 
 
 def test_resolve_backend_unknown_slug_raises() -> None:
+    from pf_core.exceptions import ConfigurationError
+
     from pagespeak._agent_runtime import resolve_backend
 
-    with pytest.raises(KeyError):
+    with pytest.raises(ConfigurationError):
         resolve_backend("nonexistent_agent")
 
 
@@ -303,7 +328,6 @@ def test_invoke_agent_dispatches_to_routed_client(
     from pagespeak._agent_runtime import invoke_agent
 
     monkeypatch.setenv("PAGESPEAK_VISION_BACKEND", "openrouter")
-    monkeypatch.setenv("PAGESPEAK_VISION_MODEL", "google/gemini-2.5-flash")
 
     captured: list[dict] = []
     fake = _make_fake_client(captured)
@@ -325,10 +349,8 @@ def test_invoke_agent_dispatches_to_routed_client(
 def test_invoke_agent_passes_explicit_model_override(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Per-call `model_override` wins over env-var + YAML."""
+    """Per-call `model_override` wins over the YAML."""
     from pagespeak._agent_runtime import invoke_agent
-
-    monkeypatch.setenv("PAGESPEAK_VISION_MODEL", "ignored")
 
     captured: list[dict] = []
     with patch(
@@ -372,7 +394,6 @@ def test_invoke_agent_writes_llm_runs_row_when_db_initialized(
     one llm_runs row per call."""
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/track.db")
     monkeypatch.setenv("PAGESPEAK_VISION_BACKEND", "openrouter")
-    monkeypatch.setenv("PAGESPEAK_VISION_MODEL", "google/gemini-2.5-flash")
 
     from pagespeak._agent_runtime import invoke_agent
     from pagespeak._db import get_engine, init_db
@@ -775,12 +796,12 @@ def test_call_recording_captures_invoke_agent_calls(
         end_call_recording()
 
     assert len(records) == 2
-    assert records[0]["task"] == "vision"
+    assert records[0]["agent_type"] == "vision"
     assert records[0]["prompt_version"] == 2
     assert records[0]["prompt_tokens"] == 10
     assert records[0]["completion_tokens"] == 20
     assert records[0]["success"] is True
-    assert records[1]["task"] == "heading_normalize"
+    assert records[1]["agent_type"] == "heading_normalize"
 
 
 def test_call_recording_is_noop_when_not_started(

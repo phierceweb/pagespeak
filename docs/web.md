@@ -148,7 +148,7 @@ browser action → JobRepo.create("pagespeak_convert", {from, stop_after, option
 
 Subprocess isolation keeps Marker/torch and the macOS `ProcessPoolExecutor` quirks (see [docs/operations.md](operations.md)) out of the web process.
 
-**LLM attribution:** the worker passes a `PAGESPEAK_JOB_ID` env var to the subprocess so `pf_core`'s `_agent_runtime` records the `job_id` on every LLM run row — this is what ties vision and normalize calls to a specific Conversion in the `/admin/llm` dashboards and the per-Conversion summary.
+**LLM attribution:** the worker passes a `PAGESPEAK_JOB_ID` env var to the subprocess; pagespeak's `_agent_runtime` seam reads it and hands it to pf-core's `tracked_messages_call` as the `job_id` on every LLM run row — this is what ties vision and normalize calls to a specific Conversion in the `/admin/llm` dashboards and the per-Conversion summary.
 
 Progress is read from on-disk phase checkpoints (the phase strip), not a synthetic per-phase counter. The queue table polls checkpoints every ~3 s via HTMX.
 

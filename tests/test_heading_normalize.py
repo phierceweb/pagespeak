@@ -423,8 +423,7 @@ def test_normalize_with_filter_disabled_sends_everything() -> None:
 
 def test_resolve_model_explicit_arg_wins(monkeypatch: pytest.MonkeyPatch) -> None:
     """Explicit `model=` kwarg is still the highest-precedence
-    selector and beats YAML + hardcoded default."""
-    monkeypatch.setenv("PAGESPEAK_NORMALIZE_HEADINGS_MODEL", "haiku-from-env")
+    selector and beats the YAML."""
     assert _resolve_model("explicit-model", mode="llm") == "explicit-model"
 
 
@@ -850,7 +849,12 @@ def test_resolve_max_input_tokens_explicit_arg_wins(
     monkeypatch.chdir(tmp_path)
     (tmp_path / "config").mkdir()
     (tmp_path / "config" / "model_router.yaml").write_text(
-        "agents:\n  heading_normalize_full:\n    max_input_tokens: 999\n",
+        "agents:\n"
+        "  heading_normalize_full:\n"
+        "    max_input_tokens: 999\n"
+        "    backends:\n"
+        "      claude_code:\n"
+        "        model: test-model\n",
         encoding="utf-8",
     )
     from pagespeak.services._heading_normalize import _resolve_max_input_tokens
@@ -867,7 +871,12 @@ def test_resolve_max_input_tokens_falls_back_to_yaml(
     monkeypatch.chdir(tmp_path)
     (tmp_path / "config").mkdir()
     (tmp_path / "config" / "model_router.yaml").write_text(
-        "agents:\n  heading_normalize_full:\n    max_input_tokens: 7777\n",
+        "agents:\n"
+        "  heading_normalize_full:\n"
+        "    max_input_tokens: 7777\n"
+        "    backends:\n"
+        "      claude_code:\n"
+        "        model: test-model\n",
         encoding="utf-8",
     )
     monkeypatch.setenv("PAGESPEAK_NORMALIZE_HEADINGS_MAX_INPUT_TOKENS", "ignored-env-value")

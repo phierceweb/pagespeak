@@ -14,6 +14,11 @@ _setup_logging(
     app_logger_name="pagespeak",
 )
 
+# Router-config bootstrap: importing the seam points pf-core's model router
+# at the packaged model_router.yaml when neither MODEL_ROUTER_CONFIG nor a
+# cwd config/ exists (wheel installs). Package-init placement guarantees it
+# runs before any caller resolves a model.
+from . import _agent_runtime as _agent_runtime  # noqa: E402
 from .backends._pdf_dispatch import PdfBackendName  # noqa: E402
 from .models._models import Diagram, IngestResult  # noqa: E402
 from .models._pipeline import ChunkState, Manifest, VisionState  # noqa: E402
@@ -34,7 +39,7 @@ from .services._heading_normalize import (  # noqa: E402
 )
 from .services._rerun import RERUN_STAGES  # noqa: E402
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 __all__ = [
     "ChunkState",
     "CleanupLevel",

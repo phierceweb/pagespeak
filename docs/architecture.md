@@ -25,8 +25,9 @@
                                                   │
                        ┌──────────────────────────▼───────────────────────────┐
                        │  Phase pipeline: a list of Phase objects run by      │
-                       │  the sequencer (_sequencer.run_pipeline). Each phase │
-                       │  reads its input checkpoint, writes its output one.  │
+                       │  pf-core's sequencer (pf_core.pipeline.sequencer).   │
+                       │  Each phase reads its input checkpoint, writes its   │
+                       │  output one.                                         │
                        │                                                      │
                        │  ingest    → <stem>.raw.md  + images/                │
                        │  cleanup   → <stem>.cleaned.md   (frontmatter strip  │
@@ -113,6 +114,7 @@ Versioned LLM-facing prompts: each YAML (`diagram.yaml`, `heading_normalize.yaml
 | `services/_vision_cache.py` | `load()` / `write()` / `diagram_from_cache()` — atomic per-phash JSON cache for the single-shot vision pass. Keyed by image phash ONLY; reused regardless of which backend/model produced it (engine/model recorded as provenance, not a reuse gate). | — |
 | `services/_vision_backends.py` | The three `analyze(image) -> Diagram` LLM clients (`Anthropic` / `ClaudeCode` / `OpenRouter`), the `VisionBackend` protocol, and the `build_backend` factory. | `anthropic` inside the Anthropic backend |
 | `services/_vision_backend_openrouter.py` | OpenRouter vision backend — `analyze(image) -> Diagram` via the chat-completions endpoint. | `httpx` at call time |
+| `services/_vision_inject.py` | Markdown-injection half of the vision pass: `inject_diagrams` (caption + Mermaid rewrite of matching image refs) and `alt_text_by_basename` (feeds the alt-aware prompt). Pure text; re-exported by `_diagrams.py`. | — |
 | `services/_vision_media.py` | Image media-type lookup shared by the API vision backends. | — |
 | `services/_vision_parse.py` | Vision response parsing: model output (raw / fenced / preamble-wrapped JSON) → `Diagram`. | — |
 | `services/_cleanup.py` | Cleanup pipeline (`off` / `basic` / `aggressive`). Each per-line transform exposed as a named function. | yes — only imported when `cleanup != "off"` |
@@ -164,7 +166,6 @@ Versioned LLM-facing prompts: each YAML (`diagram.yaml`, `heading_normalize.yaml
 | `orchestrators/_phase.py` | The `Phase` protocol: `name`, `is_fresh(ctx)`, `run(ctx)`. A phase's on-disk checkpoint is its sole interface to its neighbours. | — |
 | `orchestrators/_phases.py` | The seven concrete phases (`Ingest`/`Cleanup`/`Normalize`/`Repair`/`Structure`/`Vision`/`Split`) + `build_phases()`. Each `run()` reads its input checkpoint and writes its output one; `_load_input` hydrates a phase's input checkpoint when started mid-pipeline (no-op in the full run). | — |
 | `orchestrators/_split_output.py` | `SplitPhase`'s section-writing + master frontmatter, extracted to stay under budget: quiz docs (`source_type=="quiz"`) split with rich per-question frontmatter via `backends/_qti_split`; everything else gets the rich per-section provenance (`doc_title` + breadcrumb locators) when source flags are set. | — |
-| `orchestrators/_sequencer.py` | `run_pipeline(phases, ctx, start, stop_after)` — pure slice selection (resume-skip-fresh / `start` / `stop_after` / `rerun_from`). Zero pipeline logic. The "process that runs phases in order". | — |
 | `orchestrators/_context.py` | `PipelineContext` — resolved config + derived checkpoint paths + mutable `IngestResult`; `do_normalize`/`do_vision` props. Data only. | — |
 | `orchestrators/_ingest.py` | `ingest()` — unified backend phase. `workers=1` runs single-process; `workers>1` runs `_chunk.py` workers then concatenates. A QTI export is rejected here (it fans out per exam — use `convert`). Writes `<stem>.raw.md` + `images/`. Canonical `PDF_SUFFIXES` / `MARKITDOWN_SUFFIXES` / `MARKDOWN_SUFFIXES` format-suffix sets live here. | yes (delegates to `backends._pdf_dispatch` per chunk) |
 | `orchestrators/_chunk.py` | `chunk()` — ProcessPoolExecutor of Marker workers, page-range slicing, max-pages cap, resume via manifest. Used internally by `_ingest.py` when `workers>1`. Per-chunk output rewriting lives in `services/_chunk_rewrite.py`. | yes |
@@ -210,8 +211,7 @@ Optional layer, behind the `pagespeak[web]` extra (FastAPI + uvicorn + jinja2). 
 | Module | Responsibility |
 |---|---|
 | `__init__.py` | Re-exports public API: `to_markdown`, `ingest`, `chunk`, dataclasses, type aliases. |
-| `_agent_config.py` | Agent config resolution: per-task model + backend selection from `config/model_router.yaml`. |
-| `_agent_runtime.py` | Per-task LLM call infrastructure with pf-core `llm_runs` tracking integration. |
+| `_agent_runtime.py` | Thin seam over pf-core's LLM stack: `invoke_agent` (routes via `pf_core.llm.router`, records via `tracked_messages_call`), `agent_option`, recording re-exports, and the packaged-`model_router.yaml` bootstrap. |
 | `_db.py` | Pagespeak DB configuration — thin wrapper over pf-core's connection helpers (`DATABASE_URL`). |
 
 Lazy imports matter: a consumer that only ever processes DOCX never pays the cost of installing or importing torch / surya.
@@ -220,7 +220,7 @@ Lazy imports matter: a consumer that only ever processes DOCX never pays the cos
 
 1. **Ingest phase** (`orchestrators/_ingest.py`) reads the file extension — canonical suffix sets `PDF_SUFFIXES`, `MARKITDOWN_SUFFIXES`, and `MARKDOWN_SUFFIXES` live in `_ingest.py` — and routes to `backends/_pdf_dispatch.py` (Marker or Docling), `backends/_docx.py` (MarkItDown), or `backends/_markdown.py` (verbatim passthrough for `.md`/`.markdown`). Unknown extensions raise `ValueError`. With `workers=1` (default), a single backend call processes the full document. With `workers>1` (PDF only), a `ProcessPoolExecutor` runs Marker on N-page chunks in parallel; `_chunk_rewrite.py` prefixes each chunk's image basenames with the page-range and absolutizes page-anchor IDs before concatenation. Either way the phase concludes by writing `<stem>.raw.md` + `images/` as a checkpoint.
 2. **MarkItDown side-effect.** For office zip formats (DOCX/PPTX/XLSX), `_docx.py` extracts everything under `word/media/`, `ppt/media/`, or `xl/media/` into `output_dir/images/`. For EPUB it pulls embedded images out of the zip by extension; for HTML (where images are remote `<img>` URLs) it downloads each one via `_remote_images.py` and retargets the ref to `images/<name>` — both so the vision pass has local files to process. Local sibling refs (a saved-webpage bundle's `images/` dir next to the source) are copied into `output_dir/images/` by `_local_images.py` at the end of ingest (and again idempotently at cleanup for resume paths). If MarkItDown's markdown lacks image refs but images were extracted, an "Extracted Images" section is appended so the diagram pass has anchors.
-3. **Phase pipeline — sequential, deterministic.** `to_markdown()` builds a `PipelineContext` and calls `orchestrators/_sequencer.run_pipeline()` over the ordered `Phase` list from `orchestrators/_phases.build_phases()`. Each phase reads its input checkpoint and writes its output checkpoint, so the sequencer can run any contiguous slice — `--from <phase>` (begin there, hydrating from the on-disk checkpoint), `--stop-after <phase>` (halt after), `--from X --stop-after X` (exactly one phase). The default run executes every phase in this order, which preserves correctness:
+3. **Phase pipeline — sequential, deterministic.** `to_markdown()` builds a `PipelineContext` and calls `pf_core.pipeline.sequencer.run_pipeline()` over the ordered `Phase` list from `orchestrators/_phases.build_phases()` (resume freshness is injected as a `skip_fresh` closure over each phase's `is_fresh`). Each phase reads its input checkpoint and writes its output checkpoint, so the sequencer can run any contiguous slice — `--from <phase>` (begin there, hydrating from the on-disk checkpoint), `--stop-after <phase>` (halt after), `--from X --stop-after X` (exactly one phase). The default run executes every phase in this order, which preserves correctness:
    - **Cleanup** (`services/_cleanup.py`) — begins with an outline reconstruction pre-pass (`services/_outline.promote_outline`) that converts Word multilevel-list indentation to heading/list structure; then per-line normalizations; numbered headings run through `_heading_sanity.demote_prose_heading` to undo wrong promotions. Snapshot to `<stem>.cleaned.md`.
    - **Strip decoration refs** (`services/_decorations.py`) — runs at the start of the cleanup phase, before the line transforms: perceptual-hash clustering identifies repeated page headers / footer logos; their refs are removed.
    - **Gather + apply normalize** (`services/_heading_normalize.py`, opt-in) — heuristic computation OR one LLM call. Snapshot to `<stem>.normalized.md`.

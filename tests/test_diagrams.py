@@ -361,12 +361,11 @@ def test_claude_code_backend_ignores_legacy_env_model_var(
     assert resolved != "haiku-from-env"
 
 
-def test_claude_code_backend_explicit_model_wins_over_env(
+def test_claude_code_backend_explicit_model_wins(
     fake_image: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Explicit `model=` arg always wins — the per-call override path is
     preserved as the highest-precedence model selector."""
-    monkeypatch.setenv("PAGESPEAK_VISION_MODEL", "haiku-from-env")
     client = _mock_claude_client(json.dumps({"is_diagram": False, "caption": "x", "mermaid": None}))
     backend = ClaudeCodeVisionBackend(
         claude_bin="/fake/claude", model="explicit-model", client=client
@@ -850,7 +849,7 @@ def test_openrouter_backend_constructs_openai_style_image_payload(
 
 
 def test_openrouter_backend_uses_yaml_model_when_arg_unset(fake_image: Path) -> None:
-    """Model resolution goes through `resolve_agent_config` —
+    """Model resolution goes through pf-core's `get_agent_config` —
     YAML at `config/model_router.yaml` (`agents.vision.backends.openrouter.model`)
     wins. Repo YAML pins `google/gemini-2.5-flash` for openrouter, so an
     OpenRouterVisionBackend with no explicit `model=` picks that up.
@@ -863,19 +862,23 @@ def test_openrouter_backend_uses_yaml_model_when_arg_unset(fake_image: Path) -> 
     assert client.chat.call_args.kwargs["model"] == "google/gemini-2.5-flash"
 
 
-def test_openrouter_backend_falls_back_to_default_when_yaml_absent(
+def test_openrouter_backend_fails_fast_when_config_missing(
     fake_image: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """When no config resolves — MODEL_ROUTER_CONFIG points at a missing
-    file, so neither the cwd config nor the packaged default is read — the
-    backend's hardcoded `DEFAULT_MODEL` (`anthropic/claude-haiku-4.5`) is
-    used. Cost-protection guard for a genuinely config-less environment."""
+    """An explicit MODEL_ROUTER_CONFIG pointing at a missing file is a hard
+    ConfigurationError at call time (the packaged-YAML bootstrap never fires
+    when the operator chose an explicit path). The constructor still resolves
+    its cost-protection `DEFAULT_MODEL`, so the object builds config-less;
+    the loud failure happens on the actual call."""
+    from pf_core.exceptions import ConfigurationError
+
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("MODEL_ROUTER_CONFIG", str(tmp_path / "missing.yaml"))
     client = _mock_openrouter_client({"is_diagram": False, "caption": "x", "mermaid": None})
     backend = OpenRouterVisionBackend(api_key="k", client=client)
-    backend.analyze(fake_image)
-    assert client.chat.call_args.kwargs["model"] == "anthropic/claude-haiku-4.5"
+    assert backend._model == OpenRouterVisionBackend.DEFAULT_MODEL
+    with pytest.raises(ConfigurationError):
+        backend.analyze(fake_image)
 
 
 def test_openrouter_backend_overrides_model_via_param(fake_image: Path) -> None:
@@ -907,6 +910,51 @@ def test_openrouter_backend_parses_chat_completions_response(
 def test_build_backend_unknown_raises() -> None:
     with pytest.raises(ValueError, match="Unknown vision_backend"):
         build_backend("nope")  # type: ignore[arg-type]
+
+
+def test_gather_diagrams_workers_join_recording_window(fake_image: Path, tmp_path: Path) -> None:
+    """Pool workers must see the caller's ContextVar recording window —
+    gather submits each task through `contextvars.copy_context()`.
+    Without that, every per-image call summary silently vanishes from
+    the drain (and thus from `.pagespeak-run.json`)."""
+    import shutil
+
+    from pf_core.llm.recording import (
+        begin_call_recording,
+        end_call_recording,
+        record_call,
+    )
+
+    second = tmp_path / "second.png"
+    shutil.copyfile(fake_image, second)
+
+    class RecordingStubBackend:
+        """Stands in for the invoke_agent-backed backends: appends one
+        window record per analyze(), like tracked_messages_call does."""
+
+        def analyze(
+            self,
+            image_path: Path,
+            *,
+            phash: str | None = None,
+            original_alt: str | None = None,
+        ) -> Diagram:
+            record_call({"agent_type": "vision", "image": image_path.name, "success": True})
+            return Diagram(image_path=image_path, caption="stub", mermaid=None)
+
+    begin_call_recording()
+    try:
+        result = gather_diagrams(
+            [fake_image, second],
+            backend=RecordingStubBackend(),
+            backend_name="claude_code",
+            cache_dir=None,
+        )
+    finally:
+        records = end_call_recording()
+
+    assert set(result) == {fake_image.name, "second.png"}
+    assert {r["image"] for r in records} == {fake_image.name, "second.png"}
 
 
 def test_enrich_with_diagrams_handles_extraction_failure(fake_image: Path) -> None:

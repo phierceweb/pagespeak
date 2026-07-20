@@ -1,16 +1,16 @@
-"""Sequencer: runs phases in order, supports from / stop_after /
-single-phase / rerun_from / resume-skip. Pure ordering logic — no real
-pipeline state (fake phases record their own run + freshness).
-
-Mirrors `src/pagespeak/orchestrators/_sequencer.py`.
+"""Sequencing as pagespeak wires it: `pf_core.pipeline.sequencer` driving
+phases that carry pagespeak's `is_fresh` convention. The resume tests pass
+the same `skip_fresh` closure `_dispatch` uses — they are the wiring
+contract, not a duplicate of pf-core's upstream suite.
 """
 
 from __future__ import annotations
 
 import pytest
+from pf_core.pipeline.sequencer import Phase as SequencedPhase
+from pf_core.pipeline.sequencer import UnknownStageError, run_pipeline
 
 from pagespeak.orchestrators._phase import Phase
-from pagespeak.orchestrators._sequencer import UnknownStageError, run_pipeline
 
 
 class FakePhase:
@@ -28,20 +28,25 @@ class FakePhase:
         self.ran = True
 
 
-def _phases(*specs: tuple[str, bool]) -> list[Phase]:
+def _phases(*specs: tuple[str, bool]) -> list[SequencedPhase]:
     return [FakePhase(n, fresh=f) for n, f in specs]
 
 
 PIPELINE = ("ingest", "cleanup", "normalize", "repair", "structure", "vision", "split")
 
 
-def _fresh_none() -> list[Phase]:
+def _fresh_none() -> list[SequencedPhase]:
     return _phases(*[(n, False) for n in PIPELINE])
 
 
 def test_runs_all_phases_in_order_when_nothing_fresh() -> None:
     phases = _fresh_none()
-    ran = run_pipeline(phases, ctx=object())
+    ctx = object()
+    ran = run_pipeline(
+        phases,
+        ctx=ctx,
+        skip_fresh=lambda p: isinstance(p, Phase) and p.is_fresh(ctx),
+    )
     assert ran == list(PIPELINE)
     assert all(p.ran for p in phases)  # type: ignore[attr-defined]
 
@@ -81,7 +86,12 @@ def test_resume_skips_fresh_prefix() -> None:
         ("vision", False),
         ("split", False),
     )
-    ran = run_pipeline(phases, ctx=object())
+    ctx = object()
+    ran = run_pipeline(
+        phases,
+        ctx=ctx,
+        skip_fresh=lambda p: isinstance(p, Phase) and p.is_fresh(ctx),
+    )
     assert ran == ["normalize", "repair", "structure", "vision", "split"]
 
 
@@ -94,7 +104,12 @@ def test_rerun_from_forces_rerun_despite_fresh() -> None:
 
 def test_all_fresh_no_rerun_runs_nothing() -> None:
     phases = _phases(*[(n, True) for n in PIPELINE])
-    ran = run_pipeline(phases, ctx=object())
+    ctx = object()
+    ran = run_pipeline(
+        phases,
+        ctx=ctx,
+        skip_fresh=lambda p: isinstance(p, Phase) and p.is_fresh(ctx),
+    )
     assert ran == []
     assert not any(p.ran for p in phases)  # type: ignore[attr-defined]
 

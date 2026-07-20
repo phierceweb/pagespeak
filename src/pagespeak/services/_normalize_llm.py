@@ -137,20 +137,25 @@ def _resolve_max_input_tokens(override: int | None = None) -> int:
 
     1. Explicit ``override`` arg (passed through from
        ``to_markdown(max_input_tokens=…)`` / library callers).
-    2. YAML ``agents.heading_normalize_full.max_input_tokens`` in
-       ``config/model_router.yaml``.
+    2. YAML ``agents.heading_normalize_full`` — the active backend's
+       ``max_input_tokens`` entry, then the agent-level one (a
+       ``non_chat_keys`` option, read via ``_agent_runtime.agent_option``).
     3. :data:`DEFAULT_NORMALIZE_MAX_INPUT_TOKENS` (150,000).
 
-    env-var step removed. The threshold is a payload-shaping
-    knob (not a per-call kwarg), so the YAML is the right home.
+    The threshold is a payload-shaping knob (not a per-call kwarg), so it
+    lives in the YAML, not env.
     """
     if isinstance(override, int) and override > 0:
         return override
 
-    from .._agent_runtime import resolve_agent_config
+    from pf_core.exceptions import ConfigurationError
 
-    cfg = resolve_agent_config("heading_normalize_full")
-    val = cfg.get("max_input_tokens")
+    from .._agent_runtime import agent_option
+
+    try:
+        val = agent_option("heading_normalize_full", "max_input_tokens")
+    except ConfigurationError:
+        val = None  # custom YAML without the agent → default below
     if isinstance(val, int) and val > 0:
         return val
     return DEFAULT_NORMALIZE_MAX_INPUT_TOKENS
@@ -246,10 +251,8 @@ def _claude_code_invoke(prompt: str, *, model: str | None = None) -> str:
 def _resolve_model(model: str | None, *, mode: NormalizeMode) -> str:
     """Pick the model name. Explicit arg > YAML > `DEFAULT_NORMALIZE_MODEL`.
 
-    env-var step (`PAGESPEAK_NORMALIZE_HEADINGS_MODEL`) removed.
-    YAML at `config/model_router.yaml` is the source of truth; env is
-    reserved for backend selection (`PAGESPEAK_HEADING_NORMALIZE_BACKEND`
-    / `_FULL_BACKEND`).
+    The YAML is the source of truth for the model; env is reserved for
+    backend selection (`PAGESPEAK_HEADING_NORMALIZE_BACKEND` / `_FULL_BACKEND`).
 
     Mode picks the agent slug: `llm` → `heading_normalize`, `llm_full` →
     `heading_normalize_full`. Each slug has its own YAML block so the
@@ -263,10 +266,10 @@ def _resolve_model(model: str | None, *, mode: NormalizeMode) -> str:
     DEFAULT_NORMALIZE_MODEL` collapses both `None` (YAML unset) and `""`
     (YAML set to empty string) to the default.
     """
-    from .._agent_runtime import resolve_agent_config
+    from pf_core.llm.router import get_agent_config
 
     agent_slug = "heading_normalize_full" if mode == "llm_full" else "heading_normalize"
-    cfg = resolve_agent_config(agent_slug, model_override=model)
+    cfg = get_agent_config(agent_slug, model_override=model)
     return cfg.get("model") or DEFAULT_NORMALIZE_MODEL
 
 
