@@ -46,7 +46,9 @@ def test_run_job_success_marks_succeeded(monkeypatch, tmp_path):
     def _fake_popen(cmd, **kwargs):  # noqa: ANN001
         return _FakeProc()
 
-    monkeypatch.setattr(worker.subprocess, "Popen", _fake_popen)
+    import pf_core.jobs.workers as pf_workers
+
+    monkeypatch.setattr(pf_workers.subprocess, "Popen", _fake_popen)
 
     job_row = JobRepo().claim_next(kinds=[CONVERSION_KIND], worker_id="w1")
     assert job_row is not None
@@ -93,7 +95,9 @@ def test_run_job_nonzero_marks_failed(monkeypatch, tmp_path):
             out.mkdir(parents=True, exist_ok=True)
             return 2
 
-    monkeypatch.setattr(worker.subprocess, "Popen", lambda cmd, **kw: _FakeProc())
+    import pf_core.jobs.workers as pf_workers
+
+    monkeypatch.setattr(pf_workers.subprocess, "Popen", lambda cmd, **kw: _FakeProc())
 
     job_row = JobRepo().claim_next(kinds=[CONVERSION_KIND], worker_id="w1")
     worker.run_job(job_row)

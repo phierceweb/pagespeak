@@ -15,6 +15,7 @@ section-set filtering → `_split_filter.py`. This module keeps the
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Iterable
 from pathlib import Path
 
 from pf_core.log import get_logger
@@ -55,6 +56,56 @@ DEFAULT_MIN_BODY_CHARS = 30
 """Production-quality default for `min_body_chars` when the pipeline / dispatch
 layers call `split_into_sections`. The library function itself defaults to 0
 so direct callers and existing tests see the original behavior unless they opt in."""
+
+
+def _clear_prior_split(output_dir: Path) -> None:
+    """Remove a previous split's markdown (and the directories it empties).
+
+    Must run BEFORE writing: on a case-insensitive filesystem `overview.md`
+    opens an existing `Overview.md`, so the section would keep the stale name.
+    Only `.md` is in scope; `images/` is a sibling.
+    """
+    for prior in output_dir.rglob("*.md"):
+        with contextlib.suppress(OSError):
+            prior.unlink()
+    for sub in sorted(
+        (p for p in output_dir.rglob("*") if p.is_dir()),
+        key=lambda p: len(p.parts),
+        reverse=True,
+    ):
+        with contextlib.suppress(OSError):
+            sub.rmdir()
+
+
+def _file_identity(path: Path) -> tuple[int, int] | None:
+    """`(device, inode)`, or None if unreadable. Never compare these paths as
+    text: `Overview.md` and `overview.md` are one file on a case-insensitive
+    filesystem."""
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    return (st.st_dev, st.st_ino)
+
+
+def _remove_unwritten_markdown(output_dir: Path, keep_paths: Iterable[Path]) -> None:
+    """Delete `.md` under `output_dir` that this run did not write, then prune
+    the directories that empties. Matched by `_file_identity`, not by name —
+    a name comparison deletes just-written sections."""
+    keep = {ident for p in keep_paths if (ident := _file_identity(p)) is not None}
+    for stale in output_dir.rglob("*.md"):
+        ident = _file_identity(stale)
+        if ident is not None and ident not in keep:
+            stale.unlink()
+            logger.info("split_removed_stale_section path=%s", stale)
+    for sub in sorted(
+        (p for p in output_dir.rglob("*") if p.is_dir()),
+        key=lambda p: len(p.parts),
+        reverse=True,
+    ):
+        # Directory wasn't empty (still holds non-md files we shouldn't touch).
+        with contextlib.suppress(OSError):
+            sub.rmdir()
 
 
 def split_into_sections(
@@ -147,6 +198,7 @@ def split_into_sections(
             "target_kb and max_level are competing section-shaping mechanisms; pass one"
         )
     output_dir.mkdir(parents=True, exist_ok=True)
+    _clear_prior_split(output_dir)
     lines = markdown.splitlines()
     sections = _parse_sections(lines, min_level=min_level, max_level=max_level)
 
@@ -186,7 +238,11 @@ def split_into_sections(
     # descendants can find their parent chain) from the writable list.
     # Ancestor-only sections render as plain-text in breadcrumbs via the
     # `kept_ids` mechanism — same pattern as chapter shells.
-    ancestor_only_ids: set[int] = {id(s) for s in sections if s.is_ancestor_only}
+    ancestor_only_ids: set[int] = {
+        id(s)
+        for s in sections
+        if s.is_ancestor_only and not any(line.strip() for line in s.content_lines)
+    }
     writable_sections = [s for s in sections if id(s) not in ancestor_only_ids]
 
     # Filter: drop empty-body shells, preserve chapter shells whose body is
@@ -287,22 +343,6 @@ def split_into_sections(
         sections, output_dir, nested=nested, source_name=source_name, kept_ids=kept_ids
     )
 
-    # Clean stale .md files left over from previous runs (e.g. an earlier
-    # stitch wrote a section that's now filtered out by min_body_chars). Keep
-    # the just-written set + INDEX. Empty subdirs from nested mode are pruned.
-    keep: set[Path] = {p.resolve() for p in written}
-    keep.add(index_path.resolve())
-    for stale in output_dir.rglob("*.md"):
-        if stale.resolve() not in keep:
-            stale.unlink()
-            logger.info("split_removed_stale_section path=%s", stale)
-    for sub in sorted(
-        (p for p in output_dir.rglob("*") if p.is_dir()),
-        key=lambda p: len(p.parts),
-        reverse=True,
-    ):
-        # Directory wasn't empty (still holds non-md files we shouldn't touch).
-        with contextlib.suppress(OSError):
-            sub.rmdir()
+    _remove_unwritten_markdown(output_dir, [*written, index_path])
 
     return written

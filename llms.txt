@@ -1,0 +1,46 @@
+# pagespeak
+
+> Convert PDF, Word, PowerPoint, Excel, HTML, and quiz-export documents into retrieval-ready markdown — one document or a whole corpus, with extracted diagrams turned into embedded Mermaid. Existing converters (Marker, Docling, MarkItDown) extract; pagespeak mechanically repairs the heading corruptions each one produces, can blend backends (Marker's deeper hierarchy + Docling's cleaner tables), optionally sends the cleaned result to a large-context LLM for meaning-based structure repair, then runs a final deterministic pass before splitting into per-section files. The goal is markdown clean enough that an LLM can query across a whole corpus and know where any one chunk sits — in its own document and relative to the rest of the collection. Also converts Canvas QTI and Top Hat quiz exports into per-question answer-key documents with provenance frontmatter.
+
+Published to PyPI as `pagespeak` (Python 3.11+). Standalone rather than part of pf-core because Marker pulls torch + surya. The URLs below render `main`, the development line. Current release and history: see the changelog.
+
+## Start here
+
+- [README](https://raw.githubusercontent.com/phierceweb/pagespeak/main/README.md): what it is, why it exists, install, quick start
+- [Usage](https://raw.githubusercontent.com/phierceweb/pagespeak/main/docs/usage.md): library + CLI examples, flags, env vars, `bin/run` patterns
+- [Architecture](https://raw.githubusercontent.com/phierceweb/pagespeak/main/docs/architecture.md): module layout, format dispatch, full pipeline data flow
+- [Format support](https://raw.githubusercontent.com/phierceweb/pagespeak/main/docs/format-support.md): what's supported per format and why
+- [Choosing defaults](https://raw.githubusercontent.com/phierceweb/pagespeak/main/docs/choosing-defaults.md): pre-ingest triage for a new document — canonical recipe, vendor-template patterns, when to switch backends
+- [Changelog](https://raw.githubusercontent.com/phierceweb/pagespeak/main/CHANGELOG.md): release history
+- [Contributing](https://raw.githubusercontent.com/phierceweb/pagespeak/main/CONTRIBUTING.md)
+- [Security policy](https://raw.githubusercontent.com/phierceweb/pagespeak/main/SECURITY.md)
+
+## The pipeline
+
+- [Pipeline overview](https://raw.githubusercontent.com/phierceweb/pagespeak/main/docs/pipeline.md): stage-by-stage walkthrough of what every command runs
+- [ingest](https://raw.githubusercontent.com/phierceweb/pagespeak/main/docs/pipeline-ingest.md)
+- [cleanup](https://raw.githubusercontent.com/phierceweb/pagespeak/main/docs/pipeline-cleanup.md)
+- [decorations](https://raw.githubusercontent.com/phierceweb/pagespeak/main/docs/pipeline-decorations.md)
+- [normalize](https://raw.githubusercontent.com/phierceweb/pagespeak/main/docs/pipeline-normalize.md)
+- [repair](https://raw.githubusercontent.com/phierceweb/pagespeak/main/docs/pipeline-repair.md)
+- [structure](https://raw.githubusercontent.com/phierceweb/pagespeak/main/docs/pipeline-structure.md)
+- [vision](https://raw.githubusercontent.com/phierceweb/pagespeak/main/docs/pipeline-vision.md)
+- [split](https://raw.githubusercontent.com/phierceweb/pagespeak/main/docs/pipeline-split.md)
+
+## Guides
+
+- [ingest command](https://raw.githubusercontent.com/phierceweb/pagespeak/main/docs/ingest.md): unified backend phase, chunked-parallel workers, resume, manifest v3
+- [PDF backends](https://raw.githubusercontent.com/phierceweb/pagespeak/main/docs/backends.md): Marker vs Docling, `pdf_backend_kwargs`, resume safety
+- [DOCX backends](https://raw.githubusercontent.com/phierceweb/pagespeak/main/docs/docx-backends.md): structure-faithful python-docx reader vs MarkItDown
+- [Diagrams](https://raw.githubusercontent.com/phierceweb/pagespeak/main/docs/diagrams.md): how the vision pass works; prompt versioning
+- [Normalize headings](https://raw.githubusercontent.com/phierceweb/pagespeak/main/docs/normalize-headings.md): LLM heading-renormalization; cache invalidation
+- [Cleanup](https://raw.githubusercontent.com/phierceweb/pagespeak/main/docs/cleanup.md): cleanup levels (off / basic / aggressive)
+- [Caching](https://raw.githubusercontent.com/phierceweb/pagespeak/main/docs/caching.md): cache layers, `--rerun-from`, `invalidate`, resume-from-cleaned
+- [Presets](https://raw.githubusercontent.com/phierceweb/pagespeak/main/docs/presets.md): config presets + `.pagespeak-run.json` schema
+- [Audit](https://raw.githubusercontent.com/phierceweb/pagespeak/main/docs/audit.md): output-defect detection over converted markdown ($0, no LLM)
+- [Repair tables](https://raw.githubusercontent.com/phierceweb/pagespeak/main/docs/repair-tables.md): surgical Docling table-splice for Marker-broken tables
+- [Canvas quizzes](https://raw.githubusercontent.com/phierceweb/pagespeak/main/docs/canvas-quizzes.md): QTI quiz exports → per-exam answer-key documents
+- [Top Hat quizzes](https://raw.githubusercontent.com/phierceweb/pagespeak/main/docs/tophat-quizzes.md): Top Hat quiz-export PDFs → per-question markdown
+- [Web console](https://raw.githubusercontent.com/phierceweb/pagespeak/main/docs/web.md): localhost UI over the whole pipeline
+- [Operations](https://raw.githubusercontent.com/phierceweb/pagespeak/main/docs/operations.md): sandboxed shells, ProcessPoolExecutor, macOS `sysconf` failures
+- [Worked examples](https://raw.githubusercontent.com/phierceweb/pagespeak/main/docs/worked-examples.md): end-to-end before/after on real documents

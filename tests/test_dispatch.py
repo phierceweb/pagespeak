@@ -111,8 +111,8 @@ def test_split_sections_writes_files_when_output_dir_set(fake_docx: Path, tmp_pa
     assert sections_dir.exists()
     assert (sections_dir / "INDEX.md").exists()
     files = [p.name for p in sections_dir.glob("*.md") if p.name != "INDEX.md"]
-    assert any("ALPHA" in name for name in files)
-    assert any("BETA" in name for name in files)
+    assert any("alpha" in name for name in files)
+    assert any("beta" in name for name in files)
 
 
 def test_split_max_level_caps_depth_through_pipeline(fake_docx: Path, tmp_path: Path) -> None:
@@ -141,9 +141,9 @@ def test_split_max_level_caps_depth_through_pipeline(fake_docx: Path, tmp_path: 
         )
     files = [p for p in (out / "sections").rglob("*.md") if p.name != "INDEX.md"]
     names = [p.name for p in files]
-    assert any("Beta" in n for n in names)
-    assert not any("Alpha Detail" in n for n in names)  # H3 inlined, not its own file
-    alpha = next(p for p in files if "Alpha" in p.name and "Detail" not in p.name)
+    assert any("beta" in n for n in names)
+    assert not any("alpha-detail" in n for n in names)  # H3 inlined, not its own file
+    alpha = next(p for p in files if "alpha" in p.name and "detail" not in p.name)
     assert "Alpha Detail" in alpha.read_text()  # H3 heading + body inline in the H2 section
 
 
@@ -164,7 +164,7 @@ def test_split_target_kb_packs_through_pipeline(fake_docx: Path, tmp_path: Path)
             split_target_kb=8,
         )
     files = [p for p in (out / "sections").rglob("*.md") if p.name != "INDEX.md"]
-    assert [p.name for p in files] == ["1. Book.md"]  # whole doc fits one 8KB box
+    assert [p.name for p in files] == ["1-book.md"]  # whole doc fits one 8KB box
     text = files[0].read_text()
     assert "## 1.1. Alpha" in text and "## 1.2. Beta" in text
 
@@ -325,8 +325,8 @@ def test_split_min_level_splits_on_semantic_headings(fake_docx: Path, tmp_path: 
         )
     sections_dir = out / "sections"
     files = [p.name for p in sections_dir.glob("*.md") if p.name != "INDEX.md"]
-    assert "Quick Start.md" in files
-    assert "System Settings.md" in files
+    assert "quick-start.md" in files
+    assert "system-settings.md" in files
 
 
 def test_default_splits_on_every_heading(fake_docx: Path, tmp_path: Path) -> None:
@@ -350,8 +350,8 @@ def test_default_splits_on_every_heading(fake_docx: Path, tmp_path: Path) -> Non
         )
     sections_dir = out / "sections"
     files = {p.name for p in sections_dir.rglob("*.md") if p.name != "INDEX.md"}
-    assert "1. NUMBERED.md" in files
-    assert "Quick Start.md" in files  # un-numbered subsection now split by default
+    assert "1-numbered.md" in files
+    assert "quick-start.md" in files  # un-numbered subsection now split by default
 
 
 def test_cross_refs_remap_via_to_markdown(fake_docx: Path) -> None:
@@ -930,8 +930,8 @@ def test_to_markdown_min_body_chars_propagates_to_split(fake_docx: Path, tmp_pat
             min_body_chars=0,
         )
     files = {p.name for p in (out / "sections").glob("*.md") if p.name != "INDEX.md"}
-    assert "1. NUMBERED.md" in files
-    assert "2. ALSO.md" in files
+    assert "1-numbered.md" in files
+    assert "2-also.md" in files
 
 
 # --- presets + run.json -------------------------------------------
@@ -955,7 +955,7 @@ def test_to_markdown_preset_rag_default_applies_split(fake_docx: Path, tmp_path:
     # sections land in a numeric-prefix folder.
     assert (out / "sections").is_dir()
     section_files = list((out / "sections").rglob("*.md"))
-    assert any(p.name == "1. NUMBERED.md" for p in section_files)
+    assert any(p.name == "1-numbered.md" for p in section_files)
 
 
 def test_to_markdown_explicit_kwarg_overrides_preset(fake_docx: Path, tmp_path: Path) -> None:
@@ -1307,7 +1307,7 @@ def test_vision_phase_threads_cache_only(monkeypatch, tmp_path):
         dir_mode=True,
         doc_stem="doc",
         effective_stem="doc",
-        suffix=".md",
+        suffix="section.md",
         source_format="raw",
         raw_md_path=out / "doc.raw.md",
         cleaned_md_path=out / "doc.cleaned.md",
@@ -1455,7 +1455,7 @@ def test_dir_mode_split_keeps_original_source_file_from_identity(tmp_path: Path)
         split_min_level=2,
         source_type="textbook",
     )
-    text = (out / "sections" / "Overview.md").read_text(encoding="utf-8")
+    text = (out / "sections" / "overview.md").read_text(encoding="utf-8")
     assert 'source_file: "Widget Guide 2e.html"' in text
     assert 'source_id: "widget-guide-2e"' in text
     assert f'source_sha256: "{"a" * 64}"' in text

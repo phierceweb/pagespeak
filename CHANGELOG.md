@@ -2,6 +2,17 @@
 
 Notable changes to pagespeak, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## 0.9.0
+
+### Fixed
+- **Split no longer drops content before the first heading.** Anything preceding the document's first heading — title page, copyright, cover image, abstract — belonged to no section and was discarded; it now becomes a leading `Front Matter` section. Inserted after parsing, so it never becomes a parent and no existing section's path or `section_id` changes; `min_body_chars` still drops a trivial preamble.
+- **Split no longer drops the body of a heading above `--split-min-level`.** Such a heading was context-only — it shaped the folder path and breadcrumb but was never written — so any prose sitting directly under it was lost, and a chapter with no subheadings disappeared outright. A heading above `min_level` is now written **iff it carries its own body**; a bare page title stays context-only as before. Additive: no section file is renamed or removed. Children of a newly written heading gain a `parent_id` where they previously had none (they already lived in that chapter's folder).
+
+### Changed
+- **Section files and folders are slugified**: lowercased, each run of non-alphanumerics collapsed to one `-` (`Foot Switches (1)` → `foot-switches-1.md`); Unicode letters preserved, alphanumeric-free titles fall back to `section.md`. Filenames, `section_id`, and in-document link targets now match the key normalization RAG stores apply to paths, so a link copied out of a chunk resolves without rewriting. Titles differing only in case now collide and are separated by the existing numeric-suffix resolver. Re-splitting an existing output dir renames every section file.
+- Nav-link targets are no longer angle-wrapped (`[x](<a b.md>)`) — slugs cannot contain a space or paren. The generic splitter's wrapping branch is removed; the quiz writer, whose `Question NNN.md` filenames keep spaces, still wraps.
+- The conversion worker runs on pf-core's jobs runtime (floor raised to `~=0.11.0`): `web/_worker.py` is now a `SubprocessJobSpec` (argv/log-path/outputs) over `pf_core.jobs.workers`. New behavior inherited: stale-lease reclaim at startup (jobs stranded `running` by a killed worker re-enter the queue), cancel escalates SIGTERM→SIGKILL across the child's process group, and the poll cadence is tunable via `JOB_POLL_SECONDS`. Job rows, log locations, `PAGESPEAK_JOB_ID`, and the queue/detail UI are unchanged.
+
 ## 0.8.0
 
 ### Changed

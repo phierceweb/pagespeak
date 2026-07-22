@@ -57,7 +57,7 @@ Every detector exists because the defect was **observed in real converted output
 Detector-shape notes that prevent false positives — preserve these behaviors when editing:
 
 - All text checks operate **outside fenced code blocks**: a literal `&lt;` in a code example is content, not a defect.
-- `html_fragment` masks angle-wrapped markdown link targets (`](<Table of Contents.md>)`) before matching — the splitter's link style is not HTML debris. `<br>` and page-anchor `<span id="page-…">` lines are pagespeak's own legitimate output and are never flagged.
+- `html_fragment` masks angle-wrapped markdown link targets (`](<Question 001.md>)`) before matching — that link style is not HTML debris. It comes from the quiz writer, whose per-question filenames keep their spaces; the generic splitter emits slugs, which never need wrapping. `<br>` and page-anchor `<span id="page-…">` lines are pagespeak's own legitimate output and are never flagged.
 - `empty_section` does NOT flag nav nodes: a parent section whose only content is a `## Subsections` list is the splitter's deliberate shape — its content lives in its children.
 - `misaligned_table` scans only a table's *label column* (the column where most cells end in `:`) and flags a merged label only when the same row has a non-empty value cell — so a blank fill-in form / worksheet (merged labels, empty answer column) is authored structure, not spillover. Colon-space is required, so `10:30`, `https://…`, and `:---:` alignment rows never read as labels.
 - A line of only asterisks is a markdown horizontal rule, not shatter.

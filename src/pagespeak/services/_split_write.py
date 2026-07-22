@@ -24,40 +24,46 @@ IMAGE_REF_RE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
 _MAX_FILENAME_LEN = 200
 
 
-def _sanitize_filename(name: str) -> str:
-    """Sanitize a section's display name into a `.md` filename.
+def _handelize_stem(name: str) -> str:
+    """Lowercase, path-safe slug of a name — a *fixed point* of QMD's ``handelize``.
 
-    Strips embedded markdown links, replaces FS-illegal + markdown-link-
-    breaking chars (`| [ ]`), collapses whitespace runs, and truncates to
-    `_MAX_FILENAME_LEN` (255-byte FS
-    limit headroom). Truncation is plain — no hash suffix is appended.
-    Collisions between two distinct truncated names are resolved by the
-    post-pass collision resolver (`_resolve_filename_collisions`),
-    which assigns numeric `-2`, `-3` suffixes in document order.
+    Mirrors qmd's ``handelize`` (store.js) on one path segment — collapse every
+    run of non-(unicode letter/number/``$``) to a single ``-``, trim edge dashes,
+    keep unicode letters — and additionally lowercases. Lowercasing stays
+    idempotent under ``handelize`` (which never touches case) while making the
+    slug portable to any consumer that lowercases, and collision-safe on
+    case-insensitive filesystems. The upshot: a filename pagespeak writes equals
+    the key QMD indexes it under, so an in-doc breadcrumb link *is* a valid
+    ``qmd get`` path. Idempotency vs. qmd's real output is pinned by test_split.
     """
-    name = _strip_embedded_links(name)
-    name = name.replace("/", " - ").replace("\\", " - ")
-    name = name.replace(":", " -")
-    name = name.replace("*", "")
-    name = name.replace("?", "")
-    name = name.replace('"', "")
-    name = name.replace("<", "(").replace(">", ")")
-    # `|` breaks a downstream markdown table; `[` `]` break a link target — so a
-    # section-title-derived filename is safe when used as a breadcrumb link
-    # target too (a multilingual manual's `… | Wireless Monitor Set` case).
-    name = name.replace("[", "(").replace("]", ")")
-    name = name.replace("|", " ")
-    name = re.sub(r"\s{2,}", " ", name).strip()
-    # A degenerate heading (`## #`, `## ·`) leaves a stem with no word content —
-    # `#.md`, which downstream indexers (QMD `handelize`) reject as "no valid
-    # filename content". Fall back to a generic stem; the collision resolver
-    # disambiguates multiples. `\w` is Unicode-aware, so legitimate CJK /
-    # Cyrillic section names (real word content) are preserved.
-    if not re.search(r"\w", name):
-        name = "section"
-    if len(name) > _MAX_FILENAME_LEN:
-        name = name[:_MAX_FILENAME_LEN].rstrip()
-    return f"{name}.md"
+    out: list[str] = []
+    prev_dash = False
+    for ch in name.lower():
+        if ch.isalnum() or ch == "$":
+            out.append(ch)
+            prev_dash = False
+        elif not prev_dash:
+            out.append("-")
+            prev_dash = True
+    return "".join(out).strip("-")
+
+
+def _sanitize_filename(name: str) -> str:
+    """Sanitize a section's display name into a slugified `.md` filename.
+
+    Strips embedded markdown links, then slugs via `_handelize_stem` (a fixed
+    point of QMD `handelize`) and truncates to `_MAX_FILENAME_LEN`. A name with
+    no slug-able content (`## #`, `## ·`) falls back to a generic `section`
+    stem; the post-pass collision resolver (`_resolve_filename_collisions`)
+    assigns numeric `-2`, `-3` suffixes to distinct sections that slug to the
+    same name — now including case-only variants, thanks to the lowercasing.
+    """
+    stem = _handelize_stem(_strip_embedded_links(name))
+    if not stem:
+        stem = "section"
+    if len(stem) > _MAX_FILENAME_LEN:
+        stem = stem[:_MAX_FILENAME_LEN].strip("-")
+    return f"{stem}.md"
 
 
 def _semantic_folder_name(section: _Section) -> str:
@@ -79,7 +85,7 @@ def _folder_component(section: _Section) -> str:
     under `1/1.1/1.1.1/` instead of a divergent title-named path.
     """
     if section.number is not None:
-        return section.number
+        return _handelize_stem(section.number)
     return _semantic_folder_name(section)
 
 
@@ -99,11 +105,11 @@ def _nested_relative_dir(section: _Section) -> Path:
     if section.number is not None:
         parts = section.number.split(".")
         if len(parts) <= 1:
-            return Path(parts[0])
+            return Path(_handelize_stem(parts[0]))
         chain = [parts[0]]
         for i in range(2, len(parts)):
             chain.append(".".join(parts[:i]))
-        return Path(*chain)
+        return Path(*[_handelize_stem(c) for c in chain])
 
     chain_sections: list[_Section] = []
     node: _Section | None = section
@@ -250,19 +256,8 @@ def _sanitize_crumb(name: str) -> str:
 
 
 def _md_link(label: str, target: str) -> str:
-    """`[label](target)`, angle-wrapping the target when it contains a space or
-    paren.
-
-    An unescaped space in a markdown link destination BREAKS the link:
-    CommonMark stops the destination at the first space, so `[x](a b.md)`
-    renders as literal text, not a link (verified with markdown_it). Section
-    filenames are human-readable and keep their spaces, so nearly every
-    generated nav link needs this. Angle brackets let the destination hold
-    spaces — `[x](<a b.md>)` is a valid link. Targets are pre-sanitized of
-    `< >` (see `_sanitize_filename`), so the wrapper itself can't be broken.
-    """
-    if " " in target or "(" in target or ")" in target:
-        return f"[{label}](<{target}>)"
+    """`[label](target)`. Targets are slugs (`_sanitize_filename`), so they can
+    never contain the space or paren that would need angle-wrapping."""
     return f"[{label}]({target})"
 
 
@@ -448,7 +443,7 @@ def _write_index(
             file_path = _section_output_path(section, output_dir, nested=nested)
             rel = file_path.relative_to(output_dir).as_posix()
             # Strip embedded links from the label (consistency with breadcrumb /
-            # Subsections) AND angle-wrap the space-containing target.
+            # Subsections).
             lines.append(f"- {_md_link(_strip_embedded_links(section.display_name), rel)}")
         lines.append("")
     index_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")

@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from pagespeak.services._split import (
     _detect_fallback_min_level,
     _parse_numbered_heading,
+    _remove_unwritten_markdown,
     split_into_sections,
 )
 from pagespeak.services._split_parse import _parse_sections
@@ -27,7 +30,7 @@ def test_splits_at_each_numbered_heading(tmp_path: Path) -> None:
     written = split_into_sections(md, tmp_path)
     assert len(written) == 3
     names = sorted(p.name for p in written)
-    assert names == ["1. ARCHITECTURE.md", "1.1. STACK.md", "2. INSTALL.md"]
+    assert names == ["1-1-stack.md", "1-architecture.md", "2-install.md"]
 
 
 def test_writes_index_md(tmp_path: Path) -> None:
@@ -52,7 +55,7 @@ def test_index_lists_only_top_level(tmp_path: Path) -> None:
 def test_filename_sanitization(tmp_path: Path) -> None:
     md = "# 1. A/B Test\nbody\n"
     written = split_into_sections(md, tmp_path)
-    assert written[0].name == "1. A - B Test.md"
+    assert written[0].name == "1-a-b-test.md"
 
 
 def test_filename_sanitization_strips_special_chars(tmp_path: Path) -> None:
@@ -66,9 +69,9 @@ def test_filename_sanitization_strips_special_chars(tmp_path: Path) -> None:
 def test_nested_writes_folders(tmp_path: Path) -> None:
     md = "# 4. ROOT\n## 4.1. MID\n### 4.1.1. Leaf\nbody\n"
     written = split_into_sections(md, tmp_path, nested=True)
-    deepest = next(p for p in written if "4.1.1" in p.name)
+    deepest = next(p for p in written if "4-1-1" in p.name)
     rel = deepest.relative_to(tmp_path).as_posix()
-    assert rel == "4/4.1/4.1.1. Leaf.md"
+    assert rel == "4/4-1/4-1-1-leaf.md"
 
 
 def test_flat_writes_no_folders(tmp_path: Path) -> None:
@@ -89,7 +92,7 @@ def test_orphan_lines_attach_to_previous_section(tmp_path: Path) -> None:
 def test_parent_link_appears_in_subsections_listing(tmp_path: Path) -> None:
     md = "# 1. PARENT\nbody\n## 1.1. CHILD\nchild body\n"
     written = split_into_sections(md, tmp_path)
-    parent_file = next(p for p in written if "1. PARENT" in p.name and "1.1" not in p.name)
+    parent_file = next(p for p in written if "1-parent" in p.name and "1-1" not in p.name)
     body = parent_file.read_text()
     assert "## Subsections" in body
     assert "1.1. CHILD" in body
@@ -117,43 +120,55 @@ def test_min_level_2_splits_on_h2_and_h3(tmp_path: Path) -> None:
     md = "## Top\nintro\n### Sub\nsub body\n"
     written = split_into_sections(md, tmp_path, min_level=2)
     names = sorted(p.name for p in written)
-    assert names == ["Sub.md", "Top.md"]
+    assert names == ["sub.md", "top.md"]
 
 
-def test_min_level_2_skips_h1(tmp_path: Path) -> None:
-    md = "# Title\nfront matter\n## Sub\nsub body\n"
+def test_min_level_2_skips_bare_h1(tmp_path: Path) -> None:
+    """An H1 above min_level with no prose of its own stays context-only —
+    a bare page title never becomes a retrievable chunk."""
+    md = "# Title\n## Sub\nsub body\n"
     written = split_into_sections(md, tmp_path, min_level=2)
     names = [p.name for p in written]
-    assert names == ["Sub.md"]
+    assert names == ["sub.md"]
+
+
+def test_min_level_2_writes_h1_carrying_its_own_body(tmp_path: Path) -> None:
+    """An H1 above min_level DOES get a file once it carries prose of its own.
+    Without this the prose belongs to no section and is dropped — whole
+    chapters whose only content sits directly under the H1 would vanish."""
+    md = "# Title\nfront matter\n## Sub\nsub body\n"
+    written = split_into_sections(md, tmp_path, min_level=2)
+    assert [p.name for p in written] == ["title.md", "sub.md"]
+    assert "front matter" in (tmp_path / "title.md").read_text()
 
 
 def test_min_level_none_preserves_numbered_only_behavior(tmp_path: Path) -> None:
     md = "# 1. NUMBERED\nbody\n## Quick Start\nsemantic body\n"
     written = split_into_sections(md, tmp_path)  # min_level=None
     names = [p.name for p in written]
-    assert names == ["1. NUMBERED.md"]
+    assert names == ["1-numbered.md"]
 
 
 def test_min_level_filename_for_unnumbered_uses_title(tmp_path: Path) -> None:
     md = "## Quick Start\nbody\n"
     written = split_into_sections(md, tmp_path, min_level=2)
-    assert written[0].name == "Quick Start.md"
+    assert written[0].name == "quick-start.md"
 
 
 def test_min_level_mixes_numbered_and_semantic(tmp_path: Path) -> None:
     md = "## 1.4. Foo\nfoo body\n## Quick Start\nsemantic body\n"
     written = split_into_sections(md, tmp_path, min_level=2)
     names = sorted(p.name for p in written)
-    assert names == ["1.4. Foo.md", "Quick Start.md"]
+    assert names == ["1-4-foo.md", "quick-start.md"]
 
 
 def test_min_level_with_nested_unnumbered_now_nests(tmp_path: Path) -> None:
     # behavior change: semantic sections also nest, in title-named folders.
     md = "## 1.4. Foo\nbody\n## Quick Start\nbody\n"
     written = split_into_sections(md, tmp_path, nested=True, min_level=2)
-    quick = next(p for p in written if "Quick Start" in p.name)
-    assert quick.parent == tmp_path / "Quick Start"
-    foo = next(p for p in written if "Foo" in p.name)
+    quick = next(p for p in written if "quick-start" in p.name)
+    assert quick.parent == tmp_path / "quick-start"
+    foo = next(p for p in written if "foo" in p.name)
     assert foo.parent == tmp_path / "1"  # numbered ones nest by number prefix
 
 
@@ -163,7 +178,7 @@ def test_min_level_with_nested_unnumbered_now_nests(tmp_path: Path) -> None:
 def test_nested_semantic_top_level_in_own_folder(tmp_path: Path) -> None:
     md = "## Quick Start\nbody\n"
     written = split_into_sections(md, tmp_path, nested=True, min_level=2)
-    assert written[0] == tmp_path / "Quick Start" / "Quick Start.md"
+    assert written[0] == tmp_path / "quick-start" / "quick-start.md"
 
 
 def test_nested_semantic_child_in_parent_folder(tmp_path: Path) -> None:
@@ -171,32 +186,32 @@ def test_nested_semantic_child_in_parent_folder(tmp_path: Path) -> None:
     # the parent's file inside the parent's folder.
     md = "## Quick Start\nintro\n#### Foot Switches (1)\ndetails\n"
     written = split_into_sections(md, tmp_path, nested=True, min_level=2)
-    qs = next(p for p in written if p.name == "Quick Start.md")
-    fs = next(p for p in written if "Foot Switches" in p.name)
-    assert qs == tmp_path / "Quick Start" / "Quick Start.md"
-    assert fs == tmp_path / "Quick Start" / "Foot Switches (1).md"
+    qs = next(p for p in written if p.name == "quick-start.md")
+    fs = next(p for p in written if "foot-switches" in p.name)
+    assert qs == tmp_path / "quick-start" / "quick-start.md"
+    assert fs == tmp_path / "quick-start" / "foot-switches-1.md"
 
 
 def test_nested_semantic_grandchild_in_sub_folder(tmp_path: Path) -> None:
     md = "## A\n### B\n#### C\nbody\n"
     written = split_into_sections(md, tmp_path, nested=True, min_level=2)
-    a = next(p for p in written if p.name == "A.md")
-    b = next(p for p in written if p.name == "B.md")
-    c = next(p for p in written if p.name == "C.md")
-    assert a == tmp_path / "A" / "A.md"
-    assert b == tmp_path / "A" / "B.md"
-    assert c == tmp_path / "A" / "B" / "C.md"
+    a = next(p for p in written if p.name == "a.md")
+    b = next(p for p in written if p.name == "b.md")
+    c = next(p for p in written if p.name == "c.md")
+    assert a == tmp_path / "a" / "a.md"
+    assert b == tmp_path / "a" / "b.md"
+    assert c == tmp_path / "a" / "b" / "c.md"
 
 
 def test_nested_mixed_numbered_and_semantic(tmp_path: Path) -> None:
     md = "## 1.4. Numbered\n## Quick Start\n#### Foot Switches (1)\n"
     written = split_into_sections(md, tmp_path, nested=True, min_level=2)
-    numbered = next(p for p in written if "Numbered" in p.name)
-    qs = next(p for p in written if p.name == "Quick Start.md")
-    fs = next(p for p in written if "Foot Switches" in p.name)
+    numbered = next(p for p in written if "numbered" in p.name)
+    qs = next(p for p in written if p.name == "quick-start.md")
+    fs = next(p for p in written if "foot-switches" in p.name)
     assert numbered.parent == tmp_path / "1"  # numbered: by number prefix
-    assert qs.parent == tmp_path / "Quick Start"  # semantic: by title
-    assert fs.parent == tmp_path / "Quick Start"  # child in parent's folder
+    assert qs.parent == tmp_path / "quick-start"  # semantic: by title
+    assert fs.parent == tmp_path / "quick-start"  # child in parent's folder
 
 
 def test_nested_unnumbered_child_nests_under_numbered_ancestor(tmp_path: Path) -> None:
@@ -210,17 +225,17 @@ def test_nested_unnumbered_child_nests_under_numbered_ancestor(tmp_path: Path) -
         "#### Namespaces\nnamespaces body\n"
     )
     written = split_into_sections(md, tmp_path, nested=True, min_level=2)
-    ns = next(p for p in written if p.name == "Namespaces.md")
-    assert ns == tmp_path / "1" / "1.1" / "1.1.1" / "Namespaces.md"
+    ns = next(p for p in written if p.name == "namespaces.md")
+    assert ns == tmp_path / "1" / "1-1" / "1-1-1" / "namespaces.md"
     # The divergent title-named tree must NOT be created.
-    assert not (tmp_path / "ARCHITECTURE").exists()
+    assert not (tmp_path / "architecture").exists()
 
 
 def test_split_rewrites_image_paths_relative_flat(tmp_path: Path) -> None:
     md = "## Foo\nsee ![alt](images/foo.png) here\n## Bar\nbar body\n"
     output_dir = tmp_path / "sections"
     split_into_sections(md, output_dir, min_level=2)
-    foo_body = (output_dir / "Foo.md").read_text()
+    foo_body = (output_dir / "foo.md").read_text()
     # Foo.md is at tmp_path/sections/Foo.md; images at tmp_path/images/.
     assert "(../images/foo.png)" in foo_body
 
@@ -229,8 +244,8 @@ def test_split_rewrites_image_paths_relative_nested(tmp_path: Path) -> None:
     md = "## A\nintro\n### B\nmid\n#### C\n![](images/foo.png)\n"
     output_dir = tmp_path / "sections"
     split_into_sections(md, output_dir, nested=True, min_level=2)
-    c_body = (output_dir / "A" / "B" / "C.md").read_text()
-    # C.md is at tmp_path/sections/A/B/C.md; image at tmp_path/images/foo.png.
+    c_body = (output_dir / "a" / "b" / "c.md").read_text()
+    # c.md is at tmp_path/sections/a/b/c.md; image at tmp_path/images/foo.png.
     assert "(../../../images/foo.png)" in c_body
 
 
@@ -243,7 +258,7 @@ def test_split_leaves_non_images_paths_alone(tmp_path: Path) -> None:
     )
     output_dir = tmp_path / "sections"
     split_into_sections(md, output_dir, min_level=2)
-    foo_body = (output_dir / "Foo.md").read_text()
+    foo_body = (output_dir / "foo.md").read_text()
     assert "(https://example.com/img.png)" in foo_body
     assert "(other.png)" in foo_body
     assert "(sub/bar.jpg)" in foo_body
@@ -254,7 +269,7 @@ def test_split_uses_explicit_images_dir(tmp_path: Path) -> None:
     output_dir = tmp_path / "sections"
     custom_images = tmp_path / "custom_images"
     split_into_sections(md, output_dir, min_level=2, images_dir=custom_images)
-    foo_body = (output_dir / "Foo.md").read_text()
+    foo_body = (output_dir / "foo.md").read_text()
     assert "(../custom_images/foo.png)" in foo_body
 
 
@@ -264,16 +279,16 @@ def test_nested_numbered_hierarchy_paths(tmp_path: Path) -> None:
     written = split_into_sections(md, tmp_path, nested=True)
     paths = sorted(str(p.relative_to(tmp_path)) for p in written)
     assert paths == [
-        "1/1. Top.md",
-        "1/1.1. Mid.md",
-        "1/1.1/1.1.1. Leaf.md",
+        "1/1-1-mid.md",
+        "1/1-1/1-1-1-leaf.md",
+        "1/1-top.md",
     ]
 
 
 def test_min_level_index_lists_orphan_sections(tmp_path: Path) -> None:
     # INDEX.md should list shallowest sections (parent=None), not literally level==1.
     # With min_level=2 the level-1 heading isn't even split, so orphans are level-2.
-    md = "# Title\nfront\n## Quick Start\nbody\n## System Settings\nsys body\n"
+    md = "# Title\n## Quick Start\nbody\n## System Settings\nsys body\n"
     split_into_sections(md, tmp_path, min_level=2)
     body = (tmp_path / "INDEX.md").read_text()
     assert "Quick Start" in body
@@ -287,8 +302,8 @@ def test_split_rewrites_in_doc_refs_to_section_files(tmp_path: Path) -> None:
     # Body of one section links to another section via heading slug.
     md = "## Foo\nsee [the bar section](#bar) for details\n## Bar\nbar body\n"
     split_into_sections(md, tmp_path, min_level=2)
-    foo_body = (tmp_path / "Foo.md").read_text()
-    assert "[the bar section](Bar.md)" in foo_body
+    foo_body = (tmp_path / "foo.md").read_text()
+    assert "[the bar section](bar.md)" in foo_body
     assert "(#bar)" not in foo_body
 
 
@@ -302,21 +317,21 @@ def test_split_rewrites_refs_with_nested_uses_relpath(tmp_path: Path) -> None:
         "### 1.1.1. Deepest\ndeepest body\n"
     )
     split_into_sections(md, tmp_path, nested=True)
-    top_body = (tmp_path / "1" / "1. Top.md").read_text()
-    assert "[Deepest](<1.1/1.1.1. Deepest.md>)" in top_body
+    top_body = (tmp_path / "1" / "1-top.md").read_text()
+    assert "[Deepest](1-1/1-1-1-deepest.md)" in top_body
 
 
 def test_split_leaves_unknown_slug_refs_alone(tmp_path: Path) -> None:
     md = "## Foo\nsee [unknown thing](#nowhere) for details\n## Bar\nbar body\n"
     split_into_sections(md, tmp_path, min_level=2)
-    foo_body = (tmp_path / "Foo.md").read_text()
+    foo_body = (tmp_path / "foo.md").read_text()
     assert "[unknown thing](#nowhere)" in foo_body  # preserved
 
 
 def test_split_leaves_url_and_relative_file_refs_alone(tmp_path: Path) -> None:
     md = "## Foo\n[example](https://example.com) and [other doc](other.md)\n## Bar\nbar body\n"
     split_into_sections(md, tmp_path, min_level=2)
-    foo_body = (tmp_path / "Foo.md").read_text()
+    foo_body = (tmp_path / "foo.md").read_text()
     assert "[example](https://example.com)" in foo_body
     assert "[other doc](other.md)" in foo_body
 
@@ -326,8 +341,8 @@ def test_split_rewrites_refs_emitted_by_remap_pipeline(tmp_path: Path) -> None:
     # `[X](#page-1-0)` to `[X](#bar)`. Split should then rewrite to `Bar.md`.
     md = "## Foo\nsee [info](#bar) for details\n## Bar\nbar body\n"
     split_into_sections(md, tmp_path, min_level=2)
-    foo_body = (tmp_path / "Foo.md").read_text()
-    assert "[info](Bar.md)" in foo_body
+    foo_body = (tmp_path / "foo.md").read_text()
+    assert "[info](bar.md)" in foo_body
 
 
 def test_split_truncates_overlong_filename(tmp_path: Path) -> None:
@@ -358,11 +373,11 @@ def test_split_min_body_chars_drops_empty_shells(tmp_path: Path) -> None:
     )
     written = split_into_sections(md, tmp_path, min_body_chars=30)
     names = {p.name for p in written}
-    assert "1.1. Real Section.md" in names
-    assert "2.1. Another Real Section.md" in names
+    assert "1-1-real-section.md" in names
+    assert "2-1-another-real-section.md" in names
     # The empty front-matter shells dropped:
-    assert "1. Introduction to Widgetry 31.md" not in names
-    assert "2. Power Consumption 86.md" not in names
+    assert "1-introduction-to-widgetry-31.md" not in names
+    assert "2-power-consumption-86.md" not in names
 
 
 def test_split_min_body_chars_prunes_subsections_listing(tmp_path: Path) -> None:
@@ -376,7 +391,7 @@ def test_split_min_body_chars_prunes_subsections_listing(tmp_path: Path) -> None
         "Real child has substantial content, well over the cutoff.\n"
     )
     written = split_into_sections(md, tmp_path, min_level=1, min_body_chars=30)
-    parent = next(p for p in written if "Parent" in p.name)
+    parent = next(p for p in written if "parent" in p.name)
     parent_text = parent.read_text(encoding="utf-8")
     assert "Real Child" in parent_text
     assert "Empty Child" not in parent_text
@@ -387,7 +402,7 @@ def test_split_min_body_chars_zero_preserves_v07_behavior(tmp_path: Path) -> Non
     md = "# Empty\n# Tiny\nx\n"
     written = split_into_sections(md, tmp_path, min_level=1, min_body_chars=0)
     names = {p.name for p in written}
-    assert {"Empty.md", "Tiny.md"}.issubset(names)
+    assert {"empty.md", "tiny.md"}.issubset(names)
 
 
 # --- parent-breadcrumb ---
@@ -403,16 +418,16 @@ def test_breadcrumb_added_to_non_root_sections(tmp_path: Path) -> None:
         "### 1.1.1. GRANDCHILD\nGrandchild prose content also above the cutoff.\n"
     )
     split_into_sections(md, tmp_path, min_body_chars=0)
-    root_text = (tmp_path / "1. ROOT.md").read_text()
-    child_text = (tmp_path / "1.1. CHILD.md").read_text()
-    grand_text = (tmp_path / "1.1.1. GRANDCHILD.md").read_text()
+    root_text = (tmp_path / "1-root.md").read_text()
+    child_text = (tmp_path / "1-1-child.md").read_text()
+    grand_text = (tmp_path / "1-1-1-grandchild.md").read_text()
 
     # Root has no breadcrumb.
     assert "> ↑" not in root_text
     # Child cites its parent.
-    assert "> ↑ [1. ROOT](<1. ROOT.md>)" in child_text
+    assert "> ↑ [1. ROOT](1-root.md)" in child_text
     # Grandchild cites the full chain root → parent.
-    assert "> ↑ [1. ROOT](<1. ROOT.md>) / [1.1. CHILD](<1.1. CHILD.md>)" in grand_text
+    assert "> ↑ [1. ROOT](1-root.md) / [1.1. CHILD](1-1-child.md)" in grand_text
 
 
 def test_breadcrumb_roots_at_doc_title_when_passed(tmp_path: Path) -> None:
@@ -425,13 +440,13 @@ def test_breadcrumb_roots_at_doc_title_when_passed(tmp_path: Path) -> None:
         "## 1.1. CHILD\nChild prose content well over the body cutoff too.\n"
     )
     split_into_sections(md, tmp_path, min_body_chars=0, doc_title="Acme Widget Manual")
-    root_text = (tmp_path / "1. ROOT.md").read_text()
-    child_text = (tmp_path / "1.1. CHILD.md").read_text()
+    root_text = (tmp_path / "1-root.md").read_text()
+    child_text = (tmp_path / "1-1-child.md").read_text()
 
     # Top-level section now gets a breadcrumb rooted at the manual.
     assert "> ↑ [Acme Widget Manual](INDEX.md)" in root_text
     # Nested section: manual root, then its ancestor chain.
-    assert "> ↑ [Acme Widget Manual](INDEX.md) / [1. ROOT](<1. ROOT.md>)" in child_text
+    assert "> ↑ [Acme Widget Manual](INDEX.md) / [1. ROOT](1-root.md)" in child_text
 
 
 def test_breadcrumb_no_doc_title_is_unchanged(tmp_path: Path) -> None:
@@ -439,8 +454,8 @@ def test_breadcrumb_no_doc_title_is_unchanged(tmp_path: Path) -> None:
     behavior — top-level sections get none. Keeps direct callers stable."""
     md = "# 1. ROOT\nRoot prose well over the cutoff.\n## 1.1. CHILD\nChild prose over cutoff.\n"
     split_into_sections(md, tmp_path, min_body_chars=0)
-    assert "> ↑" not in (tmp_path / "1. ROOT.md").read_text()
-    assert "> ↑ [1. ROOT](<1. ROOT.md>)" in (tmp_path / "1.1. CHILD.md").read_text()
+    assert "> ↑" not in (tmp_path / "1-root.md").read_text()
+    assert "> ↑ [1. ROOT](1-root.md)" in (tmp_path / "1-1-child.md").read_text()
 
 
 def test_sanitize_crumb_strips_markdown_breakers() -> None:
@@ -468,7 +483,7 @@ def test_breadcrumb_root_sanitized_in_output(tmp_path: Path) -> None:
     breadcrumb line (which would corrupt a markdown table downstream)."""
     md = "# 1. ROOT\nRoot prose over the cutoff threshold here.\n## 1.1. CHILD\nChild prose over cutoff.\n"
     split_into_sections(md, tmp_path, min_body_chars=0, doc_title="Acme | Widget | Manual")
-    child = (tmp_path / "1.1. CHILD.md").read_text()
+    child = (tmp_path / "1-1-child.md").read_text()
     crumb = next(ln for ln in child.splitlines() if ln.startswith("> ↑"))
     assert "[Acme Widget Manual](INDEX.md)" in crumb
     assert "|" not in crumb
@@ -486,7 +501,7 @@ def test_breadcrumb_ancestor_crumb_sanitized(tmp_path: Path) -> None:
         "Body content comfortably over the cutoff so the child is kept too.\n"
     )
     split_into_sections(md, tmp_path, min_level=1, min_body_chars=0, doc_title="Sample Device Spec")
-    child = (tmp_path / "Delivery Includes.md").read_text()
+    child = (tmp_path / "delivery-includes.md").read_text()
     crumb = next(ln for ln in child.splitlines() if ln.startswith("> ↑"))
     assert "|" not in crumb  # neither the ancestor label NOR its link target leaks a pipe
 
@@ -513,31 +528,39 @@ def test_sanitize_filename_keeps_non_latin_word_content() -> None:
     """CJK / Cyrillic section names are valid content (Unicode word chars) and
     must NOT be clobbered by the punctuation-only fallback."""
     assert _sanitize_filename("产品注册") == "产品注册.md"
-    assert _sanitize_filename("Благодарность") == "Благодарность.md"
+    assert _sanitize_filename("Благодарность") == "благодарность.md"
 
 
-def test_nav_links_with_spaces_are_angle_wrapped(tmp_path: Path) -> None:
-    """A space in a markdown link destination BREAKS the link — CommonMark stops
-    at the first space, so `[x](a b.md)` renders as literal text, not a link
-    (verified with markdown_it). Section filenames keep spaces, so every
-    generated nav link (INDEX, breadcrumb, Subsections) must angle-wrap a
-    space-containing target. Real-world: every multi-word link in a multilingual
-    manual was dead."""
+def test_nav_link_targets_are_slugs(tmp_path: Path) -> None:
+    """Every generated nav link (INDEX, Subsections, breadcrumb) points at the
+    slugified filename while the visible label keeps the human title."""
     md = (
         "# Setting Up\nIntro body comfortably over the cutoff threshold here.\n"
         "## Assembling The Arm\nChild body also well over the cutoff here too.\n"
     )
     split_into_sections(md, tmp_path, min_level=1, min_body_chars=0)
     index = (tmp_path / "INDEX.md").read_text()
-    parent = (tmp_path / "Setting Up.md").read_text()
-    child = (tmp_path / "Assembling The Arm.md").read_text()
-    # No bare space-containing target anywhere — that's a dead link.
-    for text in (index, parent, child):
-        assert "](Setting Up.md)" not in text
-        assert "](Assembling The Arm.md)" not in text
-    assert "[Setting Up](<Setting Up.md>)" in index  # INDEX top-level link
-    assert "[Assembling The Arm](<Assembling The Arm.md>)" in parent  # Subsections link
-    assert "[Setting Up](<Setting Up.md>)" in child  # breadcrumb to parent
+    parent = (tmp_path / "setting-up.md").read_text()
+    child = (tmp_path / "assembling-the-arm.md").read_text()
+    assert "[Setting Up](setting-up.md)" in index  # INDEX top-level link
+    assert "[Assembling The Arm](assembling-the-arm.md)" in parent  # Subsections link
+    assert "[Setting Up](setting-up.md)" in child  # breadcrumb to parent
+
+
+def test_case_only_titles_collide_into_one_slug(tmp_path: Path) -> None:
+    """Slugs lowercase, so titles differing only by case now target the same
+    filename. Distinct bodies must survive via the numeric-suffix resolver
+    rather than one silently overwriting the other."""
+    md = (
+        "# Overview\nFirst overview body, comfortably over the cutoff threshold.\n"
+        "# OVERVIEW\nSecond distinct body, also well over the cutoff threshold.\n"
+    )
+    written = split_into_sections(md, tmp_path, min_level=1, min_body_chars=0)
+    names = sorted(p.name for p in written)
+    assert names == ["overview-2.md", "overview.md"]
+    bodies = "\n".join(p.read_text() for p in written)
+    assert "First overview body" in bodies
+    assert "Second distinct body" in bodies
 
 
 def test_cross_ref_resolves_to_nearest_same_named_section(tmp_path: Path) -> None:
@@ -554,10 +577,10 @@ def test_cross_ref_resolves_to_nearest_same_named_section(tmp_path: Path) -> Non
         "## Module Header\nVintage's header content, over the cutoff here now.\n"
     )
     split_into_sections(md, tmp_path, nested=True, min_level=1, min_body_chars=0)
-    overview = (tmp_path / "Clarity" / "Overview.md").read_text()
+    overview = (tmp_path / "clarity" / "overview.md").read_text()
     # Resolves to Clarity's own sibling Module Header, NOT Vintage Tape's.
-    assert "[Module Header](<Module Header.md>)" in overview
-    assert "Vintage Tape/Module Header.md" not in overview
+    assert "[Module Header](module-header.md)" in overview
+    assert "vintage-tape/module-header.md" not in overview
 
 
 def test_english_only_drops_non_english_sections(tmp_path: Path) -> None:
@@ -575,8 +598,8 @@ def test_english_only_drops_non_english_sections(tmp_path: Path) -> None:
     )
     written = split_into_sections(md, tmp_path, min_level=1, min_body_chars=0, english_only=True)
     names = {p.stem for p in written}
-    assert "Powering" in names  # English kept
-    assert "Alimentazione" not in names  # Italian dropped
+    assert "powering" in names  # English kept
+    assert "alimentazione" not in names  # Italian dropped
     assert "供电" not in names  # Chinese dropped
 
 
@@ -585,7 +608,7 @@ def test_english_only_off_keeps_everything(tmp_path: Path) -> None:
     md = "# Powering\nConnect the adapter.\n# Alimentazione\nCollegare l'alimentatore ora.\n"
     written = split_into_sections(md, tmp_path, min_level=1, min_body_chars=0)
     names = {p.stem for p in written}
-    assert {"Powering", "Alimentazione"}.issubset(names)
+    assert {"powering", "alimentazione"}.issubset(names)
 
 
 def test_breadcrumb_semantic_titles(tmp_path: Path) -> None:
@@ -597,8 +620,8 @@ def test_breadcrumb_semantic_titles(tmp_path: Path) -> None:
         "### First Steps\nFirst steps body content well above the cutoff.\n"
     )
     split_into_sections(md, tmp_path, min_level=1, min_body_chars=0)
-    first_steps = (tmp_path / "First Steps.md").read_text()
-    assert "> ↑ [Introduction](Introduction.md) / [Quick Start](<Quick Start.md>)" in first_steps
+    first_steps = (tmp_path / "first-steps.md").read_text()
+    assert "> ↑ [Introduction](introduction.md) / [Quick Start](quick-start.md)" in first_steps
 
 
 def test_breadcrumb_strips_embedded_markdown_links_in_titles(tmp_path: Path) -> None:
@@ -614,7 +637,7 @@ def test_breadcrumb_strips_embedded_markdown_links_in_titles(tmp_path: Path) -> 
         "Subsection body that is also above the threshold.\n"
     )
     split_into_sections(md, tmp_path, min_level=1, min_body_chars=0)
-    sub = (tmp_path / "Subsection.md").read_text()
+    sub = (tmp_path / "subsection.md").read_text()
     assert "> ↑" in sub
     # Breadcrumb display text has the embedded link flattened.
     assert "1Introduction to Widgetry" in sub
@@ -631,11 +654,11 @@ def test_breadcrumb_uses_relative_paths_in_nested_mode(tmp_path: Path) -> None:
         "### 1.1.1. GRANDCHILD\nGrandchild prose content also above the cutoff.\n"
     )
     split_into_sections(md, tmp_path, nested=True, min_body_chars=0)
-    grand = (tmp_path / "1" / "1.1" / "1.1.1. GRANDCHILD.md").read_text()
+    grand = (tmp_path / "1" / "1-1" / "1-1-1-grandchild.md").read_text()
     # Breadcrumb to root must traverse two `..` levels in nested mode.
     assert "> ↑" in grand
-    assert "1. ROOT.md" in grand
-    assert "1.1. CHILD.md" in grand
+    assert "1-root.md" in grand
+    assert "1-1-child.md" in grand
 
 
 # --- parent-chain integrity ------------------------------------------
@@ -656,7 +679,7 @@ def test_orphan_multipart_numbered_does_not_latch_onto_sibling(tmp_path: Path) -
         "Troubleshooting body content above the cutoff.\n"
     )
     split_into_sections(md, tmp_path, min_level=2, min_body_chars=0)
-    bank = (tmp_path / "2.5. CONFIGURATION.md").read_text()
+    bank = (tmp_path / "2-5-configuration.md").read_text()
     # `2.6.` is NOT in `2.5.`'s subsections — they're siblings.
     assert "[2.6. TROUBLESHOOTING]" not in bank
     # Both are top-level (visible in INDEX).
@@ -678,9 +701,9 @@ def test_chapter_shell_with_kept_children_is_preserved(tmp_path: Path) -> None:
     )
     written = split_into_sections(md, tmp_path, min_body_chars=30)
     names = {p.name for p in written}
-    assert "2. INSTALLATION.md" in names  # kept despite empty body
-    assert "2.1. STATUSES.md" in names
-    chapter = (tmp_path / "2. INSTALLATION.md").read_text()
+    assert "2-installation.md" in names  # kept despite empty body
+    assert "2-1-statuses.md" in names
+    chapter = (tmp_path / "2-installation.md").read_text()
     assert "## Subsections" in chapter
     assert "[2.1. STATUSES]" in chapter
 
@@ -697,10 +720,8 @@ def test_breadcrumb_chains_through_preserved_chapter_shell(tmp_path: Path) -> No
         "Sub-subsection prose body that clears the cutoff easily.\n"
     )
     split_into_sections(md, tmp_path, min_body_chars=30)
-    leaf = (tmp_path / "2.1.1. PENDING.md").read_text()
-    assert (
-        "> ↑ [2. INSTALLATION](<2. INSTALLATION.md>) / [2.1. STATUSES](<2.1. STATUSES.md>)" in leaf
-    )
+    leaf = (tmp_path / "2-1-1-pending.md").read_text()
+    assert "> ↑ [2. INSTALLATION](2-installation.md) / [2.1. STATUSES](2-1-statuses.md)" in leaf
 
 
 def test_dropped_parent_repoints_grandchild_breadcrumb(tmp_path: Path) -> None:
@@ -720,8 +741,8 @@ def test_dropped_parent_repoints_grandchild_breadcrumb(tmp_path: Path) -> None:
     )
     split_into_sections(md, tmp_path, min_level=1, min_body_chars=30)
     # Empty Sub IS kept (chapter-shell preservation), so leaf chains through it.
-    leaf = (tmp_path / "Real Leaf.md").read_text()
-    assert "> ↑ [Chapter](Chapter.md) / [Empty Sub](<Empty Sub.md>)" in leaf
+    leaf = (tmp_path / "real-leaf.md").read_text()
+    assert "> ↑ [Chapter](chapter.md) / [Empty Sub](empty-sub.md)" in leaf
 
 
 def test_single_part_numbered_step_under_semantic_chapter(tmp_path: Path) -> None:
@@ -738,7 +759,7 @@ def test_single_part_numbered_step_under_semantic_chapter(tmp_path: Path) -> Non
         "Step two body content above the cutoff.\n"
     )
     split_into_sections(md, tmp_path, min_level=2, min_body_chars=0)
-    qs = (tmp_path / "Quick Start.md").read_text()
+    qs = (tmp_path / "quick-start.md").read_text()
     assert "[1. Step One]" in qs
     assert "[2. Step Two]" in qs
 
@@ -763,13 +784,13 @@ def test_numbered_chapter_at_level_below_min_level_is_parsed(tmp_path: Path) -> 
     written = split_into_sections(md, tmp_path, min_level=2, min_body_chars=30)
     names = {p.name for p in written}
     # Chapter is now in the output (chapter-shell preserved by kept descendants).
-    assert "2. INSTALLATION.md" in names
-    bank = (tmp_path / "2.5. CONFIGURATION.md").read_text()
-    assert "> ↑ [2. INSTALLATION](<2. INSTALLATION.md>)" in bank
-    sub = (tmp_path / "2.5.1. Sub Item.md").read_text()
+    assert "2-installation.md" in names
+    bank = (tmp_path / "2-5-configuration.md").read_text()
+    assert "> ↑ [2. INSTALLATION](2-installation.md)" in bank
+    sub = (tmp_path / "2-5-1-sub-item.md").read_text()
     assert (
-        "> ↑ [2. INSTALLATION](<2. INSTALLATION.md>) "
-        "/ [2.5. CONFIGURATION](<2.5. CONFIGURATION.md>)" in sub
+        "> ↑ [2. INSTALLATION](2-installation.md) "
+        "/ [2.5. CONFIGURATION](2-5-configuration.md)" in sub
     )
 
 
@@ -777,16 +798,11 @@ def test_unnumbered_h1_still_skipped_under_min_level_2(tmp_path: Path) -> None:
     """`# Some Page Title` (unnumbered, level 1) is page-header noise —
     still filtered by `min_level=2`. Only NUMBERED level-1 headings
     are promoted to always-parsed."""
-    md = (
-        "# Some Page Title\n"
-        "front matter prose\n"
-        "## Real Section\n"
-        "Real section body content well above the threshold.\n"
-    )
+    md = "# Some Page Title\n## Real Section\nReal section body content well above the threshold.\n"
     written = split_into_sections(md, tmp_path, min_level=2, min_body_chars=0)
     names = {p.name for p in written}
-    assert "Some Page Title.md" not in names
-    assert "Real Section.md" in names
+    assert "some-page-title.md" not in names
+    assert "real-section.md" in names
 
 
 def test_breadcrumb_plain_text_for_non_kept_ancestor(tmp_path: Path) -> None:
@@ -810,7 +826,7 @@ def test_breadcrumb_plain_text_for_non_kept_ancestor(tmp_path: Path) -> None:
         heading_line="## 2.5. CONFIGURATION",
         parent=chapter,
     )
-    section_path = tmp_path / "2.5. CONFIGURATION.md"
+    section_path = tmp_path / "2-5-configuration.md"
     # kept_ids excludes the chapter — should render as plain text.
     crumb = _build_breadcrumb(section, tmp_path, section_path, nested=False, kept_ids={id(section)})
     assert crumb is not None
@@ -837,7 +853,7 @@ def test_breadcrumb_kept_ancestor_still_renders_as_link(tmp_path: Path) -> None:
         heading_line="## 2.5. CONFIGURATION",
         parent=chapter,
     )
-    section_path = tmp_path / "2.5. CONFIGURATION.md"
+    section_path = tmp_path / "2-5-configuration.md"
     crumb = _build_breadcrumb(
         section,
         tmp_path,
@@ -846,7 +862,7 @@ def test_breadcrumb_kept_ancestor_still_renders_as_link(tmp_path: Path) -> None:
         kept_ids={id(section), id(chapter)},
     )
     assert crumb is not None
-    assert "[2. INSTALLATION](<2. INSTALLATION.md>)" in crumb
+    assert "[2. INSTALLATION](2-installation.md)" in crumb
 
 
 # --- Chapter-N pattern detection ------------------------------------
@@ -867,12 +883,12 @@ def test_chapter_n_heading_parsed_as_numbered(tmp_path: Path) -> None:
     )
     written = split_into_sections(md, tmp_path, min_body_chars=30)
     names = {p.name for p in written}
-    assert "1. Introduction to Widgetry.md" in names  # title strips "Chapter N "
-    assert "1.1. Organization of the System.md" in names
-    assert "1.2. Equilibrium.md" in names
-    sub = (tmp_path / "1.1. Organization of the System.md").read_text()
+    assert "1-introduction-to-widgetry.md" in names  # title strips "Chapter N "
+    assert "1-1-organization-of-the-system.md" in names
+    assert "1-2-equilibrium.md" in names
+    sub = (tmp_path / "1-1-organization-of-the-system.md").read_text()
     # Subsection chains through the chapter.
-    assert "> ↑ [1. Introduction to Widgetry](<1. Introduction to Widgetry.md>)" in sub
+    assert "> ↑ [1. Introduction to Widgetry](1-introduction-to-widgetry.md)" in sub
 
 
 def test_chapter_n_works_with_min_level_set(tmp_path: Path) -> None:
@@ -886,10 +902,10 @@ def test_chapter_n_works_with_min_level_set(tmp_path: Path) -> None:
     )
     written = split_into_sections(md, tmp_path, min_level=2, min_body_chars=30)
     names = {p.name for p in written}
-    assert "5. Control Signals.md" in names
-    assert "5.1. Mechanisms of Communication.md" in names
-    sub = (tmp_path / "5.1. Mechanisms of Communication.md").read_text()
-    assert "> ↑ [5. Control Signals](<5. Control Signals.md>)" in sub
+    assert "5-control-signals.md" in names
+    assert "5-1-mechanisms-of-communication.md" in names
+    sub = (tmp_path / "5-1-mechanisms-of-communication.md").read_text()
+    assert "> ↑ [5. Control Signals](5-control-signals.md)" in sub
 
 
 def test_chapter_n_without_title_keeps_chapter_n_label(tmp_path: Path) -> None:
@@ -903,7 +919,7 @@ def test_chapter_n_without_title_keeps_chapter_n_label(tmp_path: Path) -> None:
     )
     written = split_into_sections(md, tmp_path, min_level=2, min_body_chars=30)
     names = {p.name for p in written}
-    assert "14. Chapter 14.md" in names  # graceful fallback for no-subtitle case
+    assert "14-chapter-14.md" in names  # graceful fallback for no-subtitle case
 
 
 def test_chapter_n_case_insensitive(tmp_path: Path) -> None:
@@ -915,7 +931,7 @@ def test_chapter_n_case_insensitive(tmp_path: Path) -> None:
     )
     written = split_into_sections(md, tmp_path, min_level=2, min_body_chars=30)
     names = {p.name for p in written}
-    assert "7. Logic Cells.md" in names
+    assert "7-logic-cells.md" in names
 
 
 def test_split_long_filename_dedup_preserves_distinct_files(tmp_path: Path) -> None:
@@ -953,7 +969,7 @@ def test_single_part_numbered_does_not_level_fallback_through_numbered_ancestor(
         "Sibling chapter body content above the cutoff threshold.\n"
     )
     split_into_sections(md, tmp_path, min_body_chars=0)
-    intro = (tmp_path / "1. Introduction to Widgetry.md").read_text()
+    intro = (tmp_path / "1-introduction-to-widgetry.md").read_text()
     assert "24. Thermal Runaway" not in intro
     # No breadcrumb at all because parent is None (top-level).
     assert "> ↑" not in intro
@@ -976,8 +992,8 @@ def test_single_part_numbered_still_attaches_to_unnumbered_ancestor(
         "Step one body content above the cutoff.\n"
     )
     split_into_sections(md, tmp_path, min_level=2, min_body_chars=0)
-    step = (tmp_path / "1. Step One.md").read_text()
-    assert "> ↑ [Quick Start](<Quick Start.md>)" in step
+    step = (tmp_path / "1-step-one.md").read_text()
+    assert "> ↑ [Quick Start](quick-start.md)" in step
 
 
 def test_filename_collision_body_identical_drops_dupe(tmp_path: Path) -> None:
@@ -992,7 +1008,7 @@ def test_filename_collision_body_identical_drops_dupe(tmp_path: Path) -> None:
     written = split_into_sections(md, tmp_path, min_body_chars=0)
     section_files = [p for p in written if p.name != "INDEX.md"]
     assert len(section_files) == 1
-    assert section_files[0].name == "1. Foo.md"
+    assert section_files[0].name == "1-foo.md"
 
 
 def test_filename_collision_body_distinct_uses_numeric_suffix(tmp_path: Path) -> None:
@@ -1010,9 +1026,9 @@ def test_filename_collision_body_distinct_uses_numeric_suffix(tmp_path: Path) ->
     section_files = sorted(p for p in written if p.name != "INDEX.md")
     assert len(section_files) == 2
     names = {p.name for p in section_files}
-    assert names == {"1. Foo.md", "1. Foo-2.md"}
-    bare = (tmp_path / "1. Foo.md").read_text()
-    suffixed = (tmp_path / "1. Foo-2.md").read_text()
+    assert names == {"1-foo.md", "1-foo-2.md"}
+    bare = (tmp_path / "1-foo.md").read_text()
+    suffixed = (tmp_path / "1-foo-2.md").read_text()
     # First occurrence (anchor) keeps bare filename.
     assert "First foo body content" in bare
     # Second occurrence (later in document order) gets -2.
@@ -1026,12 +1042,12 @@ def test_filename_collision_three_way_distinct(tmp_path: Path) -> None:
     written = split_into_sections(md, tmp_path, min_body_chars=0)
     section_files = sorted(p for p in written if p.name != "INDEX.md")
     assert len(section_files) == 3
-    assert (tmp_path / "1. Foo.md").exists()
-    assert (tmp_path / "1. Foo-2.md").exists()
-    assert (tmp_path / "1. Foo-3.md").exists()
-    assert "body alpha" in (tmp_path / "1. Foo.md").read_text()
-    assert "body beta" in (tmp_path / "1. Foo-2.md").read_text()
-    assert "body gamma" in (tmp_path / "1. Foo-3.md").read_text()
+    assert (tmp_path / "1-foo.md").exists()
+    assert (tmp_path / "1-foo-2.md").exists()
+    assert (tmp_path / "1-foo-3.md").exists()
+    assert "body alpha" in (tmp_path / "1-foo.md").read_text()
+    assert "body beta" in (tmp_path / "1-foo-2.md").read_text()
+    assert "body gamma" in (tmp_path / "1-foo-3.md").read_text()
 
 
 def test_filename_no_collision_no_suffix(tmp_path: Path) -> None:
@@ -1041,7 +1057,7 @@ def test_filename_no_collision_no_suffix(tmp_path: Path) -> None:
     written = split_into_sections(md, tmp_path, min_body_chars=0)
     section_files = [p for p in written if p.name != "INDEX.md"]
     assert len(section_files) == 1
-    assert section_files[0].name == "1. Unique.md"
+    assert section_files[0].name == "1-unique.md"
 
 
 def test_filename_long_truncated_no_hash_suffix(tmp_path: Path) -> None:
@@ -1064,7 +1080,7 @@ def test_filename_long_truncated_no_hash_suffix(tmp_path: Path) -> None:
 
     assert not _re.search(r"-[0-9a-f]{8}\.md$", name)
     # Truncated to fit.
-    assert len(name) <= 204  # 200 + ".md"
+    assert len(name) <= 204  # 200 + "section.md"
 
 
 def test_filename_collision_logged_only_for_body_identical(tmp_path: Path, caplog) -> None:  # type: ignore[no-untyped-def]
@@ -1089,10 +1105,10 @@ def test_filename_collision_logged_only_for_body_identical(tmp_path: Path, caplo
     ]
     # Only one drop log: the body-identical Foo pair.
     assert len(detail_messages) == 1
-    assert "path=1. Foo.md" in detail_messages[0]
+    assert "path=1-foo.md" in detail_messages[0]
     # Body-distinct Bar pair: no drop log; both files written.
-    assert (tmp_path / "2. Bar.md").exists()
-    assert (tmp_path / "2. Bar-2.md").exists()
+    assert (tmp_path / "2-bar.md").exists()
+    assert (tmp_path / "2-bar-2.md").exists()
     assert any("split_dropped_filename_collisions count=1" in m for m in messages)
 
 
@@ -1103,17 +1119,17 @@ def test_filename_collision_breadcrumb_uses_bare_display_name(tmp_path: Path) ->
     md = "# 1. Chapter\nintro\n## 1.1 Foo\nfirst body\n## 1.1 Foo\ndifferent second body\n"
     split_into_sections(md, tmp_path, min_body_chars=0, nested=False)
     # Both Foo files exist, suffixed.
-    assert (tmp_path / "1.1. Foo.md").exists()
-    assert (tmp_path / "1.1. Foo-2.md").exists()
+    assert (tmp_path / "1-1-foo.md").exists()
+    assert (tmp_path / "1-1-foo-2.md").exists()
     # Each retains the bare display heading — no `-2` leaks into the
     # heading text or breadcrumb. The suffix DOES stay in section_id
     # (the join key must be unique).
-    bare = (tmp_path / "1.1. Foo.md").read_text()
+    bare = (tmp_path / "1-1-foo.md").read_text()
     assert bare.split("---\n\n", 1)[1].startswith("## 1.1. Foo\n")
-    assert 'section_id: "1.1. Foo.md"' in bare
-    suffixed = (tmp_path / "1.1. Foo-2.md").read_text()
+    assert 'section_id: "1-1-foo.md"' in bare
+    suffixed = (tmp_path / "1-1-foo-2.md").read_text()
     assert suffixed.split("---\n\n", 1)[1].startswith("## 1.1. Foo\n")
-    assert 'section_id: "1.1. Foo-2.md"' in suffixed
+    assert 'section_id: "1-1-foo-2.md"' in suffixed
 
 
 def test_section_file_keeps_preserved_anchor_attached_to_heading(tmp_path: Path) -> None:
@@ -1121,7 +1137,7 @@ def test_section_file_keeps_preserved_anchor_attached_to_heading(tmp_path: Path)
     page-anchor span lines."""
     md = '# 1. Foo\n<span id="page-1-0"></span>\n\nBody paragraph.\n'
     split_into_sections(md, tmp_path, min_body_chars=0)
-    written = (tmp_path / "1. Foo.md").read_text(encoding="utf-8")
+    written = (tmp_path / "1-foo.md").read_text(encoding="utf-8")
     lines = written.split("---\n\n", 1)[1].splitlines()
     assert lines[0] == "# 1. Foo"
     assert lines[1] == '<span id="page-1-0"></span>'
@@ -1132,7 +1148,7 @@ def test_section_file_keeps_preserved_anchor_attached_to_heading(tmp_path: Path)
 def test_section_file_handles_multiple_consecutive_anchors(tmp_path: Path) -> None:
     md = '# 1. Foo\n<span id="page-1-0"></span>\n<span id="page-1-1"></span>\n\nBody.\n'
     split_into_sections(md, tmp_path, min_body_chars=0)
-    written = (tmp_path / "1. Foo.md").read_text(encoding="utf-8")
+    written = (tmp_path / "1-foo.md").read_text(encoding="utf-8")
     lines = written.split("---\n\n", 1)[1].splitlines()
     assert lines[0] == "# 1. Foo"
     assert lines[1] == '<span id="page-1-0"></span>'
@@ -1155,8 +1171,8 @@ def test_toc_phantom_with_p_suffix_dropped(tmp_path: Path) -> None:
     )
     written = split_into_sections(md, tmp_path, min_body_chars=0)
     names = {p.name for p in written}
-    assert "1.1. Real Subsection.md" in names
-    assert "1.1. Real Subsection, p. 32.md" not in names
+    assert "1-1-real-subsection.md" in names
+    assert "1-1-real-subsection-p-32.md" not in names
 
 
 def test_toc_phantom_with_trailing_pagenum_dropped(tmp_path: Path) -> None:
@@ -1168,8 +1184,8 @@ def test_toc_phantom_with_trailing_pagenum_dropped(tmp_path: Path) -> None:
     )
     written = split_into_sections(md, tmp_path, min_body_chars=0)
     names = {p.name for p in written}
-    assert "1.1. Real Subsection.md" in names
-    assert "1.1. Real Subsection 32.md" not in names
+    assert "1-1-real-subsection.md" in names
+    assert "1-1-real-subsection-32.md" not in names
 
 
 def test_toc_phantom_chapter_with_trailing_pagenum_dropped(tmp_path: Path) -> None:
@@ -1179,8 +1195,8 @@ def test_toc_phantom_chapter_with_trailing_pagenum_dropped(tmp_path: Path) -> No
     written = split_into_sections(md, tmp_path, min_level=1, min_body_chars=0)
     names = {p.name for p in written}
     # The first one survives (real chapter); the trailing-page-number twin drops.
-    assert "1. Introduction.md" in names
-    assert "1. Introduction 31.md" not in names
+    assert "1-introduction.md" in names
+    assert "1-introduction-31.md" not in names
 
 
 def test_toc_phantom_drop_logged_at_info(tmp_path: Path, caplog) -> None:  # type: ignore[no-untyped-def]
@@ -1208,8 +1224,8 @@ def test_toc_phantom_does_not_drop_legit_section(tmp_path: Path) -> None:
     md = "## RFC 822\nMail format spec content.\n## Section 100\nGeneral provisions.\n"
     written = split_into_sections(md, tmp_path, min_level=2, min_body_chars=0)
     names = {p.name for p in written}
-    assert "RFC 822.md" in names
-    assert "Section 100.md" in names
+    assert "rfc-822.md" in names
+    assert "section-100.md" in names
 
 
 # --- ancestor-only chapter preservation under min_level ---------
@@ -1219,14 +1235,14 @@ def test_min_level_2_l1_chapter_preserved_in_breadcrumb(tmp_path: Path) -> None:
     """Under `min_level=2`, an L1 unnumbered chapter (`# Introduction`)
     doesn't get its own section file but DOES appear as plain-text
     breadcrumb context for its L2 children."""
-    md = "# Introduction\nintro body\n## Purpose\nDescribe the purpose.\n"
+    md = "# Introduction\n## Purpose\nDescribe the purpose.\n"
     written = split_into_sections(md, tmp_path, min_level=2, min_body_chars=0)
     names = {p.name for p in written}
     # `# Introduction` does NOT get a file.
-    assert "Introduction.md" not in names
+    assert "introduction.md" not in names
     # `## Purpose` does.
-    assert "Purpose.md" in names
-    purpose = (tmp_path / "Purpose.md").read_text()
+    assert "purpose.md" in names
+    purpose = (tmp_path / "purpose.md").read_text()
     # Breadcrumb shows the parent chapter as plain text (no link), since
     # the chapter file isn't on disk.
     assert "> ↑ Introduction" in purpose
@@ -1259,8 +1275,8 @@ def test_min_level_2_numbered_l1_still_writes_file(tmp_path: Path) -> None:
     md = "# 1. Numbered Chapter\nbody\n## 1.1. Subsection\nsub body\n"
     written = split_into_sections(md, tmp_path, min_level=2, min_body_chars=0)
     names = {p.name for p in written}
-    assert "1. Numbered Chapter.md" in names
-    assert "1.1. Subsection.md" in names
+    assert "1-numbered-chapter.md" in names
+    assert "1-1-subsection.md" in names
 
 
 def test_min_level_2_chapter_breadcrumb_in_consolidated_chain(tmp_path: Path) -> None:
@@ -1268,7 +1284,7 @@ def test_min_level_2_chapter_breadcrumb_in_consolidated_chain(tmp_path: Path) ->
     title in its breadcrumb chain (rendered plain-text)."""
     md = "# Introduction\n## Purpose\nbody\n### Sub-Purpose\nfine-grained body content here.\n"
     split_into_sections(md, tmp_path, min_level=2, min_body_chars=0)
-    sub = (tmp_path / "Sub-Purpose.md").read_text()
+    sub = (tmp_path / "sub-purpose.md").read_text()
     assert "> ↑ Introduction" in sub
     # The kept Purpose ancestor renders as a link.
     assert "[Purpose]" in sub
@@ -1282,7 +1298,7 @@ def test_min_level_2_ancestor_only_does_not_appear_in_subsections_listing(
     md = "# Introduction\n## Purpose\nbody\n"
     split_into_sections(md, tmp_path, min_level=2, min_body_chars=0)
     # No Introduction.md exists.
-    assert not (tmp_path / "Introduction.md").exists()
+    assert not (tmp_path / "introduction.md").exists()
 
 
 # --- auto-fallback for non-numbered docs ---
@@ -1300,9 +1316,9 @@ def test_split_auto_fallback_non_numbered_h1_chapters(tmp_path: Path) -> None:
     )
     written = split_into_sections(md, tmp_path, source_name="test")
     names = {p.name for p in written}
-    assert "Main Manual.md" in names
-    assert "Rigs and Signal Chain.md" in names
-    assert "Effects.md" in names
+    assert "main-manual.md" in names
+    assert "rigs-and-signal-chain.md" in names
+    assert "effects.md" in names
 
 
 def test_split_auto_fallback_chapters_at_h2(tmp_path: Path) -> None:
@@ -1318,9 +1334,9 @@ def test_split_auto_fallback_chapters_at_h2(tmp_path: Path) -> None:
     written = split_into_sections(md, tmp_path, source_name="test")
     names = {p.name for p in written}
     # Auto-detect should produce H2 chapter files
-    assert "Quick Start.md" in names
-    assert "Reference.md" in names
-    assert "Important Safety Instructions.md" in names
+    assert "quick-start.md" in names
+    assert "reference.md" in names
+    assert "important-safety-instructions.md" in names
 
 
 def test_split_numbered_docs_unaffected_by_fallback(tmp_path: Path) -> None:
@@ -1336,10 +1352,10 @@ def test_split_numbered_docs_unaffected_by_fallback(tmp_path: Path) -> None:
     written = split_into_sections(md, tmp_path, source_name="test")
     names = {p.name for p in written}
     # Only numbered chapters become sections; non-numbered ones ignored
-    assert "1. Chapter One.md" in names
-    assert "2. Chapter Two.md" in names
-    assert "Some Title.md" not in names
-    assert "A Random Sidebar.md" not in names
+    assert "1-chapter-one.md" in names
+    assert "2-chapter-two.md" in names
+    assert "some-title.md" not in names
+    assert "a-random-sidebar.md" not in names
 
 
 def test_split_fallback_skips_lone_heading_at_shallowest_depth(tmp_path: Path) -> None:
@@ -1355,15 +1371,15 @@ def test_split_fallback_skips_lone_heading_at_shallowest_depth(tmp_path: Path) -
     written = split_into_sections(md, tmp_path, source_name="test")
     names = {p.name for p in written}
     # All three H2 chapters become sections
-    assert "Chapter A.md" in names
-    assert "Chapter B.md" in names
-    assert "Chapter C.md" in names
+    assert "chapter-a.md" in names
+    assert "chapter-b.md" in names
+    assert "chapter-c.md" in names
 
 
 def test_split_explicit_min_level_overrides_fallback(tmp_path: Path) -> None:
     """If the user explicitly passes `min_level=N`, the fallback never
     fires — the user knows what they want."""
-    md = "# Non-numbered title\nbody\n"
+    md = "# Non-numbered title\n"
     written = split_into_sections(md, tmp_path, min_level=2, source_name="test")
     # min_level=2 means H1 is ancestor-only, no file written
     assert written == []
@@ -1413,12 +1429,12 @@ def test_split_fallback_when_numbered_sections_miss_toplevel(
     written = split_into_sections(md, tmp_path, source_name="test")
     names = {p.name for p in written}
     # The real H1 structure must produce sections...
-    assert any("MOTION PICTURE CAMERA FILMS" in n for n in names)
-    assert any("APPENDIX" in n for n in names)
+    assert any("motion-picture-camera-films" in n for n in names)
+    assert any("appendix" in n for n in names)
     # ...not just the 2 false-positive numbered headings.
     assert names != {
-        "35. mm and 65 mm End Use.md",
-        "16. mm End Use.md",
+        "35-mm-and-65-mm-end-use.md",
+        "16-mm-end-use.md",
     }
 
 
@@ -1492,8 +1508,8 @@ def test_split_numbered_doc_with_measurement_subheading(tmp_path: Path) -> None:
     )
     written = split_into_sections(md, tmp_path, source_name="test")
     names = {p.name for p in written}
-    assert "1. Preface.md" in names
-    assert "4. Specifications.md" in names
+    assert "1-preface.md" in names
+    assert "4-specifications.md" in names
     # The 6.3 mm jack must NOT be a top-level numbered section.
     assert not any(n.startswith("6.3.") for n in names)
 
@@ -1519,10 +1535,10 @@ def test_split_numbered_at_toplevel_does_not_fall_back(tmp_path: Path) -> None:
     names = {p.name for p in written}
     # Numbered sections only — `# Paper Title` (non-numbered) is NOT a
     # section in numbered-only mode.
-    assert "1. Introduction.md" in names
-    assert "2. Methods.md" in names
-    assert "3. Results.md" in names
-    assert "Paper Title.md" not in names
+    assert "1-introduction.md" in names
+    assert "2-methods.md" in names
+    assert "3-results.md" in names
+    assert "paper-title.md" not in names
 
 
 # --- max_level: bounded section depth (--split-max-level) ---
@@ -1563,13 +1579,13 @@ def test_split_max_level_caps_section_depth(tmp_path: Path) -> None:
     )
     written = split_into_sections(md, tmp_path, source_name="test", max_level=2)
     names = {p.name for p in written}
-    assert any("Overview" in n for n in names)
-    assert any("Homeostasis" in n for n in names)
-    assert any("Key Terms" in n for n in names)
-    assert any("Chapter Review" in n for n in names)
-    assert "Learning Objectives.md" not in names
-    assert "Sub detail.md" not in names
-    ovw = next(p for p in written if "Overview" in p.name)
+    assert any("overview" in n for n in names)
+    assert any("homeostasis" in n for n in names)
+    assert any("key-terms" in n for n in names)
+    assert any("chapter-review" in n for n in names)
+    assert "learning-objectives.md" not in names
+    assert "sub-detail.md" not in names
+    ovw = next(p for p in written if "overview" in p.name)
     assert "Learning Objectives" in ovw.read_text()
 
 
@@ -1577,7 +1593,7 @@ def test_split_max_level_none_preserves_deep_split(tmp_path: Path) -> None:
     """Default (max_level=None) is unchanged — deep headings still split out."""
     md = "# Book Title\nintro\n\n## 1.1 Overview\novw\n\n### Learning Objectives\n- obj\n"
     written = split_into_sections(md, tmp_path, source_name="t")
-    assert any("Learning Objectives" in p.name for p in written)
+    assert any("learning-objectives" in p.name for p in written)
 
 
 # --- sparse-shallow-group correction in fallback detection ---
@@ -1662,7 +1678,7 @@ def test_provenance_emits_rich_per_section_frontmatter(tmp_path: Path) -> None:
         "doc_title": "Toolcraft Manual",
     }
     written = split_into_sections(md, tmp_path, min_level=2, min_body_chars=0, provenance=prov)
-    gizmo = next(p for p in written if p.name == "The Gizmo.md")
+    gizmo = next(p for p in written if p.name == "the-gizmo.md")
     text = gizmo.read_text()
     assert text.startswith("---\n")
     assert 'source_type: "textbook"' in text
@@ -1679,7 +1695,7 @@ def test_provenance_omits_section_path_for_top_level(tmp_path: Path) -> None:
     md = "# Manual\n\n## Overview\n\nBody content that is long enough to keep.\n"
     prov: dict[str, object] = {"source_type": "manual", "source_file": "m.pdf"}
     written = split_into_sections(md, tmp_path, min_level=2, provenance=prov)
-    text = next(p for p in written if p.name == "Overview.md").read_text()
+    text = next(p for p in written if p.name == "overview.md").read_text()
     assert 'section_title: "Overview"' in text
     # "Manual" (H1) is the only ancestor → it IS the path
     assert 'section_path: ["Manual"]' in text
@@ -1692,7 +1708,7 @@ def test_split_sections_carry_source_identity(tmp_path: Path) -> None:
     written = split_into_sections(
         md, tmp_path, min_level=2, source_id="widget-guide-2e", source_sha256="d" * 64
     )
-    text = next(p for p in written if p.name == "Overview.md").read_text()
+    text = next(p for p in written if p.name == "overview.md").read_text()
     assert 'source_id: "widget-guide-2e"' in text
     assert f'source_sha256: "{"d" * 64}"' in text
 
@@ -1700,6 +1716,103 @@ def test_split_sections_carry_source_identity(tmp_path: Path) -> None:
 def test_split_sections_omit_source_identity_by_default(tmp_path: Path) -> None:
     md = "# Manual\n\n## Overview\n\nBody content that is long enough to keep.\n"
     written = split_into_sections(md, tmp_path, min_level=2)
-    text = next(p for p in written if p.name == "Overview.md").read_text()
+    text = next(p for p in written if p.name == "overview.md").read_text()
     assert "source_id" not in text
     assert "source_sha256" not in text
+
+
+def test_ancestor_only_section_body_is_written(tmp_path: Path) -> None:
+    """A heading shallower than `min_level` still owns its prose.
+
+    Regression: `# Introduction` under `min_level=2` parsed as ancestor-only,
+    so its body was collected but never written — real content vanished.
+    """
+    md = (
+        "# Introduction\n"
+        "\n"
+        "This chapter explains the core concepts in detail.\n"
+        "\n"
+        "## Getting Started\n"
+        "\n"
+        "Install the software before you begin.\n"
+    )
+    written = split_into_sections(md, tmp_path, min_level=2)
+    all_text = "\n".join(p.read_text() for p in written)
+    assert "This chapter explains the core concepts in detail." in all_text
+
+
+def test_preamble_before_first_heading_is_written(tmp_path: Path) -> None:
+    """Content preceding the first heading must land in some section file.
+
+    Regression: `_parse_sections` dropped every line while `current is None`,
+    so title pages / front matter vanished from the split entirely.
+    """
+    md = (
+        "**Title:** Braintrust\n"
+        "\n"
+        "A book about the neuroscience of morality.\n"
+        "\n"
+        "# Chapter One\n"
+        "\n"
+        "Body of chapter one.\n"
+    )
+    written = split_into_sections(md, tmp_path, min_level=1)
+    all_text = "\n".join(p.read_text() for p in written)
+    assert "A book about the neuroscience of morality." in all_text
+
+
+def test_resplit_over_differently_cased_files_keeps_sections(tmp_path: Path) -> None:
+    """Writing `overview.md` into a dir holding `Overview.md` reuses that file on
+    a case-insensitive filesystem, and the cleanup then deletes it as
+    unrecognized — emitting a fraction of the sections."""
+    (tmp_path / "Overview.md").write_text("stale\n", encoding="utf-8")
+    (tmp_path / "Setup.md").write_text("stale\n", encoding="utf-8")
+    md = (
+        "# Overview\nOverview body well over the cutoff threshold here.\n"
+        "# Setup\nSetup body well over the cutoff threshold here too.\n"
+    )
+    written = split_into_sections(md, tmp_path, min_level=1)
+    assert sorted(p.name for p in written) == ["overview.md", "setup.md"]
+    for p in written:
+        assert p.exists(), f"{p.name} was written then deleted by stale-cleanup"
+    assert "Overview body" in (tmp_path / "overview.md").read_text()
+
+
+def test_resplit_over_differently_cased_folders_keeps_sections(tmp_path: Path) -> None:
+    """Same hazard one level up: a stale `Introduction/` folder captures writes
+    intended for `introduction/`."""
+    (tmp_path / "Introduction").mkdir()
+    (tmp_path / "Introduction" / "Icons.md").write_text("stale\n", encoding="utf-8")
+    md = (
+        "# Introduction\nIntro body over the cutoff threshold for sure.\n"
+        "## Icons\nIcons body over the cutoff threshold for sure too.\n"
+    )
+    written = split_into_sections(md, tmp_path, nested=True, min_level=2)
+    for p in written:
+        assert p.exists(), f"{p} was written then deleted by stale-cleanup"
+    assert any("icons" in p.name for p in written)
+
+
+def _fs_is_case_insensitive(tmp_path: Path) -> bool:
+    probe = tmp_path / "CaseProbe.tmp"
+    probe.write_text("x", encoding="utf-8")
+    result = (tmp_path / "caseprobe.tmp").exists()
+    probe.unlink()
+    return result
+
+
+def test_cleanup_identifies_files_the_way_the_filesystem_does(tmp_path: Path) -> None:
+    """The cleanup must not delete a file it just wrote: `Overview.md` and
+    `overview.md` are one file on a case-insensitive filesystem, and a
+    text comparison treats it as a stranger."""
+    if not _fs_is_case_insensitive(tmp_path):
+        pytest.skip("case-sensitive filesystem: the two spellings are genuinely two files")
+    written = tmp_path / "Overview.md"
+    written.write_text("just written\n", encoding="utf-8")
+    stale = tmp_path / "leftover.md"
+    stale.write_text("stale\n", encoding="utf-8")
+    # The caller believes it wrote the lowercase spelling; the filesystem kept
+    # the pre-existing capitalisation.
+    _remove_unwritten_markdown(tmp_path, [tmp_path / "overview.md"])
+    assert written.exists(), "the just-written section was deleted by the cleanup"
+    assert not stale.exists(), "a genuinely unwritten file should still be removed"

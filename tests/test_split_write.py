@@ -48,45 +48,45 @@ def test_structural_frontmatter_always_on(tmp_path: Path) -> None:
 def test_section_id_is_relative_path(tmp_path: Path) -> None:
     out = tmp_path / "guide-book" / "sections"
     written = split_into_sections(MD_NUMBERED, out, nested=True)
-    beta = _read(written, "1.1. Beta.md")
-    assert 'section_id: "1/1.1. Beta.md"' in beta
-    alpha = _read(written, "1. Alpha.md")
-    assert 'section_id: "1/1. Alpha.md"' in alpha
+    beta = _read(written, "1-1-beta.md")
+    assert 'section_id: "1/1-1-beta.md"' in beta
+    alpha = _read(written, "1-alpha.md")
+    assert 'section_id: "1/1-alpha.md"' in alpha
 
 
 def test_parent_id_links_to_written_parent(tmp_path: Path) -> None:
     out = tmp_path / "guide-book" / "sections"
     written = split_into_sections(MD_NUMBERED, out, nested=True)
-    beta = _read(written, "1.1. Beta.md")
-    assert 'parent_id: "1/1. Alpha.md"' in beta
+    beta = _read(written, "1-1-beta.md")
+    assert 'parent_id: "1/1-alpha.md"' in beta
     # Root section has no written parent -> key omitted entirely.
-    alpha = _read(written, "1. Alpha.md")
+    alpha = _read(written, "1-alpha.md")
     assert "parent_id" not in alpha
 
 
 def test_parent_id_skips_unwritten_ancestor(tmp_path: Path) -> None:
     """An ancestor-only chapter (parsed below min_level, never written) is
     not a valid join target — the child emits no parent_id."""
-    md = "# Book Chapter\n\nintro\n\n## Topic One\n\nTopic body text here.\n"
+    md = "# Book Chapter\n\n## Topic One\n\nTopic body text here.\n"
     out = tmp_path / "guide-book" / "sections"
     written = split_into_sections(md, out, min_level=2)
-    topic = _read(written, "Topic One.md")
+    topic = _read(written, "topic-one.md")
     assert "parent_id" not in topic
 
 
 def test_order_is_document_order(tmp_path: Path) -> None:
     out = tmp_path / "guide-book" / "sections"
     written = split_into_sections(MD_NUMBERED, out)
-    assert "order: 1" in _read(written, "1. Alpha.md")
-    assert "order: 2" in _read(written, "1.1. Beta.md")
-    assert "order: 3" in _read(written, "1.2. Gamma.md")
+    assert "order: 1" in _read(written, "1-alpha.md")
+    assert "order: 2" in _read(written, "1-1-beta.md")
+    assert "order: 3" in _read(written, "1-2-gamma.md")
 
 
 def test_depth_counts_ancestors(tmp_path: Path) -> None:
     out = tmp_path / "guide-book" / "sections"
     written = split_into_sections(MD_NUMBERED, out)
-    assert "depth: 0" in _read(written, "1. Alpha.md")
-    assert "depth: 1" in _read(written, "1.1. Beta.md")
+    assert "depth: 0" in _read(written, "1-alpha.md")
+    assert "depth: 1" in _read(written, "1-1-beta.md")
 
 
 def test_doc_id_param_overrides_derived(tmp_path: Path) -> None:
@@ -105,7 +105,7 @@ def test_provenance_fields_merge_with_structural(tmp_path: Path) -> None:
         "doc_title": "From H1",
     }
     written = split_into_sections(MD_NUMBERED, out, provenance=prov, doc_title="From Param")
-    text = _read(written, "1.1. Beta.md")
+    text = _read(written, "1-1-beta.md")
     assert 'source_type: "textbook"' in text
     assert 'source_label: "Guide Book"' in text
     assert 'doc_title: "From H1"' in text
@@ -116,4 +116,4 @@ def test_provenance_fields_merge_with_structural(tmp_path: Path) -> None:
 def test_doc_title_param_fills_when_no_provenance(tmp_path: Path) -> None:
     out = tmp_path / "guide-book" / "sections"
     written = split_into_sections(MD_NUMBERED, out, doc_title="Guide Book")
-    assert 'doc_title: "Guide Book"' in _read(written, "1. Alpha.md")
+    assert 'doc_title: "Guide Book"' in _read(written, "1-alpha.md")

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pagespeak"
-version = "0.8.0"
+version = "0.9.0"
 description = "Convert PDF, Word, and other documents into retrieval-ready markdown — one document or a whole corpus, diagrams turned to Mermaid."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -28,7 +28,7 @@ dependencies = [
     "httpx>=0.25",
     "markdownify>=0.13",
     "markitdown[docx,pptx,xlsx,outlook]>=0.0.1a3",
-    "pf-core[image-phash,tracking,llm]~=0.9.0",
+    "pf-core[image-phash,tracking,llm]~=0.11.0",
     "typer>=0.12.0",
 ]
 # beautifulsoup4 + markdownify back the inline-HTML→markdown utility

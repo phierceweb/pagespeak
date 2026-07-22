@@ -69,13 +69,13 @@ pagespeak continues from the Marker output: cleanup, then an LLM heading-repair 
 
 ```text
 sections/1/
-├── 1.2. Structural Organization of the Human Body.md
-│   └── 1.2/The Levels of Organization.md
-├── 1.4. Requirements for Human Life.md
-│   └── 1.4/Narrow Range of Temperature/Controlled Hypothermia.md
-└── 1.5. Homeostasis.md
-    ├── 1.5/Negative Feedback.md
-    └── 1.5/Positive Feedback.md
+├── 1-2-structural-organization-of-the-human-body.md
+│   └── 1-2/the-levels-of-organization.md
+├── 1-4-requirements-for-human-life.md
+│   └── 1-4/narrow-range-of-temperature/controlled-hypothermia.md
+└── 1-5-homeostasis.md
+    ├── 1-5/negative-feedback.md
+    └── 1-5/positive-feedback.md
 ```
 
 Each split file carries an in-text breadcrumb so the chunk is self-contained:

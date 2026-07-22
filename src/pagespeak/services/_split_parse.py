@@ -61,6 +61,10 @@ FALLBACK_SPARSE_GROUP_MAX = 2
 
 FALLBACK_SPARSE_GROUP_RATIO = 3
 
+PREAMBLE_TITLE = "Front Matter"
+"""Heading for the synthetic section holding pre-first-heading content (title
+page, copyright, epigraph), which otherwise belongs to no section."""
+
 
 def _parse_chapter_heading(body: str) -> tuple[str, str] | None:
     """Match `Chapter N <title>` style headings. Returns `(number, title)`
@@ -171,6 +175,9 @@ class _Section:
     # None on unpartitioned sections.
     part_index: int | None = None
     part_count: int | None = None
+    # synthetic pre-first-heading section; excluded from the numbered-parse
+    # representativeness test so it can't mask a missed top-level structure.
+    is_preamble: bool = False
 
     @property
     def display_name(self) -> str:
@@ -271,7 +278,8 @@ def _numbered_parse_is_representative(sections: list[_Section], lines: list[str]
     case is the degenerate form of "zero sections at the document's
     top level".
     """
-    if not sections:
+    real = [s for s in sections if not s.is_preamble]
+    if not real:
         return False
     doc_shallowest = None
     for line in lines:
@@ -283,7 +291,7 @@ def _numbered_parse_is_representative(sections: list[_Section], lines: list[str]
     if doc_shallowest is None:
         # No headings at all — nothing to be representative of.
         return False
-    min_section_level = min(s.level for s in sections)
+    min_section_level = min(s.level for s in real)
     return min_section_level <= doc_shallowest
 
 
@@ -353,6 +361,7 @@ def _parse_sections(
 ) -> list[_Section]:
     sections: list[_Section] = []
     current: _Section | None = None
+    preamble: list[str] = []
 
     for line in lines:
         is_ancestor_only = False
@@ -398,6 +407,22 @@ def _parse_sections(
 
         if current is not None:
             current.content_lines.append(line)
+        else:
+            preamble.append(line)
+
+    # Inserted after the loop so it never participates in parent attribution.
+    if sections and any(line.strip() for line in preamble):
+        sections.insert(
+            0,
+            _Section(
+                level=1,
+                number=None,
+                title=PREAMBLE_TITLE,
+                heading_line=f"# {PREAMBLE_TITLE}",
+                content_lines=preamble,
+                is_preamble=True,
+            ),
+        )
 
     return sections
 

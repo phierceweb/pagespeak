@@ -37,8 +37,8 @@ def test_fitting_subtree_becomes_one_file(tmp_path: Path) -> None:
     subsection headings inlined as content."""
     md = f"# 1. Alpha\n\n{_paras(2)}\n\n## 1.1. Beta\n\n{_paras(2)}\n\n## 1.2. Gamma\n\n{_paras(2)}\n"
     written = split_into_sections(md, tmp_path / "sections", target_kb=4)
-    assert _names(written) == {"1. Alpha.md"}
-    text = _read(written, "1. Alpha.md")
+    assert _names(written) == {"1-alpha.md"}
+    text = _read(written, "1-alpha.md")
     assert "## 1.1. Beta" in text
     assert "## 1.2. Gamma" in text
 
@@ -51,9 +51,9 @@ def test_oversized_chapter_recurses_into_children(tmp_path: Path) -> None:
         f"## 1.2. Gamma\n\n{_paras(6)}\n"
     )
     written = split_into_sections(md, tmp_path / "sections", target_kb=2)
-    assert _names(written) == {"1. Alpha.md", "1.1. Beta.md", "1.2. Gamma.md"}
+    assert _names(written) == {"1-alpha.md", "1-1-beta.md", "1-2-gamma.md"}
     # The parent file keeps only its own intro; children are separate.
-    alpha = _read(written, "1. Alpha.md")
+    alpha = _read(written, "1-alpha.md")
     assert "## 1.1. Beta" not in alpha.split("---\n\n", 1)[1].replace("- [1.1. Beta]", "")
 
 
@@ -66,9 +66,9 @@ def test_adaptive_depth_per_branch(tmp_path: Path) -> None:
     )
     written = split_into_sections(md, tmp_path / "sections", target_kb=2)
     names = _names(written)
-    assert "1. Small.md" in names  # whole branch, one file
-    assert "1.1. Tidy.md" not in names
-    assert {"2. Big.md", "2.1. Huge.md", "2.2. Also.md"} <= names
+    assert "1-small.md" in names  # whole branch, one file
+    assert "1-1-tidy.md" not in names
+    assert {"2-big.md", "2-1-huge.md", "2-2-also.md"} <= names
 
 
 def test_flat_monster_partitions_into_parts(tmp_path: Path) -> None:
@@ -77,16 +77,16 @@ def test_flat_monster_partitions_into_parts(tmp_path: Path) -> None:
     md = f"# 1. Wall\n\n{_paras(40)}\n"
     written = split_into_sections(md, tmp_path / "sections", target_kb=2)
     names = _names(written)
-    assert "1. Wall.md" in names
-    part_names = {n for n in names if "(part " in n}
-    assert part_names and part_names == names - {"1. Wall.md"}
+    assert "1-wall.md" in names
+    part_names = {n for n in names if "-part-" in n}
+    assert part_names and part_names == names - {"1-wall.md"}
     # Part 2 carries part metadata and joins back to part 1.
     part2 = next(
         t for t in (p.read_text(encoding="utf-8") for p in written) if "part_index: 2" in t
     )
-    assert 'parent_id: "1. Wall.md"' in part2
+    assert 'parent_id: "1-wall.md"' in part2
     # Part 1 carries the count too.
-    part1 = _read(written, "1. Wall.md")
+    part1 = _read(written, "1-wall.md")
     assert "part_index: 1" in part1
     assert f"part_count: {len(names)}" in part1
     # Every part stays under ~target + one block of slack.
@@ -121,14 +121,14 @@ def test_single_oversized_block_stays_whole(tmp_path: Path) -> None:
     giant = _PARA * 40  # one block, no internal blank lines
     md = f"# 1. Wall\n\n{giant}\n"
     written = split_into_sections(md, tmp_path / "sections", target_kb=1)
-    assert _names(written) == {"1. Wall.md"}
+    assert _names(written) == {"1-wall.md"}
 
 
 def test_target_off_by_default(tmp_path: Path) -> None:
     """No target_kb -> every heading still becomes its own file (unchanged)."""
     md = f"# 1. Alpha\n\n{_paras(2)}\n\n## 1.1. Beta\n\n{_paras(2)}\n"
     written = split_into_sections(md, tmp_path / "sections")
-    assert _names(written) == {"1. Alpha.md", "1.1. Beta.md"}
+    assert _names(written) == {"1-alpha.md", "1-1-beta.md"}
 
 
 def test_target_kb_rejects_max_level_combo(tmp_path: Path) -> None:
@@ -141,6 +141,6 @@ def test_packed_output_keeps_identity_order(tmp_path: Path) -> None:
     """order stays 1..N in document order across parent/child/part mixes."""
     md = f"# 1. Small\n\n{_paras(2)}\n\n# 2. Big\n\n{_paras(2)}\n\n## 2.1. Huge\n\n{_paras(14)}\n"
     written = split_into_sections(md, tmp_path / "sections", target_kb=2)
-    assert "order: 1" in _read(written, "1. Small.md")
-    assert "order: 2" in _read(written, "2. Big.md")
-    assert "order: 3" in _read(written, "2.1. Huge.md")
+    assert "order: 1" in _read(written, "1-small.md")
+    assert "order: 2" in _read(written, "2-big.md")
+    assert "order: 3" in _read(written, "2-1-huge.md")

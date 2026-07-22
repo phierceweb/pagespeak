@@ -111,7 +111,7 @@ Marker occasionally emits the same heading twice in a row (`## Table of Contents
 
 ### Split-aware ref rewriting
 
-When `split_sections=True`, the splitter rewrites in-doc `[label](#slug)` refs (whether user-typed, kept by `cross_refs="keep"`, or produced by `cross_refs="remap"`) to relative paths to the corresponding section file — `[label](Quick Start.md)` (flat mode) or `[label](../1/Quick Start.md)` (nested mode) — so cross-section navigation works without a renderer.
+When `split_sections=True`, the splitter rewrites in-doc `[label](#slug)` refs (whether user-typed, kept by `cross_refs="keep"`, or produced by `cross_refs="remap"`) to relative paths to the corresponding section file — `[label](quick-start.md)` (flat mode) or `[label](../1/quick-start.md)` (nested mode) — so cross-section navigation works without a renderer.
 
 Refs to slugs that don't match any section heading, real anchors, and URLs are preserved unchanged. The consolidated `result.markdown` keeps the original `#slug` form so it renders correctly as a single document.
 
@@ -122,7 +122,7 @@ Opt-in via `split_sections=True` (plus optional `nested_split=True` and `split_m
 - **Default** (`split_min_level` unset): `to_markdown()` and the CLI resolve it to `1` — split on **every** heading, numbered and semantic alike. (Only a direct low-level `split_into_sections(min_level=None)` call keeps the old numbered-headings-only behavior.)
 - **Semantic mode** (`split_min_level=N`): also split on any heading at depth ≥ N. `split_min_level=2` is the right choice for product manuals that use `## Quick Start`-style headings. Numbered sections get `<number>. <title>.md` filenames; semantic ones use the heading text only (`Quick Start.md`).
 - **Capped depth** (`split_max_level=N`): headings deeper than N stay inline as content of their enclosing section instead of splitting out. `split_max_level=2` yields one file per H2 (section-level chunks) with `### `+ subsections inline — the fix for textbook-shaped docs (a single `# Title`, numbered `## N.M` sections, plus unnumbered back-matter H2) that otherwise over-fragment into thousands of tiny per-heading files. Opt-in per doc, since the right cap depends on how much content lives below the section heading.
-- **Nested mode** (`nested_split=True`): sections nest by heading hierarchy. Numbered sections use the number string for folder names (`1/1.4/1.4.1. RingCentral Triggers.md`); semantic sections use the sanitized heading title (`Quick Start/Foot Switches.md`). Top-level sections land in their own folder named after themselves.
+- **Nested mode** (`nested_split=True`): sections nest by heading hierarchy. Numbered sections use the number string for folder names (`1/1-4/1-4-1-workflow-triggers.md`); semantic sections use the slugified heading title (`quick-start/foot-switches.md`). Top-level sections land in their own folder named after themselves.
 - **`INDEX.md`** lists top-level sections.
 - **Breadcrumb header** — each non-root section file starts with `> ↑ [Root](root.md) / [Parent](parent.md)` so an LLM that retrieves a single chunk knows where it fits.
 - **Empty-body filter** — sections whose body has fewer than `min_body_chars` non-whitespace chars are dropped (default `30` from `to_markdown()`; `0` if calling `split_into_sections()` directly). This drops front-matter TOC entries that the backend promotes to `#`-headings, which would otherwise become empty "chapter shell" files.
