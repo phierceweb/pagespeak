@@ -15,6 +15,46 @@ from ._heading_sanity import is_toc_phantom_heading
 from ._split_parse import _PAGE_ANCHOR_LINE_RE, _Collision, _Section
 from ._split_write import _section_output_path
 
+_NAV_LINK_LINE_RE = re.compile(r"^\s*(?:[-*+]\s+)?\[[^\]]+\]\([^)\s]*\)\s*$")
+_NAV_LIST_MIN_LINKS = 2
+_NAV_LIST_MIN_RATIO = 0.8
+
+
+def _is_nav_list_body(section: _Section) -> bool:
+    """True if the section's body is essentially a table-of-contents link list."""
+    lines = [line for line in section.content_lines if line.strip()]
+    if not lines:
+        return False
+    links = sum(1 for line in lines if _NAV_LINK_LINE_RE.match(line))
+    return links >= _NAV_LIST_MIN_LINKS and links / len(lines) >= _NAV_LIST_MIN_RATIO
+
+
+def _reparent_nav_list_children(sections: list[_Section]) -> int:
+    """Stop a contents list from parenting the document.
+
+    When content headings sit one level below a `## Table of Contents`, level
+    nesting makes every real section its descendant — burying the manual and
+    leaving `INDEX.md` with nothing useful. Such a heading is navigation, never
+    a container, so its children are re-attached to its own parent (in document
+    order). The contents section itself is kept; nothing is dropped.
+
+    Returns the number of sections whose children were promoted.
+    """
+    promoted = 0
+    for section in list(sections):
+        if not section.children or not _is_nav_list_body(section):
+            continue
+        children = list(section.children)
+        section.children = []
+        parent = section.parent
+        for child in children:
+            child.parent = parent
+        if parent is not None:
+            at = parent.children.index(section) + 1
+            parent.children[at:at] = children
+        promoted += 1
+    return promoted
+
 
 def _has_substantive_body(section: _Section, *, min_body_chars: int) -> bool:
     """True if the section has enough non-trivial body content to justify

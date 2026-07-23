@@ -138,7 +138,12 @@ def _parse_any_heading(line: str, min_level: int) -> tuple[str, str | None, str]
         return None
     hashes, body = m.groups()
     num_m = NUMBER_PREFIX_RE.match(body)
-    if num_m:
+    # `## 6.3 mm stereo jack plug` is a spec label, not section 6.3 — same two
+    # guards `_parse_numbered_heading` applies. It stays a section, unnumbered.
+    is_measurement = bool(
+        MEASUREMENT_HEADING_RE.match(line) or MEASUREMENT_UNIT_HEADING_RE.match(line)
+    )
+    if num_m and not is_measurement:
         return hashes, num_m.group(1), num_m.group(2).strip()
     chap = _parse_chapter_heading(body)
     if chap:

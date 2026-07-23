@@ -39,7 +39,7 @@ from .services._heading_normalize import (  # noqa: E402
 )
 from .services._rerun import RERUN_STAGES  # noqa: E402
 
-__version__ = "0.9.0"
+__version__ = "0.10.0"
 __all__ = [
     "ChunkState",
     "CleanupLevel",

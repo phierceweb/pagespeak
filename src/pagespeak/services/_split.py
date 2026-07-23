@@ -26,6 +26,7 @@ from ._split_filter import (
     _drop_toc_phantom_sections,
     _filter_children_to_kept,
     _filter_english_subtrees,
+    _reparent_nav_list_children,
     _select_kept_sections,
 )
 from ._split_pack import pack_sections
@@ -233,6 +234,10 @@ def split_into_sections(
     sections, toc_phantom_count = _drop_toc_phantom_sections(sections)
     if toc_phantom_count:
         logger.info("split_dropped_toc_phantom_sections count=%d", toc_phantom_count)
+
+    promoted = _reparent_nav_list_children(sections)
+    if promoted:
+        logger.info("split_promoted_nav_list_children count=%d", promoted)
 
     # separate ancestor-only sections (parsed below min_level so
     # descendants can find their parent chain) from the writable list.

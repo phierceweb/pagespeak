@@ -2,6 +2,12 @@
 
 Notable changes to pagespeak, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## 0.10.0
+
+### Fixed
+- **Measurement headings are no longer parsed as section numbers in min-level split mode.** `## 6.3 mm stereo jack plug` became section `6.3` titled "mm stereo jack plug", stamping a false `section_number` and a `6.3/` folder in nested mode; it is now an unnumbered section. Numbered headings (`## 1.4 Configuration`) are unaffected. Re-split to apply.
+- **A heading whose body is a link list no longer parents sections.** Content headings one level below a `## Table of Contents` nested beneath it. Such children are re-attached to the contents heading's own parent, in document order; the contents section itself is kept. Logged as `split_promoted_nav_list_children`. Re-split to apply.
+
 ## 0.9.0
 
 ### Fixed

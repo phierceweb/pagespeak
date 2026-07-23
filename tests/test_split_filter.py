@@ -6,6 +6,9 @@ parsed sections become standalone files.
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from pagespeak.services._split import split_into_sections
 from pagespeak.services._split_filter import (
     _has_substantive_body,
     _select_kept_sections,
@@ -89,3 +92,41 @@ def test_nav_node_parent_preserved() -> None:
     kept, kept_ids = _select_kept_sections([parent, child], min_body_chars=30)
     assert id(parent) in kept_ids
     assert id(child) in kept_ids
+
+
+def test_toc_parent_does_not_swallow_real_sections(tmp_path: Path) -> None:
+    """A `## Table of Contents` whose body is only a link list must not become
+    the parent of the manual.
+
+    Real shape: content headings sit one level BELOW the contents heading, so
+    level nesting buries every real section under it and INDEX lists nothing
+    useful. The contents section is kept — only its children are re-attached to
+    its own parent.
+    """
+    md = (
+        "# BLUE BABY BOTTLE MANUAL\nManual intro body over the cutoff threshold.\n"
+        "## Table of Contents\n"
+        "- [Vocals](#vocals)\n"
+        "- [Drums](#drums)\n"
+        "### Vocals\nVocal placement body comfortably over the cutoff.\n"
+        "### Drums\nDrum placement body comfortably over the cutoff too.\n"
+    )
+    written = split_into_sections(md, tmp_path, nested=True, min_level=1, min_body_chars=0)
+    rel = sorted(str(p.relative_to(tmp_path)) for p in written)
+    # Vocals/Drums are siblings of the contents section, not nested beneath it.
+    assert not any("table-of-contents/" in r for r in rel), rel
+    assert any(r.endswith("vocals.md") for r in rel), rel
+    assert any(r.endswith("table-of-contents.md") for r in rel), rel
+
+
+def test_link_list_section_without_children_is_untouched(tmp_path: Path) -> None:
+    """A link-list section that parents nothing keeps its normal shape."""
+    md = (
+        "# Guide\nGuide intro body comfortably over the cutoff threshold.\n"
+        "## Related Links\n- [Site](#site)\n- [Docs](#docs)\n"
+        "## Real Section\nReal body comfortably over the cutoff threshold.\n"
+    )
+    written = split_into_sections(md, tmp_path, nested=True, min_level=1, min_body_chars=0)
+    names = sorted(p.name for p in written)
+    assert "related-links.md" in names
+    assert "real-section.md" in names
