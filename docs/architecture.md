@@ -120,6 +120,7 @@ Versioned LLM-facing prompts: each YAML (`diagram.yaml`, `heading_normalize.yaml
 | `services/_cleanup.py` | Cleanup pipeline (`off` / `basic` / `aggressive`). Each per-line transform exposed as a named function. | yes — only imported when `cleanup != "off"` |
 | `services/_cleanup_diagnose.py` | Detect→correct dispatch for whole-document heading cleanup: each demotion pass registers a diagnosis; passes fire only when their defect is present. | — |
 | `services/_cleanup_transforms.py` | Per-line cleanup transforms: garbage/HTML/whitespace stripping, numbered-heading promotion + depth-locking, emphasis stripping, list-bullet normalization, cross-ref repair, page-span/ref stripping, Marker-pollution removal. | — |
+| `services/_cleanup_html.py` | Embedded raw-HTML conversion: line-anchored well-formed `<table>`/`<figure>`/`<img>` blocks in prose → markdown via `utils/_html.py`; tag soup and fenced code untouched. | — |
 | `services/_cleanup_structure.py` | Structural cleanup passes: heading-slug + anchor-map building, page-ref remapping, TOC-phantom-heading demotion, recurring-scaffold-heading demotion, consecutive-heading dedup. | — |
 | `services/_cleanup_regexes.py` | Shared regex + constant table for the cleanup passes. | — |
 | `services/_frontmatter.py` | Template-frontmatter strip for DOCX sources (`strip_template_frontmatter`) — strips *input* boilerplate; distinct from `_provenance.py`, which emits *output* frontmatter. | — |

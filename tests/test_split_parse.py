@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from pagespeak.services._split_parse import _parse_any_heading, _parse_numbered_heading
+from pagespeak.services._split_parse import (
+    _parse_any_heading,
+    _parse_numbered_heading,
+    _parse_sections,
+)
 
 
 def test_measurement_heading_is_not_numbered_in_min_level_mode() -> None:
@@ -46,3 +50,46 @@ def test_measurement_guards_agree_across_both_parse_modes() -> None:
     for line in ("## 6.3 mm stereo jack plug", "### 48 V phantom power", "## 2.4 GHz band"):
         assert _parse_numbered_heading(line) is None
         assert (_parse_any_heading(line, min_level=2) or (None, None, None))[1] is None
+
+
+def test_image_only_preamble_folds_into_first_section() -> None:
+    """A preamble with no prose (a cover logo) must not become its own
+    retrievable section — it folds into the first real section instead."""
+    lines = [
+        "![Vendor logo, decorative.](images/logo.jpeg)",
+        "",
+        "# Setup",
+        "Setup body text.",
+    ]
+    sections = _parse_sections(lines, min_level=1)
+    assert [s.title for s in sections] == ["Setup"]
+    assert any("logo.jpeg" in line for line in sections[0].content_lines)
+
+
+def test_prose_preamble_still_becomes_front_matter() -> None:
+    """A preamble carrying real prose keeps its own Front Matter section."""
+    lines = [
+        "**Title:** Widget Guide",
+        "![Cover art.](images/cover.jpeg)",
+        "",
+        "# Setup",
+        "Setup body text.",
+    ]
+    sections = _parse_sections(lines, min_level=1)
+    assert [s.title for s in sections] == ["Front Matter", "Setup"]
+    joined = "\n".join(sections[0].content_lines)
+    assert "**Title:** Widget Guide" in joined and "cover.jpeg" in joined
+
+
+def test_link_artifact_only_preamble_folds() -> None:
+    """Empty-link debris (`[ ]`) is not prose; alone with images it folds."""
+    lines = [
+        "[ ]",
+        "![Logo.](images/logo.png)",
+        "",
+        "# Intro",
+        "Intro body text.",
+    ]
+    sections = _parse_sections(lines, min_level=1)
+    assert [s.title for s in sections] == ["Intro"]
+    assert any("logo.png" in line for line in sections[0].content_lines)

@@ -390,3 +390,17 @@ def test_finding_is_frozen() -> None:
     except AttributeError:
         return
     raise AssertionError("AuditFinding must be frozen")
+
+
+def test_bold_inline_code_is_not_shattered_emphasis() -> None:
+    """`**`⌘ + S`**` is legitimate bold-wrapped inline code. Blanking the code
+    span to an empty string fused the surrounding markers into `****` and
+    flagged clean prose; the span must blank to a spacer instead."""
+    text = "Save with **`⌘ + S`** or tick **`Receive Beta Updates`** in settings.\n"
+    assert check_shattered_emphasis(text) == []
+
+
+def test_real_shattered_run_still_flags() -> None:
+    text = "The compound ****CO****2**** dissolves readily.\n"
+    findings = check_shattered_emphasis(text)
+    assert len(findings) == 1 and findings[0].check == "shattered_emphasis"

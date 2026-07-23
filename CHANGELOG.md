@@ -2,6 +2,16 @@
 
 Notable changes to pagespeak, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## 0.11.0
+
+### Added
+- **Cleanup converts well-formed embedded HTML blocks to markdown.** A raw `<table>` of real content or a `<figure><img>`/`<img>` block left in prose by the backend becomes a pipe table / markdown image (via the existing `utils/_html.py` converter). Narrow by design: only line-anchored, balanced blocks outside fenced code; tag soup and mid-line tag mentions are untouched. New module `services/_cleanup_html.py`.
+
+### Fixed
+- **The `shattered_emphasis` audit no longer flags bold-wrapped inline code.** Blanking a `` `code` `` span to the empty string fused surrounding `**` markers into `****`, flagging clean prose; spans now blank to a spacer. Corpus findings drop from 697 to 39 — the remainder are real.
+- **A quiz re-render clears its prior question files.** Re-exporting a quiz with fewer questions left the surplus `Question NNN.md` files from the previous render on disk (stale content, still delivered), and a stale case-variant file could capture a fresh write's name on a case-insensitive filesystem. The per-question writer now clears the sections dir before writing, same as the generic splitter.
+- **A decoration-only preamble no longer becomes its own section.** A document whose only pre-heading content is imagery (a cover logo) or empty-link debris got a `Front Matter` section containing just that — a junk retrievable chunk. Such a preamble now folds into the first section; a preamble carrying prose (title page, copyright, abstract) still gets its own `Front Matter`. Re-split to apply.
+
 ## 0.10.0
 
 ### Fixed

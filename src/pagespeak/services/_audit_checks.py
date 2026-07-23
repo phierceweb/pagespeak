@@ -77,11 +77,15 @@ def _prose_lines(text: str) -> list[tuple[int, str]]:
     """(1-based line number, line) pairs outside fenced code, with inline
     `code` spans blanked. A tag or entity DOCUMENTED in inline code
     (`` `<td>` ``, `` `&amp;lt;` `` — common in HTML/markdown manuals) is
-    verbatim content, not a defect, exactly like a fenced code block."""
+    verbatim content, not a defect, exactly like a fenced code block.
+
+    Spans blank to a single space, never to the empty string: bold-wrapped
+    inline code (``**`⌘ + S`**``) would otherwise fuse into ``****`` and read
+    as shattered emphasis."""
     lines = text.splitlines()
     fenced = _fenced_lines(lines)
     return [
-        (i + 1, _INLINE_CODE_RE.sub("", line)) for i, line in enumerate(lines) if i not in fenced
+        (i + 1, _INLINE_CODE_RE.sub(" ", line)) for i, line in enumerate(lines) if i not in fenced
     ]
 
 

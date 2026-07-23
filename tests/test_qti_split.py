@@ -133,3 +133,26 @@ def test_quiz_master_frontmatter_counts_questions() -> None:
     assert 'quiz_id: "sample-quiz-2"' in fm
     assert 'source_file: "quiz.pdf"' in fm
     assert "question_count: 3" in fm
+
+
+def test_resplit_clears_stale_question_files(tmp_path):
+    """A re-render leaves no surplus files from a shrunk re-export, and no
+    stale case-variant capturing a fresh write's name."""
+    stale_surplus = tmp_path / "Question 099.md"
+    stale_surplus.write_text("stale surplus question\n", encoding="utf-8")
+    stale_variant = tmp_path / "question 001.md"
+    stale_variant.write_text("stale variant\n", encoding="utf-8")
+
+    md = (
+        "# Sample Quiz\n\n"
+        "## Question 1\n_Multiple choice · 1 pt_\nFresh body one.\n\n"
+        "## Question 2\n_Multiple choice · 1 pt_\nFresh body two.\n"
+    )
+    written = split_quiz_doc(md, tmp_path, source_type=None, source_label=None)
+    names = sorted(p.name for p in tmp_path.glob("*.md"))
+    assert "Question 099.md" not in names
+    assert names == ["INDEX.md", "Question 001.md", "Question 002.md"]
+    q1 = (tmp_path / "Question 001.md").read_text(encoding="utf-8")
+    assert "Fresh body one." in q1
+    assert "stale" not in q1
+    assert all(p.exists() for p in written)

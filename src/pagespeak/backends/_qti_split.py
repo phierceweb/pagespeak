@@ -13,6 +13,7 @@ import re
 from pathlib import Path
 
 from ..services._provenance import build_frontmatter
+from ..services._split import _clear_prior_split
 
 _QUESTION_RE = re.compile(r"^## Question (\d+)\b")
 # The per-question metadata italic line: `_<type>_` or `_<type> · <points>_`
@@ -87,6 +88,9 @@ def split_quiz_into_questions(
     """
     sections = Path(sections_dir)
     sections.mkdir(parents=True, exist_ok=True)
+    # Clear the prior render: no surplus files from a shrunk re-export, no
+    # stale case-variant capturing a fresh write's name.
+    _clear_prior_split(sections)
 
     blocks: list[tuple[int, list[str]]] = []
     current: list[str] | None = None

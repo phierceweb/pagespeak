@@ -65,6 +65,20 @@ PREAMBLE_TITLE = "Front Matter"
 """Heading for the synthetic section holding pre-first-heading content (title
 page, copyright, epigraph), which otherwise belongs to no section."""
 
+_EMPTY_LINK_ARTIFACT_RE = re.compile(r"^\[\s*\]$")
+
+
+def _preamble_has_prose(lines: list[str]) -> bool:
+    """True if the preamble carries any line that is neither an image ref nor
+    empty-link debris — the gate between a real Front Matter section and pure
+    decoration."""
+    for line in lines:
+        s = line.strip()
+        if not s or s.startswith("![") or _EMPTY_LINK_ARTIFACT_RE.match(s):
+            continue
+        return True
+    return False
+
 
 def _parse_chapter_heading(body: str) -> tuple[str, str] | None:
     """Match `Chapter N <title>` style headings. Returns `(number, title)`
@@ -417,18 +431,22 @@ def _parse_sections(
 
     # Inserted after the loop so it never participates in parent attribution.
     if sections and any(line.strip() for line in preamble):
-        sections.insert(
-            0,
-            _Section(
-                level=1,
-                number=None,
-                title=PREAMBLE_TITLE,
-                heading_line=f"# {PREAMBLE_TITLE}",
-                content_lines=preamble,
-                is_preamble=True,
-            ),
-        )
-
+        if _preamble_has_prose(preamble):
+            sections.insert(
+                0,
+                _Section(
+                    level=1,
+                    number=None,
+                    title=PREAMBLE_TITLE,
+                    heading_line=f"# {PREAMBLE_TITLE}",
+                    content_lines=preamble,
+                    is_preamble=True,
+                ),
+            )
+        else:
+            # Decoration only (a cover logo, empty-link debris): fold into the
+            # first section rather than standing as a retrievable chunk.
+            sections[0].content_lines[:0] = preamble
     return sections
 
 

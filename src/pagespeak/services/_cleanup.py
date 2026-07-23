@@ -16,6 +16,7 @@ from typing import Literal
 
 from pf_core.log import get_logger
 
+from ._cleanup_html import convert_embedded_html_blocks
 from ._cleanup_regexes import (
     IMAGE_ONLY_RE,
     LEADING_WS_RE,
@@ -226,6 +227,9 @@ def cleanup_markdown(
     """
     if level == "off":
         return text
+
+    # Before entity decoding, while the HTML is still pristine for the parser.
+    text = convert_embedded_html_blocks(text)
 
     # Decode HTML entities the backend left in the markdown (`T3 &lt; 34F` →
     # `T3 < 34F`) so every downstream pass + the RAG sees the real char. Always
