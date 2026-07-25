@@ -2,6 +2,12 @@
 
 Notable changes to pagespeak, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## 0.12.0
+
+### Changed
+- **Remote-image download runs on pf-core's fetch core** (`pf_core.fetch.images`; floor raised to `~=0.13.0`). `backends/_remote_images.py` is now a policy wrapper: `PAGESPEAK_DOWNLOAD_REMOTE_IMAGES`, `PAGESPEAK_REMOTE_IMAGE_TIMEOUT_S`, `PAGESPEAK_REMOTE_IMAGE_MAX_BYTES`, and the on-disk filenames are unchanged. New behavior inherited: a failed fetch is retried (5xx / 429 / network — permanent 4xx still fails fast), the size cap aborts mid-read instead of after the full download, `<img src="http…">` tags are localized alongside markdown refs, and the SSRF address check now has an opt-out (pf-core's `URL_FETCH_ALLOW_PRIVATE=1` — see [SECURITY.md](SECURITY.md)). Per-image failures log as `image_localize_failed`.
+- `httpx` is no longer a direct dependency (no module imports it); it still arrives via `pf-core[llm]`.
+
 ## 0.11.0
 
 ### Added

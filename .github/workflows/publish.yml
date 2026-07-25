@@ -7,7 +7,7 @@
 # repo pagespeak, workflow publish.yml, environment pypi. If that registration is
 # missing or mismatched the upload step fails (the build step still succeeds, so
 # the dist is preserved as a CI artifact).
-# (pf-core~=0.2.0 already resolves from PyPI — no pf-core-first step needed.)
+# (the pinned pf-core release resolves from PyPI — no pf-core-first step needed.)
 name: publish
 on:
   push:

@@ -1,13 +1,25 @@
+"""Wrapper-level tests for the remote-image localizer.
+
+The download / naming / retarget / SSRF mechanics live in
+`pf_core.fetch.images` + `pf_core.fetch` and are tested there. What's pinned
+here is pagespeak's side: the `PAGESPEAK_*` knobs reaching pf-core as explicit
+kwargs, the on-disk filenames the vision pass and the `_local_images` mirror
+depend on, and the pipeline wiring.
+"""
+
 from __future__ import annotations
 
+import urllib.error
+from email.message import Message
 from pathlib import Path
 
-import httpx
 import pytest
+from pf_core.exceptions import ClientError
+from pf_core.fetch import Fetcher
 
 from pagespeak.backends._remote_images import (
-    _is_image_url,
     _local_name,
+    _remote_image_max_bytes,
     _remote_image_timeout_s,
     download_remote_images,
     download_remote_images_enabled,
@@ -16,54 +28,42 @@ from pagespeak.backends._remote_images import (
 _PNG = b"\x89PNG\r\n\x1a\n" + b"fake-png-body"
 
 
-# ── Fake httpx client ──────────────────────────────────────────────────────
+def _http_error(code: int) -> urllib.error.HTTPError:
+    return urllib.error.HTTPError("https://x.com/img", code, "nope", Message(), None)
 
 
-class _FakeResponse:
-    def __init__(self, content: bytes) -> None:
-        self.content = content
-        self.is_redirect = False
-
-    def raise_for_status(self) -> None:  # always 200 in the happy path
-        return None
+# ── Fake fetcher (the module-level factory is the seam) ────────────────────
 
 
-class _FakeClient:
-    """Stands in for httpx.Client. `responses` maps url → bytes | Exception."""
+class _FakeFetcher:
+    """Stands in for pf-core's Fetcher. `responses` maps url → bytes | Exception."""
 
     def __init__(self, responses: dict[str, bytes | Exception]) -> None:
         self._responses = responses
         self.calls: list[str] = []
+        self.timeouts: list[float] = []
 
-    def __enter__(self) -> _FakeClient:
-        return self
-
-    def __exit__(self, *_: object) -> bool:
-        return False
-
-    def get(self, url: str) -> _FakeResponse:
+    def get_bytes(self, url: str, *, timeout_s: float = 0.0) -> tuple[str, bytes]:
         self.calls.append(url)
+        self.timeouts.append(timeout_s)
         r = self._responses[url]
         if isinstance(r, Exception):
             raise r
-        return _FakeResponse(r)
+        return url, r
 
 
-def _patch_client(
+def _patch_fetcher(
     monkeypatch: pytest.MonkeyPatch, responses: dict[str, bytes | Exception]
-) -> _FakeClient:
-    client = _FakeClient(responses)
+) -> _FakeFetcher:
+    fetcher = _FakeFetcher(responses)
     monkeypatch.setattr(
-        "pagespeak.backends._remote_images.httpx.Client",
-        lambda *a, **k: client,
+        "pagespeak.backends._remote_images._make_fetcher",
+        lambda: fetcher,
     )
-    # The mocked tests use safe public URLs; bypass the SSRF DNS resolution so
-    # they stay network-free (the guard itself is covered by the SSRF tests).
-    monkeypatch.setattr("pagespeak.backends._remote_images._host_is_blocked", lambda host: False)
-    return client
+    return fetcher
 
 
-# ── _local_name ────────────────────────────────────────────────────────────
+# ── _local_name (pf-core's default namer, via the alias) ───────────────────
 
 
 def test_local_name_joins_segments_after_images() -> None:
@@ -82,26 +82,6 @@ def test_local_name_collision_resistant_across_subpaths() -> None:
     assert _local_name(a) != _local_name(b)
 
 
-# ── _is_image_url ──────────────────────────────────────────────────────────
-
-
-def test_is_image_url_true_for_image_extensions() -> None:
-    assert _is_image_url("https://x.com/a.png")
-    assert _is_image_url("https://x.com/a.SVG")
-
-
-def test_is_image_url_false_for_non_image() -> None:
-    assert not _is_image_url("https://x.com/page.html")
-    assert not _is_image_url("https://x.com/style.css")
-
-
-def test_is_image_url_true_for_extensionless_cdn_url() -> None:
-    # Some help sites serve figures at extensionless opaque CDN URLs;
-    # a markdown `![]()` ref already guarantees image intent, so accept them.
-    assert _is_image_url("https://cdn.example.com/assets/v2/web/3609db94-21bc")
-    assert _is_image_url("https://cdn.example.com/img/abc123")
-
-
 # ── download_remote_images ─────────────────────────────────────────────────
 
 
@@ -110,7 +90,7 @@ def test_download_noop_without_remote_refs(tmp_path: Path) -> None:
     out, saved = download_remote_images(md, tmp_path)
     assert out == md
     assert saved == []
-    # No client opened, no images/ dir created.
+    # Nothing fetched, no images/ dir created.
     assert not (tmp_path / "images").exists()
 
 
@@ -122,7 +102,7 @@ def test_download_pulls_images_and_retargets(
         "![a](https://docs.x.com/images/getting-started/a.png)\n\n"
         "![b](https://docs.x.com/images/eq/b.png)\n"
     )
-    _patch_client(
+    _patch_fetcher(
         monkeypatch,
         {
             "https://docs.x.com/images/getting-started/a.png": _PNG,
@@ -144,10 +124,10 @@ def test_download_pulls_images_and_retargets(
 
 def test_download_skips_non_image_urls(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     md = "![link](https://x.com/page.html)\n![img](https://x.com/images/p.png)\n"
-    client = _patch_client(monkeypatch, {"https://x.com/images/p.png": _PNG})
+    fetcher = _patch_fetcher(monkeypatch, {"https://x.com/images/p.png": _PNG})
     out, saved = download_remote_images(md, tmp_path)
 
-    assert client.calls == ["https://x.com/images/p.png"]
+    assert fetcher.calls == ["https://x.com/images/p.png"]
     assert {p.name for p in saved} == {"p.png"}
     # Non-image remote URL is left untouched.
     assert "](https://x.com/page.html)" in out
@@ -161,7 +141,7 @@ def test_download_extensionless_url_sniffs_png_extension(
     correct."""
     url = "https://cdn.example.com/assets/v2/web/abc123"
     md = f"![fig]({url})\n"
-    _patch_client(monkeypatch, {url: _PNG})
+    _patch_fetcher(monkeypatch, {url: _PNG})
     out, saved = download_remote_images(md, tmp_path)
 
     assert {p.name for p in saved} == {"web-abc123.png"}
@@ -175,7 +155,7 @@ def test_download_extensionless_url_sniffs_jpeg_extension(
 ) -> None:
     url = "https://cdn.example.com/assets/v2/web/jpgone"
     md = f"![fig]({url})\n"
-    _patch_client(monkeypatch, {url: b"\xff\xd8\xff\xe0" + b"jfif-body"})
+    _patch_fetcher(monkeypatch, {url: b"\xff\xd8\xff\xe0" + b"jfif-body"})
     out, saved = download_remote_images(md, tmp_path)
 
     assert {p.name for p in saved} == {"web-jpgone.jpg"}
@@ -191,30 +171,37 @@ def test_download_reuses_extensionless_sniffed_file(
     images_dir.mkdir()
     (images_dir / "web-cached1.png").write_bytes(_PNG)
 
-    client = _patch_client(monkeypatch, {})  # any fetch would KeyError
+    fetcher = _patch_fetcher(monkeypatch, {})  # any fetch would KeyError
     out, saved = download_remote_images(md, tmp_path)
 
-    assert client.calls == []  # the already-sniffed local file is reused
+    assert fetcher.calls == []  # the already-sniffed local file is reused
     assert {p.name for p in saved} == {"web-cached1.png"}
     assert "](images/web-cached1.png)" in out
 
 
+@pytest.mark.parametrize(
+    "failure",
+    [
+        pytest.param(_http_error(403), id="http-error"),
+        pytest.param(urllib.error.URLError("connection refused"), id="network-error"),
+        pytest.param(ClientError("response exceeded max_bytes"), id="over-max-bytes"),
+    ],
+)
 def test_download_keeps_remote_ref_on_failure(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: Exception
 ) -> None:
     good = "https://x.com/images/ok.png"
     bad = "https://x.com/images/forbidden.png"
     md = f"![ok]({good})\n![no]({bad})\n"
-    _patch_client(
-        monkeypatch,
-        {good: _PNG, bad: httpx.RequestError("403 Forbidden")},
-    )
+    _patch_fetcher(monkeypatch, {good: _PNG, bad: failure})
     out, saved = download_remote_images(md, tmp_path)
 
     assert {p.name for p in saved} == {"ok.png"}
     assert "](images/ok.png)" in out
-    # Failed download keeps its remote URL so the ref still resolves.
+    # Failed download keeps its remote URL so the ref still resolves, and
+    # nothing partial is written.
     assert f"]({bad})" in out
+    assert not (tmp_path / "images" / "forbidden.png").exists()
 
 
 def test_download_reuses_existing_file_without_fetch(
@@ -227,10 +214,10 @@ def test_download_reuses_existing_file_without_fetch(
     images_dir.mkdir()
     (images_dir / "cached.png").write_bytes(_PNG)
 
-    client = _patch_client(monkeypatch, {})  # empty: any .get would KeyError
+    fetcher = _patch_fetcher(monkeypatch, {})  # empty: any fetch would KeyError
     out, saved = download_remote_images(md, tmp_path)
 
-    assert client.calls == []  # no network call for a cached file
+    assert fetcher.calls == []  # no network call for a cached file
     assert "](images/cached.png)" in out
     assert {p.name for p in saved} == {"cached.png"}
 
@@ -244,12 +231,12 @@ def test_download_resolves_relative_ref_against_base_url(
     md = "# Doc\n\n![fig](../Storage/pub/topic/fig.png)\n"
     base = "https://site.com/manual/HTML/welcome.html"
     resolved = "https://site.com/manual/Storage/pub/topic/fig.png"
-    client = _patch_client(monkeypatch, {resolved: _PNG})
+    fetcher = _patch_fetcher(monkeypatch, {resolved: _PNG})
 
     out, saved = download_remote_images(md, tmp_path, base_url=base)
 
     # The `../` climbed past HTML/ to manual/, and the absolute URL was fetched.
-    assert client.calls == [resolved]
+    assert fetcher.calls == [resolved]
     assert {p.name for p in saved} == {"topic-fig.png"}
     assert (tmp_path / "images" / "topic-fig.png").read_bytes() == _PNG
     # The original relative ref is retargeted to the local copy.
@@ -261,12 +248,12 @@ def test_download_relative_ref_untouched_without_base_url(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     md = "![fig](../Storage/pub/fig.png)\n"
-    client = _patch_client(monkeypatch, {})  # any fetch would KeyError
+    fetcher = _patch_fetcher(monkeypatch, {})  # any fetch would KeyError
 
     out, saved = download_remote_images(md, tmp_path)
 
     # No base_url → relative ref left exactly as-is, nothing fetched.
-    assert client.calls == []
+    assert fetcher.calls == []
     assert saved == []
     assert "](../Storage/pub/fig.png)" in out
     assert not (tmp_path / "images").exists()
@@ -276,12 +263,12 @@ def test_download_base_url_does_not_rewrite_local_images_ref(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     md = "![x](images/already-local.png)\n"
-    client = _patch_client(monkeypatch, {})
+    fetcher = _patch_fetcher(monkeypatch, {})
 
     out, saved = download_remote_images(md, tmp_path, base_url="https://site.com/m/p.html")
 
     # Our own extracted-asset refs must never be treated as downloadable.
-    assert client.calls == []
+    assert fetcher.calls == []
     assert saved == []
     assert "](images/already-local.png)" in out
 
@@ -291,11 +278,11 @@ def test_download_base_url_skips_relative_non_image(
 ) -> None:
     md = "![doc](../other/page.html)\n![img](../Storage/p.png)\n"
     resolved = "https://site.com/m/Storage/p.png"
-    client = _patch_client(monkeypatch, {resolved: _PNG})
+    fetcher = _patch_fetcher(monkeypatch, {resolved: _PNG})
 
     out, saved = download_remote_images(md, tmp_path, base_url="https://site.com/m/HTML/x.html")
 
-    assert client.calls == [resolved]
+    assert fetcher.calls == [resolved]
     assert {p.name for p in saved} == {"Storage-p.png"}
     assert "](../other/page.html)" in out  # non-image relative ref untouched
 
@@ -305,7 +292,7 @@ def test_download_base_url_handles_encoded_spaces(
 ) -> None:
     md = "![ui](../Storage/topic/1%20main%20ui.png)\n"
     resolved = "https://site.com/m/Storage/topic/1%20main%20ui.png"
-    _patch_client(monkeypatch, {resolved: _PNG})
+    _patch_fetcher(monkeypatch, {resolved: _PNG})
 
     out, saved = download_remote_images(md, tmp_path, base_url="https://site.com/m/HTML/x.html")
 
@@ -319,7 +306,7 @@ def test_download_base_url_still_handles_absolute_http(
     md = "![a](https://docs.x.com/images/eq/a.png)\n![b](../Storage/b.png)\n"
     abs_url = "https://docs.x.com/images/eq/a.png"
     rel_resolved = "https://site.com/m/Storage/b.png"
-    _patch_client(monkeypatch, {abs_url: _PNG, rel_resolved: _PNG})
+    _patch_fetcher(monkeypatch, {abs_url: _PNG, rel_resolved: _PNG})
 
     out, saved = download_remote_images(md, tmp_path, base_url="https://site.com/m/HTML/x.html")
 
@@ -352,24 +339,41 @@ def test_timeout_defaults_to_30(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_max_bytes_reads_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    from pagespeak.backends._remote_images import _remote_image_max_bytes
-
     monkeypatch.setenv("PAGESPEAK_REMOTE_IMAGE_MAX_BYTES", "1234")
     assert _remote_image_max_bytes() == 1234
 
 
-def test_download_skips_oversized_image(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A remote image larger than PAGESPEAK_REMOTE_IMAGE_MAX_BYTES is skipped:
-    its ref is kept remote and nothing is written. Bounds an oversized/hostile
-    image from filling disk or the downstream vision payload."""
-    monkeypatch.setenv("PAGESPEAK_REMOTE_IMAGE_MAX_BYTES", "8")
-    url = "https://x.com/images/huge.png"
-    md = f"![big]({url})\n"
-    _patch_client(monkeypatch, {url: _PNG})  # _PNG is > 8 bytes
-    out, saved = download_remote_images(md, tmp_path)
-    assert saved == []
-    assert f"]({url})" in out
-    assert not (tmp_path / "images" / "huge.png").exists()
+def test_download_pins_env_timeout_on_every_fetch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The operator's timeout must reach pf-core's localizer, which would
+    otherwise apply its own per-call default."""
+    monkeypatch.setenv("PAGESPEAK_REMOTE_IMAGE_TIMEOUT_S", "90")
+    urls = ["https://x.com/images/a.png", "https://x.com/images/b.png"]
+    md = "".join(f"![f]({u})\n" for u in urls)
+    fetcher = _patch_fetcher(monkeypatch, dict.fromkeys(urls, _PNG))
+
+    download_remote_images(md, tmp_path)
+
+    assert fetcher.timeouts == [90, 90]
+
+
+def test_download_passes_env_max_bytes_to_fetcher(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The size cap is enforced by pf-core's Fetcher, so the env value has to be
+    handed to its constructor."""
+    from pagespeak.backends import _remote_images
+
+    monkeypatch.setenv("PAGESPEAK_REMOTE_IMAGE_MAX_BYTES", "4096")
+    seen: dict[str, object] = {}
+
+    def _spy(**kwargs: object) -> object:
+        seen.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(_remote_images, "Fetcher", _spy)
+    _remote_images._make_fetcher()
+
+    assert seen == {"max_bytes": 4096}
 
 
 # ── convert-level integration (HTML path) ──────────────────────────────────
@@ -391,7 +395,7 @@ def test_convert_html_downloads_remote_images(
     class _R:
         text_content = "# Guide\n\n![fig](https://docs.x.com/images/intro/fig.png)\n"
 
-    _patch_client(monkeypatch, {"https://docs.x.com/images/intro/fig.png": _PNG})
+    _patch_fetcher(monkeypatch, {"https://docs.x.com/images/intro/fig.png": _PNG})
     with patch("markitdown.MarkItDown") as MD:
         MD.return_value.convert.return_value = _R()
         result = convert_with_markitdown(src, output_dir=tmp_path)
@@ -442,7 +446,7 @@ def test_convert_html_resolves_relative_refs_with_base_url(
         text_content = "# Guide\n\n![fig](../Storage/topic/fig.png)\n"
 
     resolved = "https://site.com/manual/Storage/topic/fig.png"
-    _patch_client(monkeypatch, {resolved: _PNG})
+    _patch_fetcher(monkeypatch, {resolved: _PNG})
     with patch("markitdown.MarkItDown") as MD:
         MD.return_value.convert.return_value = _R()
         result = convert_with_markitdown(
@@ -456,43 +460,23 @@ def test_convert_html_resolves_relative_refs_with_base_url(
     assert "../Storage" not in result.markdown
 
 
-# ── SSRF guard ──────────────────────────────────────────────────────────────
+# ── SSRF guard (end to end, real fetcher) ──────────────────────────────────
 
 
-@pytest.mark.parametrize(
-    "host",
-    ["127.0.0.1", "10.0.0.1", "192.168.1.1", "169.254.169.254", "::1", "0.0.0.0"],
-)
-def test_host_is_blocked_rejects_internal_addresses(host: str) -> None:
-    from pagespeak.backends._remote_images import _host_is_blocked
-
-    assert _host_is_blocked(host) is True
-
-
-@pytest.mark.parametrize("host", ["8.8.8.8", "1.1.1.1"])
-def test_host_is_blocked_allows_public_addresses(host: str) -> None:
-    from pagespeak.backends._remote_images import _host_is_blocked
-
-    assert _host_is_blocked(host) is False
-
-
-def test_host_is_blocked_fails_closed_on_unresolvable(monkeypatch) -> None:
-    """A host that won't resolve is blocked (fail closed), not fetched."""
-    import socket as _socket
-
-    from pagespeak.backends import _remote_images
-
-    def _boom(*a: object, **k: object) -> None:
-        raise _socket.gaierror("nope")
-
-    monkeypatch.setattr(_remote_images.socket, "getaddrinfo", _boom)
-    assert _remote_images._host_is_blocked("internal.example") is True
-
-
-def test_download_skips_ssrf_internal_url(tmp_path: Path) -> None:
+def test_download_skips_ssrf_internal_url(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """An image ref pointed at a loopback/metadata IP is never fetched — the
-    ref is left as-is and nothing is written (no GET reaches the host)."""
+    ref is left as-is and nothing is written. The fetcher is deliberately NOT
+    seamed out: pf-core's guard has to be live in the one this wrapper builds.
+    (Which address classes it covers is pinned in pf-core's own tests.)"""
+    monkeypatch.delenv("URL_FETCH_ALLOW_PRIVATE", raising=False)
+
+    def _never_requested(*_a: object, **_k: object) -> object:
+        raise AssertionError("an internal URL reached the request seam")
+
+    monkeypatch.setattr(Fetcher, "_open", _never_requested)
     md = "![x](http://127.0.0.1:8080/secret.png)\n"
     out_md, saved = download_remote_images(md, tmp_path)
     assert saved == []
     assert out_md == md
+    # The ref was a real target (dir created), so the guard is what stopped it.
+    assert (tmp_path / "images").exists()

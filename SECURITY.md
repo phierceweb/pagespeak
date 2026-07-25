@@ -31,7 +31,10 @@ Conversion runs third-party parsers (Marker, Docling, MarkItDown, python-docx, p
 
 ### Remote image fetching is SSRF-guarded (on by default)
 
-HTML conversion downloads remote `<img>` URLs so the vision pass can see the figures (`PAGESPEAK_DOWNLOAD_REMOTE_IMAGES=1`, the default). Because the source HTML may be untrusted, the downloader **refuses any URL that resolves to a private, loopback, link-local, reserved, multicast, or unspecified address, fails closed on hosts it cannot resolve, and re-checks every redirect hop** — so a malicious document cannot steer it at `localhost`, your private network, or a cloud metadata endpoint (e.g. `169.254.169.254`). Set `PAGESPEAK_DOWNLOAD_REMOTE_IMAGES=0` to disable remote fetching entirely.
+HTML conversion downloads remote `<img>` URLs so the vision pass can see the figures (`PAGESPEAK_DOWNLOAD_REMOTE_IMAGES=1`, the default). Because the source HTML may be untrusted, the fetch runs through pf-core's guarded fetch core (`pf_core.fetch`), which **accepts only `http`/`https` URLs, refuses any URL that resolves to a private, loopback, link-local, reserved, multicast, or unspecified address, fails closed on hosts it cannot resolve, and re-checks every redirect hop** — so a malicious document cannot steer it at `localhost`, your private network, or a cloud metadata endpoint (e.g. `169.254.169.254`). Each response is also size-capped (`PAGESPEAK_REMOTE_IMAGE_MAX_BYTES`): an oversized figure is abandoned mid-read and its ref left remote.
+
+- Set `PAGESPEAK_DOWNLOAD_REMOTE_IMAGES=0` to disable remote fetching entirely.
+- The address check has a deliberate opt-out: pf-core's `URL_FETCH_ALLOW_PRIVATE=1` allows non-public targets (for operators who intentionally fetch internal hosts). Do not set it while converting untrusted documents — the scheme check still applies, but nothing else does.
 
 ### API keys and secrets
 

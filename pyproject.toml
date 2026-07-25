@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pagespeak"
-version = "0.11.0"
+version = "0.12.0"
 description = "Convert PDF, Word, and other documents into retrieval-ready markdown — one document or a whole corpus, diagrams turned to Mermaid."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -25,16 +25,16 @@ classifiers = [
 dependencies = [
     "anthropic>=0.39.0",
     "beautifulsoup4>=4.12",
-    "httpx>=0.25",
     "markdownify>=0.13",
     "markitdown[docx,pptx,xlsx,outlook]>=0.0.1a3",
-    "pf-core[image-phash,tracking,llm]~=0.11.0",
+    "pf-core[image-phash,tracking,llm]~=0.13.0",
     "typer>=0.12.0",
 ]
 # beautifulsoup4 + markdownify back the inline-HTML→markdown utility
 # (utils/_html.py, used by the QTI backend). Both were already present
 # transitively via markitdown; declared directly since we import them.
-# ImageHash + Pillow arrive transitively via the pf-core[image-phash] extra.
+# ImageHash + Pillow arrive transitively via the pf-core[image-phash] extra;
+# httpx via pf-core[llm] (no module here imports it directly).
 
 [project.optional-dependencies]
 pdf = [

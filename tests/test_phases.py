@@ -196,27 +196,12 @@ def test_from_cleanup_reruns_not_resumes(tmp_path: Path) -> None:
 _PNG = b"\x89PNG\r\n\x1a\n" + b"body"
 
 
-class _FakeResp:
-    def __init__(self, content: bytes) -> None:
-        self.content = content
-        self.is_redirect = False
-
-    def raise_for_status(self) -> None:
-        return None
-
-
-class _FakeClient:
+class _FakeFetcher:
     def __init__(self, responses: dict[str, bytes]) -> None:
         self._r = responses
 
-    def __enter__(self) -> _FakeClient:
-        return self
-
-    def __exit__(self, *_: object) -> bool:
-        return False
-
-    def get(self, url: str) -> _FakeResp:
-        return _FakeResp(self._r[url])
+    def get_bytes(self, url: str, *, timeout_s: float = 0.0) -> tuple[str, bytes]:
+        return url, self._r[url]
 
 
 def test_cleanup_localizes_remote_images_for_markdown_source(
@@ -229,10 +214,9 @@ def test_cleanup_localizes_remote_images_for_markdown_source(
     md = "# Doc\n\n![fig](https://cdn.x.com/images/a.png)\n\n## Sec\n\nBody.\n"
     (tmp_path / "doc.raw.md").write_text(md, encoding="utf-8")
     monkeypatch.setattr(
-        "pagespeak.backends._remote_images.httpx.Client",
-        lambda *a, **k: _FakeClient({"https://cdn.x.com/images/a.png": _PNG}),
+        "pagespeak.backends._remote_images._make_fetcher",
+        lambda: _FakeFetcher({"https://cdn.x.com/images/a.png": _PNG}),
     )
-    monkeypatch.setattr("pagespeak.backends._remote_images._host_is_blocked", lambda host: False)
 
     to_markdown(tmp_path, output_dir=tmp_path, diagrams=False, stop_after="cleanup")
 
