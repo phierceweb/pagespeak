@@ -122,6 +122,7 @@ def _run_one_chunk(
     device: str | None,
     force_ocr: bool,
     pdf_backend: PdfBackendName = DEFAULT_PDF_BACKEND,
+    heading_hierarchy: bool = False,
     backend_kwargs: dict[str, Any] | None = None,
 ) -> _ChunkResult:
     """Convert one page-range slice. Runs in a worker process.
@@ -155,6 +156,7 @@ def _run_one_chunk(
             force_ocr=force_ocr,
             device=device,
             page_range=page_range,
+            heading_hierarchy=heading_hierarchy,
             backend_kwargs=backend_kwargs,
         )
 
@@ -217,6 +219,7 @@ def chunk(
     force: bool = False,
     max_pages: int | None = None,
     pdf_backend: PdfBackendName = DEFAULT_PDF_BACKEND,
+    heading_hierarchy: bool = False,
     pdf_backend_kwargs: dict[str, Any] | None = None,
 ) -> Manifest:
     """Run the chunk phase: parallel Marker conversion of page-range slices.
@@ -320,6 +323,7 @@ def chunk(
                 device=device,
                 force_ocr=force_ocr,
                 pdf_backend=pdf_backend,
+                heading_hierarchy=heading_hierarchy,
                 backend_kwargs=pdf_backend_kwargs,
             ): p
             for p in todo

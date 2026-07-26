@@ -36,6 +36,7 @@ __all__ = [
     "ChunkState",
     "Manifest",
     "VisionState",
+    "read_chunk_statuses",
     "sha256_file",
 ]
 
@@ -260,6 +261,32 @@ class Manifest:
     def mark_stitch_completed(self, *, consolidated_md: str) -> None:  # noqa: ARG002
         """No-op stub. The manifest carries no stitch block; retained so
         legacy callers stay valid."""
+
+
+def read_chunk_statuses(output_dir: Path) -> list[tuple[str, str]]:
+    """`(page_range, status)` per chunk in OUTDIR/manifest.json, else `[]`.
+
+    Tolerant by design: upstream ingesters write a `manifest.json` of their own,
+    so a missing, unreadable, or foreign-shaped file must read as "not chunked"
+    rather than raise the way `Manifest.load_or_create` does on an old schema.
+    """
+    mf_path = Manifest.path_for(output_dir)
+    if not mf_path.exists():
+        return []
+    try:
+        data = json.loads(mf_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    if not isinstance(data, dict):
+        return []
+    chunks = data.get("chunks")
+    if not isinstance(chunks, list):
+        return []
+    return [
+        (str(c.get("page_range", "?")), str(c.get("status", "unknown")))
+        for c in chunks
+        if isinstance(c, dict)
+    ]
 
 
 def _chunk_sort_key(chunk: ChunkState) -> tuple[int, str]:

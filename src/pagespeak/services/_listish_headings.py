@@ -23,6 +23,8 @@ from __future__ import annotations
 
 import re
 
+from ._fences import fence_flags
+
 # Bare-integer-led lines: an integer NOT followed by a dot (so N.M / N.
 # multi-dot sections are excluded), then whitespace + text. Heading form
 # `# 19 Pair remotes` vs plain form `19 Press and hold`.
@@ -34,6 +36,42 @@ _BARE_INT_PLAIN_RE = re.compile(r"^\s*\d+(?!\.)\s+\S")
 # form `#### 1. Click the button.` vs plain form `1. Click the button.`.
 _DOTTED_INT_HEADING_RE = re.compile(r"^(\s*)#{1,6}\s+(\d+\.(?!\d)\s+\S.*?)\s*$")
 _DOTTED_INT_PLAIN_RE = re.compile(r"^\s*\d+\.(?!\d)\s+\S")
+
+# A mis-promoted step sits INSIDE its list — a plain `N.` sibling within
+# this many lines. A real numbered section is surrounded by body, with the
+# doc's plain `N.` lines (a panel legend, steps elsewhere) pages away.
+_LIST_CONTEXT_WINDOW = 8
+
+# Trailing markdown link: `[text](url)` — unwrapped before the terminal-
+# punctuation test so `3. [Import the files.](#page-...)` reads as `.`.
+_TRAILING_LINK_RE = re.compile(r"\[([^\]]*)\]\([^)]*\)\s*$")
+
+
+def _step_punctuated(line: str) -> bool:
+    """A `N.` heading whose title ends `.` or `:` is an instruction, not a
+    section name."""
+    title = line.strip().rstrip("*").strip()
+    m = _TRAILING_LINK_RE.search(title)
+    if m:
+        title = m.group(1).strip()
+    return title.endswith((".", ":"))
+
+
+_ANY_HEADING_LEVEL_RE = re.compile(r"^\s*(#{1,6})\s+\S")
+
+
+def _owns_children(lines: list[str], idx: int) -> bool:
+    """True when the next heading after ``lines[idx]`` is deeper — the
+    candidate is a parent, and a mis-promoted step never owns children."""
+    m = _ANY_HEADING_LEVEL_RE.match(lines[idx])
+    if not m:
+        return False
+    level = len(m.group(1))
+    for ln in lines[idx + 1 :]:
+        nxt = _ANY_HEADING_LEVEL_RE.match(ln)
+        if nxt:
+            return len(nxt.group(1)) > level
+    return False
 
 
 def demote_listish_bare_int_headings(text: str) -> tuple[str, int]:
@@ -55,7 +93,10 @@ def demote_listish_bare_int_headings(text: str) -> tuple[str, int]:
     no bare-int headings or the doc is heading-dominant.
     """
     lines = text.splitlines()
-    heading_idx = [i for i, ln in enumerate(lines) if _BARE_INT_HEADING_RE.match(ln)]
+    _fenced = fence_flags(lines)
+    heading_idx = [
+        i for i, ln in enumerate(lines) if not _fenced[i] and _BARE_INT_HEADING_RE.match(ln)
+    ]
     plain = sum(1 for ln in lines if _BARE_INT_PLAIN_RE.match(ln))
     if not heading_idx or plain <= len(heading_idx):
         return text, 0
@@ -90,17 +131,37 @@ def demote_listish_dotted_int_headings(text: str) -> tuple[str, int]:
     isolation (see ``_heading_sanity`` which deliberately keeps it). The
     document-relative count is the signal that separates them.
 
+    A candidate must ALSO be step-like in itself: either step-punctuated
+    (title ends `.` or `:`; `?` excluded so numbered FAQ headings stay) or
+    sitting within ``_LIST_CONTEXT_WINDOW`` lines of a plain `N.` sibling.
+    An unpunctuated candidate owning a deeper next heading is exempt from
+    the proximity trigger — it is a parent. Punctuation outranks that
+    exemption, since a mis-promoted step lands at an arbitrary level.
+
     Multi-dot ``N.M[.O]`` prefixes are excluded (the dot is followed by a
     digit) — those are real numbered sections, depth-locked elsewhere.
     No-op (``0``) when there are no `N.` headings or the doc is
     heading-dominant.
     """
     lines = text.splitlines()
-    heading_idx = [i for i, ln in enumerate(lines) if _DOTTED_INT_HEADING_RE.match(ln)]
-    plain = sum(1 for ln in lines if _DOTTED_INT_PLAIN_RE.match(ln))
-    if not heading_idx or plain <= len(heading_idx):
+    _fenced = fence_flags(lines)
+    heading_idx = [
+        i for i, ln in enumerate(lines) if not _fenced[i] and _DOTTED_INT_HEADING_RE.match(ln)
+    ]
+    plain_idx = [i for i, ln in enumerate(lines) if _DOTTED_INT_PLAIN_RE.match(ln)]
+    if not heading_idx or len(plain_idx) <= len(heading_idx):
         return text, 0
-    demote = set(heading_idx)
+    demote = {
+        h
+        for h in heading_idx
+        if _step_punctuated(lines[h])
+        or (
+            not _owns_children(lines, h)
+            and any(abs(p - h) <= _LIST_CONTEXT_WINDOW for p in plain_idx)
+        )
+    }
+    if not demote:
+        return text, 0
     out = []
     for idx, line in enumerate(lines):
         m = _DOTTED_INT_HEADING_RE.match(line) if idx in demote else None

@@ -204,6 +204,7 @@ def make_docx(tmp_path: Path):
     `numbering_xml` is the inner content of <w:numbering> ("" for none).
     `extra_parts` maps archive path -> bytes (e.g. word/media/image1.png).
     `doc_rels` is extra inner content for word/_rels/document.xml.rels.
+    `styles_xml` replaces the whole styles part (for style-inherited numbering).
     """
 
     def _build(
@@ -212,6 +213,7 @@ def make_docx(tmp_path: Path):
         numbering_xml: str = "",
         extra_parts: dict[str, bytes] | None = None,
         doc_rels: str = "",
+        styles_xml: str | None = None,
     ):
         path = tmp_path / "fixture.docx"
         body = (
@@ -239,7 +241,7 @@ def make_docx(tmp_path: Path):
             z.writestr("_rels/.rels", _ROOT_RELS)
             z.writestr("word/document.xml", body)
             z.writestr("word/numbering.xml", numbering)
-            z.writestr("word/styles.xml", _STYLES)
+            z.writestr("word/styles.xml", styles_xml or _STYLES)
             z.writestr("word/_rels/document.xml.rels", rels)
             for arc, data in (extra_parts or {}).items():
                 z.writestr(arc, data)

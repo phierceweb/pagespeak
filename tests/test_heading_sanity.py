@@ -10,6 +10,7 @@ from pagespeak.services._heading_sanity import (
     demote_prose_heading,
     is_prose_shaped_title,
     is_toc_phantom_heading,
+    normalize_spaced_heading_numbering,
 )
 
 # --- is_prose_shaped_title --------------------------------------------------
@@ -337,3 +338,74 @@ def test_demote_keeps_short_non_numbered_with_question() -> None:
         demote_prose_heading("### How long does it take to tune drums?")
         == "### How long does it take to tune drums?"
     )
+
+
+# --- normalize_spaced_heading_numbering --------------------------------------
+
+
+def test_spaced_dot_single_level_collapses() -> None:
+    """Docling renders the section number as separate tokens (`1 .`),
+    which breaks the numbered-heading regex downstream — prose-demote
+    then reads `. <Capital>` as a sentence boundary and kills the heading."""
+    line = "## 1 . Recorder with audio interface: recorder as clock leader"
+    out = normalize_spaced_heading_numbering(line)
+    assert out == "## 1. Recorder with audio interface: recorder as clock leader"
+
+
+def test_spaced_dot_multi_level_collapses() -> None:
+    # Marker emits the same artifact on OCR text (`3 . 6 Vertical Columns`).
+    assert (
+        normalize_spaced_heading_numbering("#### 3 . 6 Vertical Columns")
+        == "#### 3.6 Vertical Columns"
+    )
+
+
+def test_clean_numbering_is_untouched() -> None:
+    line = "### 2.3 Refrigerant Piping Limits"
+    assert normalize_spaced_heading_numbering(line) == line
+
+
+def test_plain_heading_is_untouched() -> None:
+    line = "## GETTING STARTED"
+    assert normalize_spaced_heading_numbering(line) == line
+
+
+def test_body_line_is_untouched() -> None:
+    line = "1 . not a heading, just odd prose"
+    assert normalize_spaced_heading_numbering(line) == line
+
+
+def test_year_number_is_untouched() -> None:
+    # 4-digit numbers are not section numbers; leave them alone.
+    line = "## 1990 . A retrospective"
+    assert normalize_spaced_heading_numbering(line) == line
+
+
+def test_spaced_measurement_normalizes_to_dotted() -> None:
+    """`3 . 5 mm` becomes `3.5 mm` — faithful to the source, and the
+    splitter's measurement-heading guard then applies to the dotted form."""
+    assert (
+        normalize_spaced_heading_numbering("## 3 . 5 mm stereo jack plug")
+        == "## 3.5 mm stereo jack plug"
+    )
+
+
+# --- enumerated-title prefix vs internal-sentence test ------------------------
+
+
+def test_enumerated_title_is_not_prose() -> None:
+    """The `2. W` here is an enumeration prefix, not a sentence boundary —
+    without the guard, every chapter heading of this shape demotes to body
+    text."""
+    assert demote_prose_heading("# Section 2. Widget Placement Guidelines") == (
+        "# Section 2. Widget Placement Guidelines"
+    )
+    assert demote_prose_heading("## Chapter 4. Getting Around") == "## Chapter 4. Getting Around"
+
+
+def test_enumerated_prefix_with_real_prose_still_demotes() -> None:
+    # The prefix is stripped for the test, not a blanket exemption — a
+    # sentence after the enumeration still reads as prose.
+    line = "### Step 1. Remove the cover carefully. Then reattach the rear panel."
+    out = demote_prose_heading(line)
+    assert not out.lstrip().startswith("#")

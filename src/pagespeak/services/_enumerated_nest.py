@@ -26,6 +26,8 @@ import re
 
 from pf_core.log import get_logger
 
+from ._fences import fence_flags
+
 logger = get_logger(__name__)
 
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*?)\s*$")
@@ -58,9 +60,12 @@ def nest_enumerated_item_runs(text: str) -> str:
     """
     lines = text.splitlines(keepends=True)
 
+    # A `#` inside a fenced block is a comment, not an enumerated item.
+    _fenced = fence_flags([ln.rstrip("\n") for ln in lines])
+
     heads: list[tuple[int, int, str]] = []  # (line_idx, level, heading_text)
     for i, line in enumerate(lines):
-        m = _HEADING_RE.match(line.rstrip("\n"))
+        m = None if _fenced[i] else _HEADING_RE.match(line.rstrip("\n"))
         if m is not None:
             heads.append((i, len(m.group(1)), m.group(2)))
 

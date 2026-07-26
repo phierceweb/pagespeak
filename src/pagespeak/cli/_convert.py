@@ -13,6 +13,7 @@ from ..backends._docx_dispatch import DocxBackendName
 from ..backends._pdf_dispatch import PdfBackendName
 from ..backends._qti import is_qti_export
 from ..orchestrators._dispatch import resolve_dir_mode_stem
+from ..orchestrators._ingest import PartialIngestError
 from ..services._cleanup import CleanupLevel, CrossRefs
 from ..services._diagrams import VisionBackendName
 from ..services._normalize_decision import NormalizeModeOption
@@ -161,6 +162,11 @@ def register(
             "--pdf-backend",
             help="PDF backend: 'marker' (default, fast) | 'docling' (accuracy-first, requires pagespeak[pdf-docling]) | 'tophat' (Top Hat quiz-export PDFs → per-question markdown, requires pagespeak[tophat]).",
         ),
+        heading_hierarchy: bool = typer.Option(
+            False,
+            "--heading-hierarchy/--no-heading-hierarchy",
+            help="Docling PDF only. Infer real heading levels from PDF bookmarks, then section numbering, then font style, instead of Docling's flat single-level default. Helps documents with an embedded outline or 'Section N.'/'N.M' numbering; hurts documents with neither. Off by default. Requires docling>=2.109. See docs/backends.md.",
+        ),
         repair_tables: bool = typer.Option(
             False,
             "--repair-tables/--no-repair-tables",
@@ -184,7 +190,7 @@ def register(
         normalize_headings_mode: str = typer.Option(
             "heuristic",
             "--normalize-headings-mode",
-            help="heuristic (default — fast, free, deterministic) | llm (headers-only LLM) | llm_full (LLM + body-context anchors) | auto (classify the doc and pick heuristic-vs-llm_full per-document).",
+            help="heuristic (default — fast, free, deterministic) | llm (headers-only LLM) | llm_full (LLM + body-context anchors: re-levels the hierarchy AND drops junk headings) | llm_dehead (same payload, drops junk headings but never changes a level — for a doc whose hierarchy the backend already got right) | auto (classify the doc and pick heuristic-vs-llm_full per-document).",
         ),
         normalize_headings_model: str | None = typer.Option(
             None,
@@ -246,6 +252,11 @@ def register(
             True,
             "--answer-key/--no-answer-key",
             help="Canvas QTI quiz exports only: mark/state the correct answers. On by default; --no-answer-key renders a blank quiz.",
+        ),
+        allow_partial_ingest: bool = typer.Option(
+            False,
+            "--allow-partial-ingest",
+            help="Build the document even though a chunked ingest left failed chunks. The output will be missing those pages.",
         ),
     ) -> None:
         """Convert a document to LLM-friendly markdown.
@@ -393,6 +404,7 @@ def register(
                 decoration_threshold=_flag("decoration_threshold", None),
                 decoration_hamming_distance=_flag("decoration_hamming_distance", None),
                 pdf_backend=cast(PdfBackendName, pdf_backend),
+                heading_hierarchy=_flag("heading_hierarchy", heading_hierarchy),
                 repair_tables=_flag("repair_tables", repair_tables),
                 docx_backend=cast(DocxBackendName, _flag("docx_backend", docx_backend)),
                 docx_outline_heading_depth=_flag(
@@ -416,7 +428,12 @@ def register(
                 stop_after=stop_after,
                 workers=workers,
                 answer_key=answer_key,
+                allow_partial_ingest=allow_partial_ingest,
             )
+        except PartialIngestError as exc:
+            typer.echo(f"Error: {exc}", err=True)
+            typer.echo("   or pass --allow-partial-ingest to build the document anyway.", err=True)
+            raise typer.Exit(2) from exc
         except ValueError as exc:
             typer.echo(f"Error: {exc}", err=True)
             raise typer.Exit(1) from exc

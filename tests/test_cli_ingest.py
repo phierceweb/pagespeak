@@ -49,6 +49,7 @@ def test_ingest_invokes_orchestrator(tmp_path, monkeypatch):
         workers,
         pdf_backend,
         pdf_backend_kwargs=None,
+        heading_hierarchy=False,
         docx_backend="markitdown",
         docx_outline_heading_depth=1,
         chunk_pages=50,
@@ -62,6 +63,7 @@ def test_ingest_invokes_orchestrator(tmp_path, monkeypatch):
         captured["output_dir"] = Path(output_dir)
         captured["workers"] = workers
         captured["pdf_backend"] = pdf_backend
+        captured["heading_hierarchy"] = heading_hierarchy
         captured["docx_backend"] = docx_backend
         captured["docx_outline_heading_depth"] = docx_outline_heading_depth
         captured["chunk_pages"] = chunk_pages

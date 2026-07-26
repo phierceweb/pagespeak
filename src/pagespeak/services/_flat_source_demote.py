@@ -19,6 +19,8 @@ import re
 from pf_core.log import get_logger
 from pf_core.utils.env import resolve_int
 
+from ._fences import fence_flags
+
 logger = get_logger(__name__)
 
 _HEADING_RE = re.compile(r"^(#{1,6})\s+\S")
@@ -55,6 +57,9 @@ def demote_flat_h1_runs(text: str, *, threshold: int | None = None) -> str:
     n_threshold = threshold if threshold is not None else _flat_h1_threshold()
 
     lines = text.splitlines(keepends=True)
+    # A `#` inside a fenced block is a comment; counting it skews the ratio and
+    # demoting it corrupts the code.
+    _fenced = fence_flags([ln.rstrip("\n") for ln in lines])
 
     # First pass: identify the line indexes that start each qualifying run.
     # A run is a contiguous sequence of H1 heading lines whose only
@@ -63,7 +68,7 @@ def demote_flat_h1_runs(text: str, *, threshold: int | None = None) -> str:
     runs: list[list[int]] = []  # list of [line_indexes-of-H1-in-run]
     current: list[int] = []
     for i, line in enumerate(lines):
-        m = _HEADING_RE.match(line)
+        m = None if _fenced[i] else _HEADING_RE.match(line)
         if m is None:
             continue
         level = len(m.group(1))

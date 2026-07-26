@@ -11,8 +11,8 @@ from __future__ import annotations
 import re
 
 from ..utils._html import html_fragment_to_markdown
+from ._fences import transform_outside_fences
 
-_FENCE_SPLIT_RE = re.compile(r"(^```.*?^```[ \t]*$)", re.M | re.S)
 _BLOCK_OPEN_RE = re.compile(r"^<(table|figure)\b", re.IGNORECASE)
 _IMG_LINE_RE = re.compile(r"^<img\b[^>]*>\s*$", re.IGNORECASE)
 _MAX_BLOCK_LINES = 400
@@ -68,14 +68,7 @@ def convert_embedded_html_blocks(text: str) -> str:
         and "<img" not in text.lower()
     ):
         return text
-    parts = _FENCE_SPLIT_RE.split(text)
-    out: list[str] = []
-    for i, part in enumerate(parts):
-        if i % 2:  # fenced block — verbatim
-            out.append(part)
-        else:
-            out.append("\n".join(_convert_lines(part.split("\n"))))
-    return "".join(out)
+    return transform_outside_fences(text, lambda seg: "\n".join(_convert_lines(seg.split("\n"))))
 
 
 __all__ = ["convert_embedded_html_blocks"]

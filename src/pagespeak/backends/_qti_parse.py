@@ -10,9 +10,9 @@ not pinned to an exact QTI namespace URI. (Note: `Element.iter()` does
 NOT support that wildcard — only `find`/`findall` do — so all element
 lookups here go through `findall`/`find`.)
 
-Correct answers are read from each item's `<resprocessing>`: every
-`<varequal>` that is not wrapped in a `<not>` is a correct selection. Each
-question type interprets those `(respident, value)` pairs differently
+Correct answers come from each item's `<resprocessing>` — see `_correct_pairs`.
+Within a scoring condition a `<varequal>` wrapped in `<not>` marks an INcorrect
+selection; each question type reads the resulting pairs differently
 (see `_parse_item`).
 """
 
@@ -78,10 +78,33 @@ def _collect_varequal(el: ET.Element, out: list[tuple[str | None, str]]) -> None
             _collect_varequal(child, out)
 
 
+def _awards_credit(rc: ET.Element) -> bool:
+    """Does this `<respcondition>` award a positive score?"""
+    for child in rc.iter():
+        if _ln(child.tag) != "setvar":
+            continue
+        try:
+            if float((child.text or "").strip()) > 0:
+                return True
+        except ValueError:
+            continue
+    return False
+
+
 def _correct_pairs(resproc: ET.Element | None) -> list[tuple[str | None, str]]:
+    """Correct `(respident, value)` pairs, read only from scoring conditions.
+
+    Correctness belongs to the `<respcondition>` that awards score, not to
+    `<varequal>` alone: Canvas emits a non-scoring condition per option to carry
+    per-answer feedback. When nothing awards credit the whole subtree is used,
+    so an unmodelled scoring shape still yields a key rather than none.
+    """
     out: list[tuple[str | None, str]] = []
-    if resproc is not None:
-        _collect_varequal(resproc, out)
+    if resproc is None:
+        return out
+    scoring = [rc for rc in resproc.iter() if _ln(rc.tag) == "respcondition" and _awards_credit(rc)]
+    for el in scoring or [resproc]:
+        _collect_varequal(el, out)
     return out
 
 

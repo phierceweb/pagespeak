@@ -37,6 +37,45 @@ def test_sibling_images_ref_copied_ref_unchanged(tmp_path: Path) -> None:
     assert out / "images" / "foo.webp" in images
 
 
+@pytest.mark.parametrize(
+    "md",
+    [
+        '![fig](images/foo.webp "A title")\n',
+        "![fig](images/foo.webp 'A title')\n",
+        "![fig](images/foo.webp (A title))\n",
+        "![fig](<images/foo.webp>)\n",
+    ],
+)
+def test_titled_and_bracketed_refs_are_copied(md: str, tmp_path: Path) -> None:
+    """A CommonMark title is not part of the destination. Missing it means the
+    file is never copied, and the always-on degrade pass then rewrites the live
+    ref to a caption — a silently lost figure."""
+    src, out = _bundle(tmp_path)
+    _, images = localize_local_images_in_markdown(md, out, source_path=src)
+    assert (out / "images" / "foo.webp").read_bytes() == _PNG
+    assert out / "images" / "foo.webp" in images
+
+
+def test_titled_ref_destination_is_not_rewritten(tmp_path: Path) -> None:
+    """A canonical titled ref already points at the right place; the title
+    must survive untouched."""
+    src, out = _bundle(tmp_path)
+    md = '![fig](images/foo.webp "A title")\n'
+    rewritten, _ = localize_local_images_in_markdown(md, out, source_path=src)
+    assert rewritten == md
+
+
+def test_titled_non_canonical_ref_retargeted_title_preserved(tmp_path: Path) -> None:
+    src, out = _bundle(tmp_path)
+    assets = src.parent / "assets"
+    assets.mkdir()
+    (assets / "bar.png").write_bytes(_PNG)
+    md = '![fig](assets/bar.png "A title")\n'
+    rewritten, _ = localize_local_images_in_markdown(md, out, source_path=src)
+    assert (out / "images" / "assets-bar.png").read_bytes() == _PNG
+    assert rewritten == '![fig](images/assets-bar.png "A title")\n'
+
+
 def test_non_canonical_ref_copied_and_retargeted(tmp_path: Path) -> None:
     src, out = _bundle(tmp_path)
     assets = src.parent / "assets"

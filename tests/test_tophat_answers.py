@@ -51,3 +51,38 @@ def test_assign_answers_preserves_source_question_numbers() -> None:
     markers = [(100, 2), (200, 4)]
     greys = [(150, "C"), (250, "D")]
     assert ta.assign_answers(markers, greys) == {2: ["C"], 4: ["D"]}
+
+
+# ── _MARKER_FIND: the question-marker families in a flat char stream ────────
+
+
+def _found(stream: str) -> list[tuple[int, int]]:
+    """`(start, question_number)` for every marker the finder recovers."""
+    return [(m.start(), int(m.group(1) or m.group(2))) for m in ta._MARKER_FIND.finditer(stream)]
+
+
+def test_marker_without_the_question_word_is_found() -> None:
+    """Some exports label questions by topic, with no literal "Question N" —
+    the answer key was silently discarded for that whole family."""
+    assert _found("Pneumatic 2 Hide Correct Answer Show Responses") == [(10, 2)]
+
+
+def test_marker_with_the_question_word_is_found() -> None:
+    assert _found("Thermal 1 Question 3 Hide Correct Answer") == [(10, 3)]
+
+
+def test_a_figure_question_does_not_swallow_the_next_marker() -> None:
+    """A question with no nearby "Correct Answer" (a figure question) let the
+    bridge run into the NEXT question's marker, consuming it — so that
+    question's answer was dropped and its letters bucketed under the wrong one.
+    """
+    stream = (
+        "Thermal 1 Question 1 Thermal 1 Question 2 Hide Correct Answer Show Responses A foo B bar"
+    )
+    found = _found(stream)
+    assert [q for _, q in found] == [2], f"marker swallowed: {found}"
+
+
+def test_consecutive_gradable_questions_are_both_found() -> None:
+    stream = "Question 1 Hide Correct Answer A a B b Question 2 Hide Correct Answer A c B d"
+    assert [q for _, q in _found(stream)] == [1, 2]

@@ -2,6 +2,36 @@
 
 Notable changes to pagespeak, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## 0.13.0
+
+### Added
+- **`--heading-hierarchy` (Docling PDF only)** — infers real heading levels from PDF bookmarks, then section numbering, then font style, instead of Docling's flat single-level output. Off by default; recorded in `.pagespeak-run.json` and inherited on re-run. Available on `convert` and `ingest`, as `heading_hierarchy=` on `to_markdown()`/`chunk()`, and threaded through the chunked-parallel worker path. Helps documents with an embedded outline or `Section N.`/`N.M` numbering; not a win where neither signal is present. It assigns levels only — it never demotes a heading. New module `backends/_docling_headings.py`. See [docs/backends.md](docs/backends.md).
+
+- **`--normalize-headings-mode llm_dehead`** — a de-headification-only normalize mode. Same payload as `llm_full`, but it asks one question per heading (is this a real section?) and **never reassigns a level**. For a document whose hierarchy the backend already read correctly, re-levelling risks regressing a good tree while junk removal is the part no deterministic pass can do. A heading that owns child headings is never dropped — junk is always a leaf.
+
+### Fixed
+- **A hierarchy the source itself stated is no longer re-guessed — in any phase.** Cleanup demoted headings on PDFs whose levels came from the bookmark outline (its gate read a marker key only the DOCX reader ever sets) and on headings the structure-faithful DOCX reader read from the file; `to_markdown(..., output_dir=None)` lost the claim entirely because both repair and structure read only the on-disk marker. All three now share one trust signal, recorded at ingest in `.pagespeak-hierarchy.json` and cleared by `--rerun-from ingest`.
+
+- **…but a broken outline is no longer preserved either.** `route_authoritative_hierarchy` treated *outline-derived* as *correct*, downgrading `llm_full` to `llm_dehead` — a mode that by definition never changes a level — so an outline rendered with a tier missing throughout kept that break through every later pass. The downgrade now also requires the tree to be coherent: no tier unused inside its range, tier-skipping descents under `PAGESPEAK_OUTLINE_TRUST_MAX_SKIP_RATE` (default 0.10).
+
+- **`llm_dehead` now runs on the model its own router block declares.** `_resolve_model` knew only `llm` and `llm_full`, so dehead fell through to the `heading_normalize` entry — and that name is passed as `model_override`, which outranks the agent slug's config. The mode ran on another mode's model and stamped it into its cache key.
+
+- **Images carrying a CommonMark title (`![alt](img.png "Title")`) survive.** The title was folded into the destination, so the path could never resolve: the file was never copied into the output dir and the always-on degrade pass then rewrote the live ref to an italic caption — the figure vanished with an exit 0 and no warning. Angle-bracketed destinations failed the same way.
+
+- **`regenerate_toc` no longer deletes the document body.** The block boundary reused the `#{1,4}` *entry-depth* cap, so a section headed H5/H6 could not terminate the TOC block and the replacement swallowed every remaining line.
+
+- **Fenced code is no longer edited by passes that scan for headings.** A `#` inside a fence was read as a heading by `regenerate_toc`, the heading-repair passes, `--split-target-kb` block partitioning, `audit` and `repair-tables` — each carrying its own fence detector, several backtick-only. A markdown-about-markdown fence, a shell script or a C header had its content silently rewritten and each edit counted as a legitimate repair. All now share `services/_fences`, enforced by a sweep test.
+
+- **The splitter no longer drops a section whose heading merely looks like a TOC entry.** A chapter-review summary restating its subsection with a page back-reference, or a real title ending in a number (`2.4 IEEE 802.11`), matched the TOC-phantom shape and was pruned with every descendant. Dropping now also requires an empty subtree, and each drop is logged.
+
+- **The structure-faithful DOCX reader carries more of the author's structure.** Body-level content controls (`w:sdt` wrapping paragraphs or a table) were skipped entirely; numbering carried by a paragraph style rather than the paragraph was ignored, fusing a whole numbered list into one run-on paragraph; consecutive body paragraphs were emitted on adjacent lines, which CommonMark reads as a single paragraph; and a bullet parent did not restart its nested numbered list.
+
+- **Heading numbering is read more faithfully on both PDF backends.** A section number split into separate tokens (`## 1 . Title`) defeated the numbered-heading regex; the single-dot listish demote fired on real sections whenever plain `N.` lines outnumbered heading-form ones anywhere in the document; a bare-integer chapter was never levelled and read as a bodiless shell above its own `N.M` children; and `<Word> N. <Title>` tripped the prose-demote's sentence test.
+
+### Changed
+- **A Word `Heading N` paragraph restarts list numbering** in the structure-faithful DOCX reader, matching what an outline-level heading already did — the one place the reader knowingly diverges from Word, because a continued number under re-based nesting reads as an orphan and gets treated as a numbering artefact.
+- `pagespeak[pdf-docling]` now requires `docling>=2.109` (was `>=2.0`). A bare `>=2.0` resolved to a pre-feature release where `--heading-hierarchy` silently degraded to flat levels.
+
 ## 0.12.0
 
 ### Changed

@@ -29,7 +29,7 @@ from pf_core.log import get_logger
 from ..backends._docx_dispatch import DEFAULT_DOCX_BACKEND, DocxBackendName
 from ..backends._pdf_dispatch import DEFAULT_PDF_BACKEND, PdfBackendName
 from ..backends._qti import is_qti_export
-from ..models._pipeline import Manifest
+from ..models._pipeline import Manifest, read_chunk_statuses
 from ._chunk import chunk as chunk_phase
 from ._chunk import resolve_chunk_pages
 
@@ -60,6 +60,14 @@ MARKITDOWN_SUFFIXES: frozenset[str] = frozenset(
 MARKDOWN_SUFFIXES: frozenset[str] = frozenset({".md", ".markdown"})
 
 
+def unsupported_format_error(suffix: str) -> ValueError:
+    """The dispatch fallthrough, shared by both ingest entry points."""
+    return ValueError(
+        f"Unsupported format: {suffix!r}. Supported: "
+        f"{sorted(PDF_SUFFIXES | MARKITDOWN_SUFFIXES | MARKDOWN_SUFFIXES)}"
+    )
+
+
 def ingest(
     input_path: str | Path,
     *,
@@ -67,6 +75,7 @@ def ingest(
     workers: int = 1,
     pdf_backend: PdfBackendName = DEFAULT_PDF_BACKEND,
     pdf_backend_kwargs: dict[str, Any] | None = None,
+    heading_hierarchy: bool = False,
     docx_backend: DocxBackendName = DEFAULT_DOCX_BACKEND,
     docx_outline_heading_depth: int = 0,
     chunk_pages: int | None = None,
@@ -135,6 +144,7 @@ def ingest(
             suffix=suffix,
             pdf_backend=pdf_backend,
             pdf_backend_kwargs=pdf_backend_kwargs,
+            heading_hierarchy=heading_hierarchy,
             docx_backend=docx_backend,
             docx_outline_heading_depth=docx_outline_heading_depth,
             device=device,
@@ -162,6 +172,7 @@ def ingest(
         chunk_pages=resolve_chunk_pages(chunk_pages),
         pdf_backend=pdf_backend,
         pdf_backend_kwargs=pdf_backend_kwargs,
+        heading_hierarchy=heading_hierarchy,
         device=device,
         force_ocr=force_ocr,
         force=force,
@@ -177,6 +188,7 @@ def _ingest_single_process(
     suffix: str,
     pdf_backend: PdfBackendName,
     pdf_backend_kwargs: dict[str, Any] | None,
+    heading_hierarchy: bool,
     docx_backend: DocxBackendName,
     docx_outline_heading_depth: int,
     device: str | None,
@@ -196,6 +208,7 @@ def _ingest_single_process(
             device=device,
             page_range=page_range,
             backend_kwargs=pdf_backend_kwargs,
+            heading_hierarchy=heading_hierarchy,
         )
     elif suffix in MARKITDOWN_SUFFIXES:
         if suffix == ".docx":
@@ -216,12 +229,16 @@ def _ingest_single_process(
 
         result = convert_markdown(src)
     else:
-        raise ValueError(
-            f"Unsupported format: {suffix!r}. Supported: "
-            f"{sorted(PDF_SUFFIXES | MARKITDOWN_SUFFIXES | MARKDOWN_SUFFIXES)}"
-        )
+        raise unsupported_format_error(suffix)
 
     raw_md_path.write_text(result.markdown, encoding="utf-8")
+    # Stamp provenance now: a resume run resolves src to a checkpoint.
+    from ..services._hierarchy_trust import record_hierarchy_source, record_structured
+
+    record_hierarchy_source(out, src, pdf_backend=pdf_backend, heading_hierarchy=heading_hierarchy)
+    # Both ingest entry points stamp this, so a split ingest/convert keeps the
+    # signal. This path always runs the backend, so the value is always current.
+    record_structured(out, authoritative=result.structure_authoritative)
     logger.info(
         "ingest_single_process_complete src=%s raw_md=%s images=%d",
         src.name,
@@ -240,6 +257,7 @@ def _ingest_chunked(
     chunk_pages: int,
     pdf_backend: PdfBackendName,
     pdf_backend_kwargs: dict[str, Any] | None,
+    heading_hierarchy: bool,
     device: str | None,
     force_ocr: bool,
     force: bool,
@@ -265,6 +283,7 @@ def _ingest_chunked(
         max_pages=max_pages,
         pdf_backend=pdf_backend,
         pdf_backend_kwargs=pdf_backend_kwargs,
+        heading_hierarchy=heading_hierarchy,
     )
 
     completed_paths = mf.all_chunk_raw_md()
@@ -373,4 +392,35 @@ class PartialIngestError(RuntimeError):
         )
 
 
-__all__ = ["MARKITDOWN_SUFFIXES", "PDF_SUFFIXES", "PartialIngestError", "ingest"]
+def assert_ingest_complete(output_dir: Path | None, *, allow_partial: bool = False) -> None:
+    """Refuse to build a document from an out dir whose chunked ingest never finished.
+
+    Nothing downstream reads chunk status — resume keys on the raw.md snapshot — so
+    without this a run whose chunk OOMed yields a document silently missing those
+    pages, at exit 0.
+    """
+    if output_dir is None:
+        return
+    statuses = read_chunk_statuses(output_dir)
+    incomplete = [pr for pr, st in statuses if st != "completed"]
+    if not incomplete:
+        return
+    if allow_partial:
+        logger.warning("ingest_incomplete_accepted output_dir=%s chunks=%s", output_dir, incomplete)
+        return
+    raw = sorted(output_dir.glob("*.raw.md"))
+    raise PartialIngestError(
+        raw_md_path=raw[0] if raw else output_dir,
+        failed_page_ranges=incomplete,
+        total_chunks=len(statuses),
+        output_dir=output_dir,
+    )
+
+
+__all__ = [
+    "MARKITDOWN_SUFFIXES",
+    "PDF_SUFFIXES",
+    "PartialIngestError",
+    "assert_ingest_complete",
+    "ingest",
+]

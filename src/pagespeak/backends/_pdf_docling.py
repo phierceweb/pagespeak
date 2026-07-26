@@ -32,6 +32,12 @@ from typing import TYPE_CHECKING, Any
 from pf_core.log import get_logger
 
 from ..models._models import IngestResult
+from ._docling_headings import (
+    clamp_heading_overflow,
+    coerce_option_value,
+    enable_heading_hierarchy,
+    promote_headings_without_h1,
+)
 from ._pdf import parse_page_range
 
 if TYPE_CHECKING:
@@ -147,6 +153,7 @@ def _build_pipeline_options(
     *,
     force_ocr: bool,
     device: str | None,
+    heading_hierarchy: bool,
     backend_kwargs: dict[str, Any],
 ) -> Any:
     from docling.datamodel.pipeline_options import PdfPipelineOptions
@@ -169,10 +176,14 @@ def _build_pipeline_options(
         except (AttributeError, ValueError) as e:
             logger.warning("docling_device_set_failed device=%r error=%s", device, e)
 
-    # Free-form passthrough.
+    if heading_hierarchy:
+        enable_heading_hierarchy(opts)
+
+    # Free-form passthrough. Applied last so an explicit option object here
+    # overrides the `heading_hierarchy` shorthand above.
     for key, value in backend_kwargs.items():
         if hasattr(opts, key):
-            setattr(opts, key, value)
+            setattr(opts, key, coerce_option_value(getattr(opts, key), value))
         else:
             logger.warning("docling_unknown_pipeline_option key=%r ignored", key)
 
@@ -186,6 +197,7 @@ def convert_pdf_docling(
     force_ocr: bool = False,
     device: str | None = None,
     page_range: str | list[int] | None = None,
+    heading_hierarchy: bool = False,
     backend_kwargs: dict[str, object] | None = None,
 ) -> IngestResult:
     """Convert a PDF to markdown via Docling.
@@ -208,6 +220,13 @@ def convert_pdf_docling(
         page_range: 0-based, inclusive. Translated to Docling's 1-based
             tuple. Discontiguous specs collapse to (min, max) with a
             WARNING.
+        heading_hierarchy: Infer real heading levels (bookmarks > section
+            numbering > font style) instead of Docling's default flat
+            single-level output. Off by default — it helps documents with
+            an embedded outline or `Section N.` / `N.M` numbering, and
+            hurts documents carrying neither. Needs `docling>=2.109`;
+            older versions log a WARNING and stay flat. Also promotes the
+            resulting tree to start at H1 when Docling emits no title.
         backend_kwargs: Pipeline-option overrides forwarded to
             `PdfPipelineOptions`. Useful keys: `do_formula_enrichment`,
             `do_code_enrichment`, `do_picture_classification`,
@@ -226,6 +245,7 @@ def convert_pdf_docling(
     opts = _build_pipeline_options(
         force_ocr=force_ocr,
         device=device,
+        heading_hierarchy=heading_hierarchy,
         backend_kwargs=dict(backend_kwargs or {}),
     )
 
@@ -241,6 +261,11 @@ def convert_pdf_docling(
     result = converter.convert(path, **convert_kwargs)
 
     markdown_text = result.document.export_to_markdown()
+    if heading_hierarchy:
+        # Promote first: in the usual no-title case the shift alone brings
+        # level-6 headings back inside the six-hash limit, keeping all tiers.
+        markdown_text = promote_headings_without_h1(markdown_text)
+        markdown_text = clamp_heading_overflow(markdown_text)
     saved_images: list[Path] = []
     image_refs: list[str] = []
     if output_dir is not None:

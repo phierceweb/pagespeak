@@ -19,6 +19,8 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from ._fences import fence_flags
+
 _BR_RE = re.compile(r"<br\s*/?>", re.IGNORECASE)
 _TOKEN_RE = re.compile(r"[A-Za-z0-9.]+")
 _MEGA_CELL_MIN = 30  # <br> in one cell marking a collapse (matches the audit)
@@ -61,16 +63,11 @@ class RepairRecord:
 
 
 def _fenced_line_indices(lines: list[str]) -> set[int]:
-    fenced: set[int] = set()
-    in_fence = False
-    for i, line in enumerate(lines):
-        if line.lstrip().startswith("```"):
-            fenced.add(i)
-            in_fence = not in_fence
-            continue
-        if in_fence:
-            fenced.add(i)
-    return fenced
+    """0-based indices of lines inside a fence, delimiters included.
+
+    A pipe table inside a fence is example markup, never a repair candidate.
+    """
+    return {i for i, is_fenced in enumerate(fence_flags(lines)) if is_fenced}
 
 
 def find_collapsed_cells(text: str) -> list[CollapsedCell]:

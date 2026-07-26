@@ -13,6 +13,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from pagespeak.services._staging import staged_sources
 from pagespeak.web._config import WebConfig
 
 #: Pipeline phases in order. ``final`` is the consolidated ``<stem>.md``.
@@ -72,11 +73,12 @@ def _safe_stem(out_dir: Path) -> str | None:
 def _find_source(in_dir: Path, stem: str) -> Path | None:
     if not in_dir.is_dir():
         return None
-    for f in in_dir.iterdir():
-        if f.is_file() and f.stem == stem:
+    sources = list(staged_sources(in_dir))
+    for f in sources:
+        if f.stem == stem:
             return f
-    for f in in_dir.iterdir():
-        if f.is_file() and f.stem.lower() == stem.lower():
+    for f in sources:
+        if f.stem.lower() == stem.lower():
             return f
     return None
 
@@ -141,29 +143,29 @@ def scan_conversions(cfg: WebConfig) -> list[Conversion]:
                 stems_seen.add(conv.stem.lower())
 
     extra: list[Conversion] = []
-    if cfg.in_dir.is_dir():
-        for f in sorted(p for p in cfg.in_dir.iterdir()):
-            if not f.is_file() or f.name.startswith("."):
-                continue
-            if f.stem.lower() in stems_seen:
-                continue
-            extra.append(_unconverted(cfg, f))
+    for f in staged_sources(cfg.in_dir):
+        if f.stem.lower() in stems_seen:
+            continue
+        extra.append(_unconverted(cfg, f))
     return out_convs + extra
 
 
 def safe_out_dir(cfg: WebConfig, dir_name: str) -> Path | None:
-    """Resolve ``out/<dir_name>``, or ``None`` if it escapes the out root.
+    """Resolve ``out/<dir_name>``, or ``None`` if it escapes or names the out root.
 
     Guards against path traversal: a ``dir_name`` like ``..`` (including
     URL-encoded forms that arrive already-decoded as a path segment) would
     otherwise let a request read or serve files outside ``conversions/out/``.
+    The root itself is rejected too — ``.`` resolves to it, and a Conversion
+    standing for the whole out tree makes every per-conversion action address
+    every conversion at once.
     """
     root = cfg.out_dir.resolve()
     try:
         candidate = (cfg.out_dir / dir_name).resolve()
     except (OSError, ValueError):
         return None
-    if candidate != root and not candidate.is_relative_to(root):
+    if candidate == root or not candidate.is_relative_to(root):
         return None
     return candidate
 

@@ -41,7 +41,7 @@ _VALID_CLEANUP_LEVELS: tuple[str, ...] = ("off", "basic", "aggressive")
 _VALID_CROSS_REFS: tuple[str, ...] = ("keep", "strip", "remap")
 _VALID_VISION_BACKENDS: tuple[str, ...] = ("anthropic", "claude_code", "openrouter")
 _VALID_PDF_BACKENDS: tuple[str, ...] = ("marker", "docling", "tophat")
-_VALID_NORMALIZE_MODES: tuple[str, ...] = ("heuristic", "llm", "llm_full", "auto")
+_VALID_NORMALIZE_MODES: tuple[str, ...] = ("heuristic", "llm", "llm_full", "llm_dehead", "auto")
 _VALID_PRESETS: tuple[str, ...] = ("rag-default", "flat", "textbook", "archival", "qti")
 _VALID_NORMALIZE_HEADINGS_BACKENDS: tuple[str, ...] = (
     "claude_code",

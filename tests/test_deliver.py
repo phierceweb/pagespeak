@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from pagespeak.cli import app
@@ -95,6 +96,33 @@ def test_strip_does_not_modify_source(tmp_path: Path) -> None:
     strip_for_delivery(src, tmp_path / "delivery" / "Exam 1")
     assert (src / "Exam 1.raw.md").exists()
     assert (src / ".vision-cache" / "abc.json").exists()
+
+
+def test_strip_refuses_destination_containing_source(tmp_path: Path) -> None:
+    """An ancestor dest would rmtree the source tree — and everything beside it."""
+    src = tmp_path / "conversions" / "out"
+    _make_doc(src / "Exam 1", "Exam 1")
+    staged = tmp_path / "conversions" / "in" / "source.pdf"
+    staged.parent.mkdir(parents=True)
+    staged.write_bytes(b"%PDF-1.4")
+
+    with pytest.raises(ValueError, match="outside the source tree"):
+        strip_for_delivery(src, tmp_path / "conversions")
+
+    assert staged.exists()
+    assert (src / "Exam 1" / "Exam 1.md").exists()
+    assert (src / "Exam 1" / ".vision-cache" / "abc.json").exists()
+
+
+def test_strip_refuses_destination_inside_source(tmp_path: Path) -> None:
+    """A dest nested in the source would delete part of it and re-copy itself."""
+    src = tmp_path / "out"
+    _make_doc(src / "Exam 1", "Exam 1")
+
+    with pytest.raises(ValueError, match="outside the source tree"):
+        strip_for_delivery(src, src / "delivery")
+
+    assert (src / "Exam 1" / "Exam 1.md").exists()
 
 
 def test_deliver_cmd_infers_delivery_dir(tmp_path: Path) -> None:

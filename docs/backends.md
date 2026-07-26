@@ -7,9 +7,32 @@ Two general PDF backends. Pick per call via `pdf_backend="marker"` (default) or 
 | Backend | Pick it for | Avoid it when |
 |---|---|---|
 | **Marker** (default) | Heading hierarchy matters — RAG ingestion, navigation, downstream LLMs reasoning over structure. Preserves a proper 4-level pyramid on real docs. | Marker crashes recurrently on Apple Silicon MPS — pass `--device cpu`. Tables occasionally mangled (cell boundaries split words). |
-| **Docling** | Better figure extraction (~25% more figures on textbooks). Well-formed tables. MPS-clean on Apple Silicon. Formula → LaTeX via `do_formula_enrichment=True`. | Anything where heading depth matters. Docling's layout model labels every section heading as `level=1`, so its output is always capped at 2 heading levels regardless of doc structure. |
+| **Docling** | Better figure extraction (~25% more figures on textbooks). Well-formed tables. MPS-clean on Apple Silicon. Formula → LaTeX via `do_formula_enrichment=True`. Documents with an embedded PDF outline, or `Section N.` / `N.M` numbering — with `--heading-hierarchy` (below). | Heading depth on a document with **no** outline and no section numbering. Docling's layout model labels every section heading at one level, so without `--heading-hierarchy` its output is capped at 2 heading levels regardless of doc structure — and *with* it, a no-signal document gets levels that are consistent but arbitrary. |
 
-The chunked pipeline flattens Marker's hierarchy too — Marker decides heading depth from local font statistics that don't agree across chunks. See [pipeline.md](pipeline.md) for details. Use `pagespeak convert` for any doc that fits in single-shot, or pair the pipeline with `--pdf-backend docling` (chunk-stable, but capped at 2 levels).
+The chunked pipeline flattens Marker's hierarchy too — Marker decides heading depth from local font statistics that don't agree across chunks. The same refit also means Marker's levels change with the **page range**: converting a slice of a document and converting the whole document produce different heading levels for the same pages. See [pipeline.md](pipeline.md) for details. Use `pagespeak convert` for any doc that fits in single-shot, or pair the pipeline with `--pdf-backend docling` (chunk-stable).
+
+## `--heading-hierarchy` (Docling only)
+
+Docling can infer real heading levels instead of emitting one flat level. Three signals, in precedence order: **PDF bookmarks/ToC** → **section numbering** → **font style**. Off by default; needs `docling>=2.109`, and older versions log a warning and stay flat.
+
+```bash
+pagespeak convert manual.pdf -o ./out --pdf-backend docling --heading-hierarchy
+```
+
+```python
+to_markdown("manual.pdf", pdf_backend="docling", heading_hierarchy=True)
+```
+
+**When it helps:** documents with an embedded outline, or with `Section N.` / `N.M` numbering. On a manual with a depth-3 outline it reproduces the document's own structure faithfully; on a `Section N.` + `N.M` manual it levels the whole spine consistently where Marker splits sibling subsections across levels and promotes callouts to chapter level.
+
+**When it does not:** a document with neither signal gets levels derived from font style alone — consistent, but not a meaningful tree. Bare-integer section numbering (`1 Introduction` alongside `1.1 Applications`) can inflect the wrong way, leaving subsections above their parents. Check the output before adopting it for a document class.
+
+**What it does not do:** it only assigns levels. It never removes a heading, so callouts, figure captions and body labels the layout model mistook for headings stay headings — they just land deeper. The cleanup and structure phases still do that work.
+
+Two corrections pagespeak applies on top of Docling, and they compose:
+
+- **The tree is promoted to start at H1** when Docling emits no title. Docling reserves `#` for a `TitleItem`; a PDF that yields none would otherwise come back with everything at `##` and leave every H1-keyed downstream pass with nothing to act on. Because Docling renders `level=N` as **N+1** hash marks, this shift also brings level-6 headings (seven hashes — invalid markdown) back inside CommonMark's six-hash limit, with all six tiers kept distinct. A document that does have a title is left alone.
+- **Any remaining 7-hash heading is clamped to six.** Only reachable when a title exists (so the promotion doesn't run) and the document actually uses level 6 — the deepest two tiers merge in that rare case rather than emitting headings no parser can see.
 
 ## Install
 

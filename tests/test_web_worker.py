@@ -38,7 +38,7 @@ def test_run_job_success_marks_succeeded(monkeypatch, tmp_path):
         def __init__(self):
             pass
 
-        def wait(self):
+        def wait(self, timeout=None):
             out.mkdir(parents=True, exist_ok=True)
             (out / "Doc.raw.md").write_text("# raw", encoding="utf-8")
             return 0
@@ -91,7 +91,7 @@ def test_run_job_nonzero_marks_failed(monkeypatch, tmp_path):
     class _FakeProc:
         returncode = 2
 
-        def wait(self):
+        def wait(self, timeout=None):
             out.mkdir(parents=True, exist_ok=True)
             return 2
 

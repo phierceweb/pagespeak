@@ -10,6 +10,7 @@ from pagespeak.services._cleanup_diagnose import (
     demote_empty_shell_headings,
     demote_listish_bare_int_headings,
     demote_prose_headings,
+    lock_numbered_chapter_parents_pass,
     lock_numbered_section_depth_pass,
     strip_heading_emphasis_pass,
 )
@@ -318,3 +319,170 @@ def test_orphan_fragments_runs_in_registry_and_skips_outline() -> None:
     out2, counts2 = apply_heading_demotions(src, is_outline_doc=True)
     assert "cleanup_demoted_orphan_fragments" not in counts2
     assert "###### EN" in out2
+
+
+# --- lock_numbered_chapter_parents_pass --------------------------------------
+#
+# A bare-integer heading `N` that owns dotted `N.M` headings is their parent.
+# The dot-count lock levels the children; nothing levelled the parent, so a
+# backend that emits the chapter at or below its own children left the two
+# indistinguishable — and an inverted chapter then reads as a bodiless shell.
+
+
+def test_chapter_parent_lifted_above_its_numbered_children() -> None:
+    src = "## 1 Safety and environment\n\nbody\n\n## 1.1 Environment\n\nbody\n"
+    out, n = lock_numbered_chapter_parents_pass(src)
+    assert n == 1
+    assert "# 1 Safety and environment" in out
+    assert "## 1.1 Environment" in out
+
+
+def test_chapter_parent_noop_without_numbered_children() -> None:
+    """`32 in / 32 out` is a label, not a chapter — no `32.M` headings."""
+    src = "## 32 in / 32 out\n\nbody\n\n## 1.1 Environment\n\nbody\n"
+    out, n = lock_numbered_chapter_parents_pass(src)
+    assert n == 0
+    assert out == src
+
+
+def test_chapter_parent_matches_on_its_own_number_only() -> None:
+    src = "## 2 Description\n\nbody\n\n## 1.1 Environment\n\nbody\n"
+    out, n = lock_numbered_chapter_parents_pass(src)
+    assert n == 0
+    assert out == src
+
+
+def test_chapter_parent_already_top_level_is_untouched() -> None:
+    src = "# 1 Safety\n\nbody\n\n## 1.1 Environment\n\nbody\n"
+    out, n = lock_numbered_chapter_parents_pass(src)
+    assert n == 0
+    assert out == src
+
+
+def test_chapter_parent_ignores_plain_text_and_fences() -> None:
+    src = "## 1 Safety\n\n## 1.1 Env\n\n1 not a heading\n\n```\n## 9 Fake\n## 9.1 Fake\n```\n"
+    out, n = lock_numbered_chapter_parents_pass(src)
+    assert n == 1
+    assert "1 not a heading" in out
+    assert "## 9 Fake" in out  # inside a fence — untouched
+
+
+def test_chapter_parent_handles_multiple_chapters() -> None:
+    src = (
+        "## 1 Safety\n\n## 1.1 Env\n\n"
+        "## 5 Cleaning\n\n## 5.1 Microphone\n\n"
+        "## 6 Technical data\n\nbody\n"
+    )
+    out, n = lock_numbered_chapter_parents_pass(src)
+    assert n == 2  # 6 has no dotted children — untouched
+    assert "# 1 Safety" in out
+    assert "# 5 Cleaning" in out
+    assert "## 6 Technical data" in out
+
+
+def test_chapter_parent_strips_emphasis_markers_when_matching() -> None:
+    src = "## **3 Power supply**\n\n## 3.1 Phantom\n\nbody\n"
+    out, n = lock_numbered_chapter_parents_pass(src)
+    assert n == 1
+    assert out.splitlines()[0].startswith("# ")
+
+
+def test_chapter_parent_runs_in_the_registry_before_demotes() -> None:
+    """End to end: the inverted-chapter shape must survive cleanup with its
+    spine intact (it previously cascaded into empty-shell + listish demotes
+    and lost every chapter)."""
+    src = (
+        "## 1 Safety and environment\n\n# 1.1 Environment\n\nbody text here\n\n"
+        "## 2 Description\n\n# 2.1 Overview\n\nmore body\n\n"
+        "1230 Vienna\n8500 Balboa Blvd\n"
+    )
+    out, _counts = apply_heading_demotions(src, is_outline_doc=False)
+    assert "# 1 Safety and environment" in out
+    assert "# 2 Description" in out
+
+
+def test_chapter_parent_requires_the_first_child_to_be_dot_one() -> None:
+    """Meeting `5.2` first means we are inside chapter 5, past its head —
+    the candidate is a sidebar that merely opens with the number
+    ("5 Things About X" sitting inside section 5.1)."""
+    src = "### 5 Things About the Program\n\nbody\n\n## 5.2 Consumer Behavior\n\nbody\n"
+    out, n = lock_numbered_chapter_parents_pass(src)
+    assert n == 0
+    assert out == src
+
+
+# ── fenced code must never be rewritten ────────────────────────────────
+#
+# A `#` inside a fence is a shell/C/Python comment. Rewriting it corrupts the
+# code and logs identically to a legitimate heading fix.
+
+
+def test_numbered_depth_lock_skips_fenced_code() -> None:
+    from pagespeak.services._cleanup_diagnose import lock_numbered_section_depth_pass
+
+    text = "# Doc\n\n```bash\n# 1.2 Configure\n## 2.3a Tune\nfoo\n```\n\n##### 1.2 Real\n"
+    out, _ = lock_numbered_section_depth_pass(text)
+    assert "# 1.2 Configure" in out and "## 2.3a Tune" in out, "fence was rewritten"
+    assert "## 1.2 Real" in out, "real heading must still be locked"
+
+
+def test_lettered_run_lock_skips_fenced_code() -> None:
+    from pagespeak.services._cleanup_diagnose import lock_lettered_subsection_runs_pass
+
+    fenced = "# D\n\n```bash\n## 1.3A Start\n## 1.3B Stop\n```\n"
+    assert lock_lettered_subsection_runs_pass(fenced) == (fenced, 0)
+    real = "# D\n\n## 1.3A Start\n## 1.3B Stop\n"
+    out, n = lock_lettered_subsection_runs_pass(real)
+    assert n == 2 and "### 1.3A Start" in out
+
+
+def test_emphasis_strip_and_spaced_numbering_skip_fenced_code() -> None:
+    from pagespeak.services._cleanup_diagnose import (
+        normalize_spaced_numbering_pass,
+        strip_heading_emphasis_pass,
+    )
+
+    text = "# Doc\n\n```md\n# **bold comment**\n## 1 . spaced\n```\n"
+    assert strip_heading_emphasis_pass(text) == (text, 0)
+    assert normalize_spaced_numbering_pass(text) == (text, 0)
+
+
+def test_structure_authoritative_skips_the_demote_passes() -> None:
+    """A backend-read structure must survive cleanup.
+
+    Both offending passes fire on this input: `demote_prose_heading` on the
+    sentence-shaped title, and the empty-shell demote on the bare label.
+    """
+    from pagespeak.services._cleanup import cleanup_markdown
+
+    md = (
+        "# Widget Maintenance\n\n"
+        "Body text under the top-level section heading.\n\n"
+        "## The interlock stays engaged until the residual charge dissipates.\n\n"
+        "Body text explaining the mechanism in enough words to be a real section.\n\n"
+        "## Figure 3. Enclosure airflow paths\n\n"
+        "## Connector types\n\n"
+        "More body text so this section is not an empty shell either.\n"
+    )
+    before = cleanup_markdown(md, level="basic")
+    after = cleanup_markdown(md, level="basic", structure_authoritative=True)
+
+    n_before = before.count("\n#") + before.startswith("#")
+    n_after = after.count("\n#") + after.startswith("#")
+    assert n_after > n_before, (
+        f"signal did not protect headings (before={n_before}, after={n_after})"
+    )
+    assert "## Figure 3. Enclosure airflow paths" in after
+    assert "## The interlock stays engaged until the residual charge dissipates." in after
+
+
+def test_structure_authoritative_defaults_off() -> None:
+    """Absent the signal, the demote passes still fire — the input is only a
+    guard against a default that silently flipped."""
+    from pagespeak.services._cleanup import cleanup_markdown
+
+    md = "# A\n\nbody\n\n## Figure 3. Something\n"
+    assert "## Figure 3. Something" not in cleanup_markdown(md, level="basic")
+    assert "## Figure 3. Something" in cleanup_markdown(
+        md, level="basic", structure_authoritative=True
+    )

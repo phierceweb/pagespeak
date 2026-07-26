@@ -43,6 +43,11 @@ def register(
             callback=validate_pdf_backend,
             help="'marker' (default), 'docling', or 'tophat' (Top Hat quiz exports).",
         ),
+        heading_hierarchy: bool = typer.Option(
+            False,
+            "--heading-hierarchy/--no-heading-hierarchy",
+            help="Docling PDF only. Infer heading levels from PDF bookmarks / section numbering / font style instead of Docling's flat default. Requires docling>=2.109.",
+        ),
         docx_backend: str = typer.Option(
             "markitdown",
             "--docx-backend",
@@ -82,6 +87,7 @@ def register(
             "output_dir": output_dir,
             "workers": workers,
             "pdf_backend": pdf_backend,
+            "heading_hierarchy": heading_hierarchy,
             "docx_backend": cast(DocxBackendName, docx_backend),
             "docx_outline_heading_depth": docx_outline_heading_depth,
             "chunk_pages": chunk_pages,

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections import Counter
 from typing import TYPE_CHECKING
 
 from pf_core.log import get_logger
@@ -21,6 +22,9 @@ from ..prompts._heading_normalize import (
 )
 from ..prompts._heading_normalize import (
     build_normalize_prompt as _build_full_prompt_text,
+)
+from ..prompts._heading_normalize_dehead import (
+    HEADING_NORMALIZE_DEHEAD_PROMPT_VERSION,
 )
 from ..prompts._heading_normalize_full import (
     HEADING_NORMALIZE_FULL_PROMPT_VERSION,
@@ -38,10 +42,24 @@ DEFAULT_NORMALIZE_MAX_INPUT_TOKENS = 150_000
 _ANCHOR_MAX_CHARS = 800
 
 _LEVEL_LINE_RE = re.compile(r"^\s*(\d+)\s*:\s*(\d+)\s*$")
+# `<idx>: KEEP|DROP` — the llm_dehead verdict line.
+_DEHEAD_LINE_RE = re.compile(r"^\s*(\d+)\s*:\s*(KEEP|DROP)\s*$", re.IGNORECASE)
 
 _CLAUDE_CODE_TIMEOUT_S_DEFAULT = 1800
 
 _CLAUDE_CODE_TIMEOUT_ENV_VAR = "PAGESPEAK_CLAUDE_CODE_TIMEOUT_S"
+
+_PROMPT_VERSION_BY_MODE: dict[str, int] = {
+    "llm": NORMALIZE_PROMPT_VERSION,
+    "llm_full": HEADING_NORMALIZE_FULL_PROMPT_VERSION,
+    "llm_dehead": HEADING_NORMALIZE_DEHEAD_PROMPT_VERSION,
+}
+
+_BODY_GUARD_MIN_WORDS_DEFAULT = 10
+_BODY_GUARD_MIN_WORDS_ENV_VAR = "PAGESPEAK_DEHEAD_GUARD_MIN_BODY_WORDS"
+# Above this many identical headings the line is running furniture, not a section.
+_BODY_GUARD_MAX_RECURRENCE_DEFAULT = 25
+_BODY_GUARD_MAX_RECURRENCE_ENV_VAR = "PAGESPEAK_DEHEAD_GUARD_MAX_RECURRENCE"
 
 
 def _claude_code_timeout_s() -> int:
@@ -57,6 +75,14 @@ def _claude_code_timeout_s() -> int:
 
 
 DEFAULT_NORMALIZE_MODEL = "claude-haiku-4-5-20251001"
+
+# Must match the slugs `_heading_normalize` passes to `invoke_agent`: this
+# model goes in as `model_override`, which outranks the agent block's own.
+_AGENT_SLUG_FOR_MODE = {
+    "llm": "heading_normalize",
+    "llm_full": "heading_normalize_full",
+    "llm_dehead": "heading_normalize_dehead",
+}
 
 
 def _build_prompt(headings: list[_HeadingRecord]) -> str:
@@ -182,6 +208,141 @@ def _parse_response(response: str) -> dict[int, int]:
     return out
 
 
+def _parse_dehead_response(response: str) -> dict[int, int]:
+    """Parse `<idx>: KEEP|DROP` lines into the level map the apply step takes.
+
+    Only DROP verdicts produce an entry, mapped to level 0 (the de-headify
+    sentinel). A KEEP is deliberately absent from the map: `_apply_normalization`
+    skips any index it has no entry for, so a kept heading retains the level it
+    arrived with — the property that makes this mode safe on a document whose
+    hierarchy is already correct. Unmatched lines are ignored (the model
+    occasionally adds commentary despite the instruction).
+    """
+    out: dict[int, int] = {}
+    for line in response.splitlines():
+        m = _DEHEAD_LINE_RE.match(line)
+        if m and m.group(2).upper() == "DROP":
+            out[int(m.group(1))] = 0
+    return out
+
+
+def _guard_parent_drops(
+    levels: dict[int, int],
+    headings: list[_HeadingRecord],
+) -> dict[int, int]:
+    """Refuse any de-headify verdict on a heading that owns child headings.
+
+    A heading whose next heading is deeper introduced a subtree, so it is a
+    real section whatever its own body looks like; junk is always a leaf.
+    Constrains the model rather than trusting it — a per-heading judge reads
+    a terse reference section as a fragment, and does so for a whole chapter
+    at a time.
+    """
+    if not levels:
+        return levels
+    kept: dict[int, int] = {}
+    for idx, level in levels.items():
+        this = headings[idx - 1] if 0 < idx <= len(headings) else None
+        nxt = headings[idx] if 0 < idx < len(headings) else None
+        if this is not None and nxt is not None and nxt.level > this.level:
+            continue  # parent of a subtree — never de-headify
+        kept[idx] = level
+    return kept
+
+
+def _guard_body_drops(
+    levels: dict[int, int],
+    headings: list[_HeadingRecord],
+    md: str,
+    *,
+    min_body_words: int | None = None,
+    max_recurrence: int | None = None,
+) -> tuple[dict[int, int], int]:
+    """Refuse a de-headify verdict on a heading that owns its own body text.
+
+    A heading followed by prose of its own is a section boundary: dropping it
+    merges that prose into the section above, so the content stops being
+    retrievable on its own even though the words survive. Recurring page
+    furniture is exempt — a line repeated across the whole document is a
+    running header however much text trails it, and exempting it is what keeps
+    the guard from re-admitting every `Note` in a manual.
+
+    Returns the surviving verdict map and the number of drops refused.
+    """
+    drops = [idx for idx, level in levels.items() if level == 0]
+    if not drops:
+        return levels, 0
+    min_words = resolve_int(
+        min_body_words, _BODY_GUARD_MIN_WORDS_ENV_VAR, default=_BODY_GUARD_MIN_WORDS_DEFAULT
+    )
+    max_recur = resolve_int(
+        max_recurrence,
+        _BODY_GUARD_MAX_RECURRENCE_ENV_VAR,
+        default=_BODY_GUARD_MAX_RECURRENCE_DEFAULT,
+    )
+    anchors = _extract_body_anchors(md, headings)
+    recurrence = Counter(h.clean_text.strip().lower() for h in headings)
+    kept = dict(levels)
+    for idx in drops:
+        if not 0 < idx <= len(headings):
+            continue
+        heading = headings[idx - 1]
+        if recurrence[heading.clean_text.strip().lower()] > max_recur:
+            continue
+        if len(anchors[idx - 1].split()) >= min_words:
+            del kept[idx]
+    return kept, len(levels) - len(kept)
+
+
+def _build_prompt_dehead(
+    headings: list[_HeadingRecord],
+    anchors: list[str],
+    *,
+    include_anchors: bool,
+) -> str:
+    """Render the `llm_dehead` prompt — same headings block as `llm_full`,
+    different question."""
+    from ..prompts._heading_normalize_dehead import build_dehead_prompt
+
+    blocks: list[str] = []
+    for idx, h in enumerate(headings, start=1):
+        line = f"{idx}: {h.level} {h.clean_text}"
+        if include_anchors and anchors[idx - 1]:
+            indented = "\n".join("    " + ln for ln in anchors[idx - 1].splitlines())
+            line = f"{line}\n{indented}"
+        blocks.append(line)
+    return build_dehead_prompt("\n".join(blocks))
+
+
+def _build_dehead_prompt_with_gate(
+    md: str,
+    headings: list[_HeadingRecord],
+    *,
+    max_input_tokens: int | None,
+) -> tuple[str, bool]:
+    """`_build_llm_full_prompt_with_gate`'s sibling for the de-headify prompt."""
+    threshold = _resolve_max_input_tokens(max_input_tokens)
+    anchors = _extract_body_anchors(md, headings)
+    prompt = _build_prompt_dehead(headings, anchors, include_anchors=True)
+    estimate = _estimate_tokens(prompt)
+    logger.info(
+        "normalize_dehead_payload_estimate tokens=%d heading_count=%d threshold=%d",
+        estimate,
+        len(headings),
+        threshold,
+    )
+    if estimate <= threshold:
+        return prompt, True
+    prompt = _build_prompt_dehead(headings, anchors, include_anchors=False)
+    logger.warning(
+        "normalize_dehead_anchors_dropped estimate=%d threshold=%d heading_count=%d",
+        estimate,
+        threshold,
+        len(headings),
+    )
+    return prompt, False
+
+
 def _cache_key(
     headings: list[_HeadingRecord],
     model: str | None,
@@ -206,9 +367,10 @@ def _cache_key(
     h.update(b"|")
     h.update(mode.encode("utf-8"))
     h.update(b"|")
-    prompt_version = (
-        HEADING_NORMALIZE_FULL_PROMPT_VERSION if mode == "llm_full" else NORMALIZE_PROMPT_VERSION
-    )
+    # Every mode keys on ITS OWN prompt version: a mode that falls back to
+    # another's constant cannot be invalidated by bumping its prompt, so a
+    # fixed prompt would silently replay the old verdicts.
+    prompt_version = _PROMPT_VERSION_BY_MODE.get(mode, NORMALIZE_PROMPT_VERSION)
     h.update(str(prompt_version).encode("utf-8"))
     return h.hexdigest()[:16]
 
@@ -254,10 +416,8 @@ def _resolve_model(model: str | None, *, mode: NormalizeMode) -> str:
     The YAML is the source of truth for the model; env is reserved for
     backend selection (`PAGESPEAK_HEADING_NORMALIZE_BACKEND` / `_FULL_BACKEND`).
 
-    Mode picks the agent slug: `llm` → `heading_normalize`, `llm_full` →
-    `heading_normalize_full`. Each slug has its own YAML block so the
-    two modes can use different models if needed (e.g. larger-context
-    model for `llm_full` on very large docs).
+    Mode picks the agent slug via `_AGENT_SLUG_FOR_MODE`, so each mode can use
+    its own model (a larger-context one for `llm_full` on very large docs).
 
     Never returns None or empty — see `DEFAULT_NORMALIZE_MODEL` for the
     cost-protection rationale (without an explicit `--model`, `claude
@@ -268,7 +428,7 @@ def _resolve_model(model: str | None, *, mode: NormalizeMode) -> str:
     """
     from pf_core.llm.router import get_agent_config
 
-    agent_slug = "heading_normalize_full" if mode == "llm_full" else "heading_normalize"
+    agent_slug = _AGENT_SLUG_FOR_MODE.get(mode, "heading_normalize")
     cfg = get_agent_config(agent_slug, model_override=model)
     return cfg.get("model") or DEFAULT_NORMALIZE_MODEL
 

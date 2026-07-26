@@ -7,6 +7,24 @@ Opt-in pre-split pass that fixes flattened heading hierarchy in PDF extractions.
 | `heuristic` (default) | Numbering-based rules: `Chapter N` → L1, `N.M` → L2, `N.M.O` → L3, `N. Title` → L1. Pure / deterministic / no I/O. | Instant | $0 |
 | `llm` | Sends the heading list (headers only) to the LLM, parses the response, caches it. Handles edge cases the heuristic doesn't (unusual front-matter, non-numbered chapter titles). | ~30–60s | One LLM call per uncached run |
 | `llm_full` | Sends the heading list **plus body anchors**, so the LLM levels by surrounding context, not just heading text — needed for badly-flattened textbooks where heading text alone is ambiguous. Self-falls-back to headers-only if the payload exceeds the configured token budget. | ~30–90s | One (large) LLM call per uncached run |
+| `llm_dehead` | Same headings + body-anchor payload as `llm_full`, but the model is asked only whether each heading is real (KEEP/DROP) — **levels are never reassigned**. For a document whose hierarchy the backend already got right (an embedded PDF outline, or a `Section N.`/`N.M` numbering spine), re-leveling is unnecessary and carries regression risk; junk removal is the part no deterministic pass can do. | ~30–90s | One (large) LLM call per uncached run |
+
+### Automatic mode downgrade on an outline-derived hierarchy
+
+`llm` and `llm_full` reassign every heading's depth. That is the point when the backend inferred depth from typography (Marker clusters font sizes), and destructive when the depth was read from the document's own bookmark outline — a document may genuinely have many sibling top-level sections, and re-leveling rewrites structure the publisher already stated.
+
+So when the ingest recorded an outline-derived hierarchy (docling + `--heading-hierarchy` + a PDF carrying a bookmark outline at least `PAGESPEAK_TRUSTED_OUTLINE_MIN_DEPTH` deep), a requested `llm` / `llm_full` is downgraded to **`llm_dehead`** — junk removal without re-leveling. The downgrade logs `normalize_mode_downgraded`. `heuristic` and `llm_dehead` pass through untouched, as does any Marker conversion.
+
+This is the same provenance signal that gates the structure phase's level-rewriting passes; see `services/_hierarchy_trust.py`.
+
+### De-headify guards
+
+Both `llm_full` and `llm_dehead` can mark a heading as not-a-heading (the level-0 sentinel strips the `#`, leaving the text as a paragraph). Two structural guards constrain that verdict, because a wrong drop is silent: the words survive, but the section boundary does not, so the content stops being independently retrievable.
+
+**A heading that owns child headings is never dropped** (`llm_dehead` only — the mode never re-levels, so the arrived hierarchy is trustworthy). A per-heading judge calls a real leaf section a fragment when its body is short, and on a reference manual whose leaves all look alike it does so for a whole chapter at a time. A heading whose next heading is deeper introduced a subtree and is a real section whatever its body looks like; genuine junk is always a leaf. A refusal logs `heading_normalize_dehead_parents_kept`.
+
+**A heading that owns its own body is never dropped** (both modes). A heading followed by at least `PAGESPEAK_DEHEAD_GUARD_MIN_BODY_WORDS` words of its own prose is a section boundary. This catches what the parent guard structurally cannot: when one heading tier is dominated by furniture, the model generalises "this tier is junk" and takes the genuine *leaf* sections sharing it. Recurring page furniture is exempt — a heading whose exact text appears more than `PAGESPEAK_DEHEAD_GUARD_MAX_RECURRENCE` times in one document is a running header however much text trails it, and without that exemption the guard would re-admit every `Note` in a manual. A refusal logs `heading_normalize_body_guard_kept`.
+
 | `auto` | Picks `heuristic` or `llm_full` **per document** from a $0 no-LLM heading-shape signal — see [Auto mode](#auto-mode). | Instant decision | $0 decision; the chosen engine's cost applies |
 
 Short non-prose margin-code fragments (`EN`, `FR`) that a backend promoted to headings are demoted in cleanup (`services/_fragments.py`) before normalize runs, so normalize sees a cleaner heading set.

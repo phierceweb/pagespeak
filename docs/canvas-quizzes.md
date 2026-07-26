@@ -72,7 +72,7 @@ Inside each doc the exam title is the only `#` H1 and each question is a `## Que
 
 The seven Canvas types seen in real exports each map to a faithful rendering with a recoverable answer key: multiple-choice and true/false (one correct option), multiple-answers (all correct marked), matching (a two-column item→match table), short-answer / fill-in-the-blank (accepted-answer list), fill-in-multiple-blanks (per-blank answers), and essay (prompt only — manually graded).
 
-Correct answers come from each item's `<resprocessing>`: a `<varequal>` that is **not** wrapped in `<not>` is a correct selection. For multiple-answers, the `<not>`-wrapped options are the distractors and are excluded.
+Correct answers come from each item's `<resprocessing>`, and only from the `<respcondition>` elements that award a positive score — Canvas emits a further non-scoring condition per option when the instructor entered per-answer feedback, and reading those as well marks every option correct. Within a scoring condition, a `<varequal>` that is **not** wrapped in `<not>` is a correct selection; for multiple-answers the `<not>`-wrapped options are the distractors and are excluded. When no condition in an item awards credit, the whole `<resprocessing>` subtree is read instead, so a scoring shape this parser doesn't model still yields a key rather than none.
 
 Any **unknown** type (a New Quizzes item, numerical, multiple-dropdowns) is not dropped: the stem and any choices render, and a `qti_unknown_question_type` WARNING names it.
 

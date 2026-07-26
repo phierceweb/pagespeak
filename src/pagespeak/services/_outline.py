@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import re
 
+from ._fences import fence_flags
+
 # Optional leading marker stack (`* `, `* + `, `* + - * `), then the
 # residual space indent, then `N. content`. The `markers` group lets the
 # pattern match a marker-prefixed first item like `* + 1.`.
@@ -71,6 +73,7 @@ def promote_outline(text: str) -> tuple[str, int]:
     deeper item — a flat/short sequence or a non-flattened doc.
     """
     lines = text.splitlines()
+    _fenced = fence_flags(lines)
 
     # Pass 1: classify.
     # pass_lines: raw lines to emit unchanged, keyed by index.
@@ -94,7 +97,7 @@ def promote_outline(text: str) -> tuple[str, int]:
             stack = []
             pass_lines[idx] = line
             continue
-        m = LIST_LINE_RE.match(line)
+        m = None if _fenced[idx] else LIST_LINE_RE.match(line)
         if m is None:
             pass_lines[idx] = line
             continue

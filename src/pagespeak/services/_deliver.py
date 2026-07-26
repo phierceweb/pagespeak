@@ -65,6 +65,14 @@ class DeliveryResult:
     files: int
 
 
+def _require_disjoint(src: Path, dst: Path) -> None:
+    """The destination is rmtree'd, so it must not be, contain, or sit inside the
+    source — otherwise delivery deletes the tree it is about to read."""
+    s, d = src.resolve(), dst.resolve()
+    if s == d or s.is_relative_to(d) or d.is_relative_to(s):
+        raise ValueError(f"delivery destination must be outside the source tree: {d} overlaps {s}")
+
+
 def strip_for_delivery(source: str | Path, dest: str | Path) -> DeliveryResult:
     """Mirror `source` into `dest`, keeping only the master `.md`(s),
     `sections/`, and `images/`. Drops stage checkpoints, run records, content
@@ -77,8 +85,7 @@ def strip_for_delivery(source: str | Path, dest: str | Path) -> DeliveryResult:
     dst = Path(dest)
     if not src.is_dir():
         raise NotADirectoryError(f"delivery source is not a directory: {src}")
-    if dst.resolve() == src.resolve():
-        raise ValueError("delivery destination must differ from the source")
+    _require_disjoint(src, dst)
     if dst.exists():
         shutil.rmtree(dst)
 

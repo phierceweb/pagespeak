@@ -19,13 +19,35 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 
-from ._cleanup_diagnose import lock_numbered_section_depth_pass
+from pf_core.log import get_logger
+
+from ._cleanup_diagnose import (
+    lock_lettered_subsection_runs_pass,
+    lock_numbered_section_depth_pass,
+)
+from ._fences import apply_outside_fences, fence_flags
+
+logger = get_logger(__name__)
 
 _HEADING_RE = re.compile(r"^(\s*)(#{1,6})\s+(\S.*?)\s*$")
 _NUMBER_ONLY_RE = re.compile(r"^\d+$")
 _DOUBLED_RE = re.compile(r"^(.+?)\s+\1$")
 _SPAN_TAG_RE = re.compile(r"</?span[^>]*>")
-_FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})")
+# A single repeated word this long is implausible as a real name.
+_DOUBLING_MIN_CHARS = 8
+
+# A bare 4-digit heading in this range reads as a year, not a page number.
+_YEAR_MIN, _YEAR_MAX = 1000, 2999
+
+# A spaced formula has the same token shape as letter-spaced display text;
+# an operator is what tells them apart.
+_MATH_TOKENS = frozenset("=+-*/^<>()[]{}|~%") | {"==", "<=", ">=", "!=", "→", "×", "÷", "±"}
+
+
+def _is_plausible_year(text: str) -> bool:
+    """A 4-digit value in a range a document would title a section with."""
+    s = text.strip()
+    return len(s) == 4 and s.isdigit() and _YEAR_MIN <= int(s) <= _YEAR_MAX
 
 
 def demote_number_only_headings(text: str) -> tuple[str, int]:
@@ -34,22 +56,34 @@ def demote_number_only_headings(text: str) -> tuple[str, int]:
     These are page numbers a backend (Marker) promoted and the LLM left as
     headings; split otherwise turns each into a meaningless one-line
     section. Numbered SECTIONS (``# 12.1 Foo``, ``# 1.``) are not bare
-    integers, so they are kept. Demote = drop the ``#`` markers, keep
-    indent + text (faithful, nothing deleted). No-op (``0``) when absent.
+    integers, so they are kept, and so is a plausible YEAR — a timeline,
+    history or annual-report section is legitimately titled ``# 1984``, and
+    demoting every one collapses the document into a single section at
+    split. Demote = drop the ``#`` markers, keep indent + text (faithful,
+    nothing deleted). No-op (``0``) when absent.
     """
-    out: list[str] = []
-    n = 0
-    for line in text.splitlines():
+
+    def _demote(line: str) -> str:
         m = _HEADING_RE.match(line)
-        if m and _NUMBER_ONLY_RE.match(m.group(3)):
-            out.append(f"{m.group(1)}{m.group(3)}")
-            n += 1
-        else:
-            out.append(line)
-    res = "\n".join(out)
-    if text.endswith("\n") and not res.endswith("\n"):
-        res += "\n"
-    return res, n
+        if m and _NUMBER_ONLY_RE.match(m.group(3)) and not _is_plausible_year(m.group(3)):
+            logger.debug("repair_demote_number_only %r", line)
+            return f"{m.group(1)}{m.group(3)}"
+        return line
+
+    return apply_outside_fences(text, _demote)
+
+
+def _is_doubling_artifact(phrase: str) -> bool:
+    """A repeated phrase is an extraction artifact, not a reduplicated name.
+
+    `Bora Bora` / `Duran Duran` / `Pago Pago` are single short words repeated —
+    real names. An artifact repeats a whole heading, which is multi-word or
+    substantially longer.
+    """
+    p = phrase.strip()
+    if len(p) < 2:
+        return False
+    return len(p.split()) >= 2 or len(p) >= _DOUBLING_MIN_CHARS
 
 
 def dedupe_doubled_heading_text(text: str) -> tuple[str, int]:
@@ -57,25 +91,24 @@ def dedupe_doubled_heading_text(text: str) -> tuple[str, int]:
     (``## Chapter Summary Chapter Summary`` → ``## Chapter Summary``).
 
     A Marker/extraction artifact where the heading text is emitted twice.
-    Detect = the text is exactly ``P <ws> P`` for a phrase ``P`` (>= 2
-    chars). Odd repetitions and distinct halves are left alone; one copy
-    is kept at the original level. No-op (``0``) when absent.
+    Detect = the text is exactly ``P <ws> P`` for a phrase ``P``. A single
+    short word is NOT an artifact — ``Bora Bora``, ``Duran Duran``,
+    ``Walla Walla`` are real names — so ``P`` must be multi-word or long
+    enough that a genuine reduplicated name is implausible. Odd repetitions
+    and distinct halves are left alone; one copy is kept at the original
+    level. No-op (``0``) when absent.
     """
-    out: list[str] = []
-    n = 0
-    for line in text.splitlines():
+
+    def _dedupe(line: str) -> str:
         m = _HEADING_RE.match(line)
         if m:
             d = _DOUBLED_RE.match(m.group(3))
-            if d and len(d.group(1).strip()) >= 2:
-                out.append(f"{m.group(1)}{m.group(2)} {d.group(1)}")
-                n += 1
-                continue
-        out.append(line)
-    res = "\n".join(out)
-    if text.endswith("\n") and not res.endswith("\n"):
-        res += "\n"
-    return res, n
+            if d and _is_doubling_artifact(d.group(1)):
+                logger.debug("repair_dedupe_doubled %r -> %r", line, d.group(1))
+                return f"{m.group(1)}{m.group(2)} {d.group(1)}"
+        return line
+
+    return apply_outside_fences(text, _dedupe)
 
 
 def demote_spaced_letter_headings(text: str) -> tuple[str, int]:
@@ -84,26 +117,25 @@ def demote_spaced_letter_headings(text: str) -> tuple[str, int]:
     artifact, never a real section.
 
     Detect = many single-character space-separated tokens (>= 4 and >= 60%
-    of tokens), the signature of letter-spaced display text. De-spacing
-    can't recover word boundaries (uniform spaces), so the faithful fix is
-    to demote (markers dropped, text kept verbatim). No-op (``0``) absent.
+    of tokens), the signature of letter-spaced display text. The singles
+    must be LETTERS, and a math operator anywhere vetoes the match — a
+    spaced formula (``## f ( x ) = 3 x``) has the same token shape but is
+    a real heading. De-spacing can't recover word boundaries (uniform
+    spaces), so the faithful fix is to demote (markers dropped, text kept
+    verbatim). No-op (``0``) absent.
     """
-    out: list[str] = []
-    n = 0
-    for line in text.splitlines():
+
+    def _demote(line: str) -> str:
         m = _HEADING_RE.match(line)
         if m:
             tokens = m.group(3).split()
-            singles = sum(1 for t in tokens if len(t) == 1)
-            if singles >= 4 and singles / len(tokens) >= 0.6:
-                out.append(f"{m.group(1)}{m.group(3)}")
-                n += 1
-                continue
-        out.append(line)
-    res = "\n".join(out)
-    if text.endswith("\n") and not res.endswith("\n"):
-        res += "\n"
-    return res, n
+            singles = sum(1 for t in tokens if len(t) == 1 and t.isalpha())
+            has_math = any(t in _MATH_TOKENS for t in tokens)
+            if not has_math and singles >= 4 and singles / len(tokens) >= 0.6:
+                return f"{m.group(1)}{m.group(3)}"
+        return line
+
+    return apply_outside_fences(text, _demote)
 
 
 def strip_heading_spans(text: str) -> tuple[str, int]:
@@ -118,21 +150,16 @@ def strip_heading_spans(text: str) -> tuple[str, int]:
     span is left unchanged (never produce an empty heading). No-op (``0``)
     when absent.
     """
-    out: list[str] = []
-    n = 0
-    for line in text.splitlines():
+
+    def _strip(line: str) -> str:
         m = _HEADING_RE.match(line)
         if m:
             cleaned = _SPAN_TAG_RE.sub("", m.group(3)).strip()
             if cleaned and cleaned != m.group(3):
-                out.append(f"{m.group(1)}{m.group(2)} {cleaned}")
-                n += 1
-                continue
-        out.append(line)
-    res = "\n".join(out)
-    if text.endswith("\n") and not res.endswith("\n"):
-        res += "\n"
-    return res, n
+                return f"{m.group(1)}{m.group(2)} {cleaned}"
+        return line
+
+    return apply_outside_fences(text, _strip)
 
 
 def close_heading_level_gaps(text: str) -> tuple[str, int]:
@@ -154,19 +181,9 @@ def close_heading_level_gaps(text: str) -> tuple[str, int]:
     out: list[str] = []
     n = 0
     stack: list[tuple[int, int]] = []  # (raw_level, output_level) of ancestors
-    in_fence = False
-    fence_char = ""
-    for line in text.splitlines():
-        fm = _FENCE_RE.match(line)
-        if fm:
-            char = fm.group(1)[0]
-            if not in_fence:
-                in_fence, fence_char = True, char
-            elif char == fence_char:
-                in_fence = False
-            out.append(line)
-            continue
-        m = None if in_fence else _HEADING_RE.match(line)
+    lines = text.splitlines()
+    for line, is_fenced in zip(lines, fence_flags(lines), strict=True):
+        m = None if is_fenced else _HEADING_RE.match(line)
         if m:
             raw = len(m.group(2))
             while stack and stack[-1][0] >= raw:
@@ -218,6 +235,8 @@ def repair_headings(text: str, *, is_outline_doc: bool = False) -> tuple[str, di
     counts: dict[str, int] = {}
     text, n = lock_numbered_section_depth_pass(text)
     counts["repair_locked_numbered_section_depth"] = n
+    text, n = lock_lettered_subsection_runs_pass(text)
+    counts["repair_locked_lettered_subsection_runs"] = n
     if not is_outline_doc:
         for event, fn in _ARTIFACT_PASSES:
             text, n = fn(text)

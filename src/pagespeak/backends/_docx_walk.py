@@ -122,10 +122,18 @@ class BodyItem:
 def iter_body(document: Any) -> Iterator[BodyItem]:
     """Yield paragraphs and tables in true document order. (python-docx
     `.paragraphs` / `.tables` each lose the interleaving.)"""
-    body = document.element.body
-    for child in body.iterchildren():
+    yield from _iter_block_children(document.element.body, document)
+
+
+def _iter_block_children(parent: Any, document: Any) -> Iterator[BodyItem]:
+    """Block-level children of `parent`, transparently entering content
+    controls. A `w:sdt` wrapping whole paragraphs or tables carries body
+    content — skipping it drops the section outright."""
+    for child in parent.iterchildren():
         if child.tag == qn("w:p"):
             yield BodyItem("paragraph", Paragraph(child, document))
         elif child.tag == qn("w:tbl"):
             yield BodyItem("table", Table(child, document))
+        elif child.tag in (qn("w:sdt"), qn("w:sdtContent")):
+            yield from _iter_block_children(child, document)
         # sectPr / bookmarks / other -> skipped (not body content)

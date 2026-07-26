@@ -14,6 +14,7 @@ from pathlib import Path
 
 import typer
 
+from ..services._staging import staged_sources
 from ..services._table_repair import (
     find_collapsed_cells,
     find_split_tables,
@@ -40,9 +41,13 @@ def _find_source_pdf(stem: str, in_dir: Path = Path("conversions/in")) -> Path |
     want = _tokens(stem)
     if not want:
         return None
+    # rglob does not descend a symlinked directory, so a bundle-staged PDF is
+    # invisible to it; staged_sources resolves each bundle to its deliverable.
+    candidates = {p for p in in_dir.rglob("*.pdf")}
+    candidates |= {p for p in staged_sources(in_dir) if p.suffix.lower() == ".pdf"}
     best: Path | None = None
     best_score = 0.0
-    for p in sorted(in_dir.rglob("*.pdf")):
+    for p in sorted(candidates):
         score = len(want & _tokens(p.stem)) / len(want)
         if score > best_score:
             best, best_score = p, score

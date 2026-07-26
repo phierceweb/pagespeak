@@ -22,6 +22,7 @@ from ._docx_quality import (
     emit_heading,
     strip_heading_emphasis,
 )
+from ._docx_runs import render_runs
 from ._docx_walk import (
     ORDERED_DEFAULT,
     build_numfmt_map,
@@ -48,78 +49,36 @@ def _heading_level(style_name: str | None) -> int | None:
 
 
 def _numpr(paragraph: Any) -> tuple[int, int] | None:
-    ppr = paragraph._p.pPr
-    if ppr is None or ppr.numPr is None:
-        return None
-    npr = ppr.numPr
-    if npr.numId is None or npr.ilvl is None:
-        return None
-    return int(npr.numId.val), int(npr.ilvl.val)
+    """The paragraph's list identity, direct override first.
 
-
-def _wrap(text: str, *, bold: bool, italic: bool) -> str:
-    if not text:
-        return ""
-    if bold and italic:
-        return f"***{text}***"
-    if bold:
-        return f"**{text}**"
-    if italic:
-        return f"*{text}*"
-    return text
-
-
-def _run_seg(child: Any) -> tuple[str, bool, bool]:
-    """One run -> (text, bold, italic)."""
-    t = "".join(n.text or "" for n in child.findall(qn("w:t")))
-    rpr = child.find(qn("w:rPr"))
-    bold = rpr is not None and rpr.find(qn("w:b")) is not None
-    italic = rpr is not None and rpr.find(qn("w:i")) is not None
-    return t, bold, italic
-
-
-def _render_runs(paragraph: Any) -> str:
-    """Render a paragraph's runs, coalescing adjacent same-format runs.
-
-    Word stores one visual token (e.g. ``CO2``) as several consecutive
-    ``w:r`` runs each with its own ``w:rPr``; wrapping each independently
-    shatters it into ``**CO****2**``. Build ``(text, bold, italic)``
-    segments, merge neighbours with identical ``(bold, italic)``, drop
-    empty-text runs, wrap each merged segment once. Hyperlinks are hard
-    segment boundaries (never merged across).
+    Word stores `numPr` on the paragraph when the author used the toolbar, and
+    on the paragraph STYLE when they applied a list style — reading only the
+    former fuses a whole numbered list into one run-on paragraph.
     """
-    rels = paragraph.part.rels
-    out: list[str] = []
-    cur_text = ""
-    cur_fmt: tuple[bool, bool] | None = None
+    ppr = paragraph._p.pPr
+    if ppr is not None and ppr.numPr is not None:
+        npr = ppr.numPr
+        if npr.numId is not None and npr.ilvl is not None:
+            return int(npr.numId.val), int(npr.ilvl.val)
+    return _style_numpr(paragraph)
 
-    def flush() -> None:
-        nonlocal cur_text, cur_fmt
-        if cur_fmt is not None and cur_text:
-            out.append(_wrap(cur_text, bold=cur_fmt[0], italic=cur_fmt[1]))
-        cur_text = ""
-        cur_fmt = None
 
-    for child in paragraph._p.iterchildren():
-        if child.tag == qn("w:r"):
-            text, bold, italic = _run_seg(child)
-            if not text:
-                continue  # drop empty-text runs; don't break a merge
-            fmt = (bold, italic)
-            if cur_fmt is None or fmt == cur_fmt:
-                cur_text += text
-                cur_fmt = fmt
-            else:
-                flush()
-                cur_text, cur_fmt = text, fmt
-        elif child.tag == qn("w:hyperlink"):
-            flush()  # hyperlink is a hard segment boundary
-            inner = "".join(n.text or "" for n in child.iter(qn("w:t")))
-            rid = child.get(qn("r:id"))
-            target = rels[rid].target_ref if rid and rid in rels else ""
-            out.append(f"[{inner}]({target})" if target else inner)
-    flush()
-    return "".join(out).strip()
+def _style_numpr(paragraph: Any) -> tuple[int, int] | None:
+    """Walk the `w:basedOn` chain for a style-carried `numPr`."""
+    try:
+        style = paragraph.style
+    except (KeyError, ValueError):
+        return None
+    seen: set[int] = set()
+    while style is not None and id(style) not in seen:
+        seen.add(id(style))
+        ppr = getattr(style.element, "pPr", None)
+        npr = getattr(ppr, "numPr", None) if ppr is not None else None
+        if npr is not None and npr.numId is not None:
+            ilvl = int(npr.ilvl.val) if npr.ilvl is not None else 0
+            return int(npr.numId.val), ilvl
+        style = getattr(style, "base_style", None)
+    return None
 
 
 def _doc_has_heading(document: Any) -> bool:
@@ -237,6 +196,15 @@ def render_markdown(
     structural signal. True bullet lists (``w:numFmt=bullet``) are
     always lists.
 
+    **List numbering restarts at every emitted heading** — every counter,
+    not just the heading's own numbering. Deliberate, and the one place
+    this reader knowingly diverges from Word, which continues a sequence
+    across an unnumbered ``Heading N``. Two reasons it must stay: it pairs
+    with the ``list_stack`` reset below (a continued number under re-based
+    nesting reads as an orphan), and `demote_nonsection_h1` rule 2 treats a
+    section whose first item is ``>= 2`` as a numbering artefact — continue
+    the numbering and that signal inverts, deleting real sections.
+
     `output_dir` reserved for image handling (added later).
     """
     numfmt = build_numfmt_map(document)
@@ -303,7 +271,7 @@ def render_markdown(
         np = _numpr(para)
         hlevel = _heading_level(para.style.name if para.style else None)
         imgs = _emit_images(para, output_dir)  # writes files, returns refs
-        text = _render_runs(para)
+        text = render_runs(para)
 
         # A paragraph is a HEADING iff it has a genuine `Heading N`
         # style OR it sits at outline ilvl0. Its LEVEL comes from the
@@ -350,14 +318,17 @@ def render_markdown(
                 indent = "    " * _indent_depth(list_stack, cur_left)
                 if lines and lines[-1].strip() and not _is_list_line(lines[-1]):
                     lines.append("")
+                # Word restarts a level whenever ANY shallower level of the same
+                # numbering is used, whatever that level's format — so a bullet
+                # parent resets its ordered children too.
+                for key in list(counters):
+                    if key[0] == num_id and key[1] > ilvl:
+                        del counters[key]
                 if fmt == "bullet":
                     line = f"{indent}- {text}"
                 else:
                     counters[(num_id, ilvl)] = counters.get((num_id, ilvl), 0) + 1
                     line = f"{indent}{counters[(num_id, ilvl)]}. {text}"
-                    for key in list(counters):
-                        if key[0] == num_id and key[1] > ilvl:
-                            del counters[key]
                 if imgs:  # inline image carried by this list item itself
                     line += " " + " ".join(imgs)
                 lines.append(line)
@@ -377,6 +348,7 @@ def render_markdown(
                 _append_heading(add, made)
                 title_done = True
                 list_stack.clear()  # new section: list nesting restarts
+                counters.clear()  # numbering restarts per section
                 last_item_idx = None
                 _emit_block_images(imgs)
                 continue
@@ -420,6 +392,10 @@ def render_markdown(
             else:
                 _emit_block_images(imgs)
                 if text.strip() or not imgs:
+                    # Adjacent lines are ONE paragraph in CommonMark: without a
+                    # blank the authored paragraph boundary is lost.
+                    if text.strip() and lines and lines[-1].strip():
+                        lines.append("")
                     lines.append(text)
 
     lines = demote_nonsection_h1(lines, protected=protected)
@@ -476,4 +452,7 @@ def convert_structured(
         markdown=markdown,
         images=images,
         source_format=path.suffix.lstrip("."),
+        # Only on this path: the fallback above returns MarkItDown output,
+        # whose structure is inferred, not read.
+        structure_authoritative=True,
     )

@@ -87,6 +87,7 @@ def test_files_to_invalidate_ingest_preserves_content_keyed_caches(tmp_path: Pat
         "images",
         "chunks",
         "manifest.json",
+        ".pagespeak-hierarchy.json",  # ingest-written provenance, not a cache
         "doc.cleaned.md",
         "doc.normalized.md",
         "doc.repaired.md",

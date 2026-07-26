@@ -25,12 +25,25 @@ import ctypes
 import re
 from pathlib import Path
 
+from pf_core.log import get_logger
+
+logger = get_logger(__name__)
+
 # Unanchored marker finder for the flat page-character stream (no newlines, so
-# words are space-joined). `.{0,40}?` spans the "Hide "/"Show " between the
-# number and "Correct Answer".
+# words are space-joined). Two export shapes, matching `_tophat_images._MARKER_ANY`:
+# an explicit `Question N`, or a bare number before "(Show|Hide) Correct Answer".
+# The bridge spans intervening chrome but may not cross the NEXT question's
+# marker — otherwise a question with no nearby "Correct Answer" (a figure
+# question) consumes the following marker and drops that question's answer.
+# Group 1 or 2 holds the number.
 _MARKER_FIND = re.compile(
-    r"Question\s+(\d+)\b.{0,40}?(?:Show|Hide)\s*Correct\s*Answer", re.IGNORECASE | re.DOTALL
+    r"Question\s+(\d+)\b(?:(?!Question\s+\d).){0,40}?(?:Show|Hide)\s*Correct\s*Answer"
+    r"|(\d+)\s+(?:Show|Hide)\s*Correct\s*Answer",
+    re.IGNORECASE | re.DOTALL,
 )
+# The export claims answers are revealed; recovering none means the grey-letter
+# signal did not survive (a changed export palette, a re-rendered PDF).
+_REVEAL_HINT_RE = re.compile(r"(?:Show|Hide)\s*Correct\s*Answer", re.IGNORECASE)
 _OPTION_LETTERS = "ABCDEFGH"
 # Page-order offset so a later page's char index always sorts after an earlier
 # page's; larger than any single page's char count.
@@ -113,6 +126,7 @@ def extract_correct_answers(path: Path) -> dict[int, list[str]]:
     pdf = pdfium.PdfDocument(str(path))
     markers: list[tuple[int, int]] = []
     greys: list[tuple[int, str]] = []
+    revealed = False
     for pno in range(len(pdf)):
         tp = pdf[pno].get_textpage()
         n = tp.count_chars()
@@ -120,7 +134,9 @@ def extract_correct_answers(path: Path) -> dict[int, list[str]]:
         full = "".join(chars)
         base = pno * _PAGE_STRIDE
         for m in _MARKER_FIND.finditer(full):
-            markers.append((base + m.start(), int(m.group(1))))
+            markers.append((base + m.start(), int(m.group(1) or m.group(2))))
+        if _REVEAL_HINT_RE.search(full):
+            revealed = True
         for i, ch in enumerate(chars):
             if (
                 ch in _OPTION_LETTERS
@@ -128,4 +144,12 @@ def extract_correct_answers(path: Path) -> dict[int, list[str]]:
                 and is_answer_color(_fill_color(tp.raw, i))
             ):
                 greys.append((base + i, ch))
-    return assign_answers(markers, greys)
+    answers = assign_answers(markers, greys)
+    if revealed and not answers:
+        logger.warning(
+            "tophat_answers_not_recovered path=%s markers=%d — the export reveals "
+            "answers but no grey option letter was found; the answer key is missing",
+            path.name,
+            len(markers),
+        )
+    return answers

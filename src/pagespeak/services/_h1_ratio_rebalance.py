@@ -29,6 +29,8 @@ import re
 from pf_core.log import get_logger
 from pf_core.utils.env import resolve_int
 
+from ._fences import fence_flags
+
 logger = get_logger(__name__)
 
 _HEADING_RE = re.compile(r"^(#{1,6})\s+\S")
@@ -75,6 +77,9 @@ def rebalance_orphan_h1s(text: str, *, threshold_pct: int | None = None) -> str:
     pct = threshold_pct if threshold_pct is not None else _orphan_h1_ratio_threshold()
 
     lines = text.splitlines(keepends=True)
+    # A `#` inside a fenced block is a comment; counting it skews the ratio and
+    # demoting it corrupts the code.
+    _fenced = fence_flags([ln.rstrip("\n") for ln in lines])
 
     # Linear scan: collect H1 line indexes, and for each H1 record
     # whether ANY child heading (H2-H6) appears before the next H1 (or
@@ -94,7 +99,7 @@ def rebalance_orphan_h1s(text: str, *, threshold_pct: int | None = None) -> str:
         seen_child_for_current = False
 
     for i, line in enumerate(lines):
-        m = _HEADING_RE.match(line)
+        m = None if _fenced[i] else _HEADING_RE.match(line)
         if m is None:
             continue
         level = len(m.group(1))

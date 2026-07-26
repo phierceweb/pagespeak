@@ -34,6 +34,7 @@ result = to_markdown(
     html_base_url=None,            # HTML only: base URL so relative <img> refs (../Storage/..) download
     pdf_backend="marker",          # PDF only: "marker" (default) | "docling" — see docs/backends.md
     pdf_backend_kwargs=None,       # PDF only: dict forwarded to the backend's pipeline options
+    heading_hierarchy=False,       # Docling PDF only: infer heading levels (bookmarks > numbering > style)
     repair_tables=False,           # Marker PDF only: splice Docling's clean grid over <br>-collapsed AND split multi-line-cell tables — see docs/repair-tables.md
     provenance=None,               # emit provenance frontmatter (doc + sections); preset-controlled (on for rag-default)
     source_type=None,              # provenance tag (e.g. "textbook"); omitted from the block when None
@@ -44,7 +45,16 @@ result = to_markdown(
 # result.images     → list[Path]
 # result.diagrams   → list[Diagram]
 # result.source_format → "pdf"
+# result.structure_authoritative → bool
 ```
+
+`structure_authoritative` is True only when the backend read the heading
+structure out of the source's own format — today, the python-docx DOCX reader
+(`w:ilvl` / Heading styles). It is set by the backend that *produced* the
+markdown, never by the one that was requested: `convert_structured` falls back
+to MarkItDown on any parse failure, and that output's structure is inferred.
+Cleanup reads it to stand its heading-repair passes down; those passes exist to
+fix inferred structure and delete real sections when run against read structure.
 
 The result includes the final markdown string (with Mermaid blocks already embedded). With `output_dir` set, `to_markdown()` also writes it to `<output_dir>/<stem>.md` — the same master the CLI reports — so a library consumer gets the finished document on disk without writing it themselves. (An early `stop_after` skips the write; the phase checkpoint is the deliverable there.)
 
@@ -80,6 +90,7 @@ Either way, when the target output dir holds a `.pagespeak-run.json` from a prev
 | `<input>` | (required) | Path to the source document OR an existing output dir with `<stem>.raw.md` |
 | `--output-dir`, `-o` | `./out` | Directory for the markdown file and extracted images (file-input mode only) |
 | `--workers`, `-w` | `1` | Worker count for the ingest phase (file-input mode only). `1` = single-process; `N > 1` = chunked-parallel Marker (PDF only). See [ingest.md](ingest.md). |
+| `--allow-partial-ingest` | off | Build the document even though a chunked ingest left failed chunks — the output will be missing those pages. Without it, `convert` refuses such an output dir and exits 2. See [ingest.md](ingest.md#partial-ingest). |
 | `--diagrams` / `--no-diagrams` | enabled | Run the vision LLM on each extracted image |
 | `--vision-backend` | `claude_code` | `claude_code` (local `claude --print`, $0 per call — the default), `anthropic` (API), or `openrouter` (multi-provider via `OPENROUTER_API_KEY`) |
 | `--vision-model` | from `config/model_router.yaml` (`agents.vision.backends.<backend>.model`) | Override the model. For `claude_code`, always fires as `--model` to `claude --print` (never falls through to the user's session model). The legacy `$PAGESPEAK_VISION_MODEL` env var is no longer consulted — edit the YAML for non-CLI overrides. |
@@ -99,12 +110,13 @@ Either way, when the target output dir holds a `.pagespeak-run.json` from a prev
 | `--split-target-kb` | none | With `--split-sections`, pack sections to a **size target** instead of a fixed depth: a branch of the heading tree that fits N KB becomes one file (subsections inlined), an oversized branch splits one level deeper (same rule per child), and an oversized section with no sub-headings is partitioned at paragraph/block boundaries into `Title (part i of k)` files that share its identity (`part_index`/`part_count` frontmatter, parts parented to part 1; fenced code + tables are never cut). Because the decision is per **branch**, one setting handles books whose chapters sit at different depths — where any fixed level gives monster files or dust. `--split-target-kb 32` is a good RAG default. Mutually exclusive with `--split-max-level`. |
 | `--english-only` / `--no-english-only` | off | With `--split-sections`, drop a multilingual manual's translated branches (a multilingual manual: EN/DE/ZH/IT/FR/ES/RU, or a 24-language warranty block), keeping the English. Judged by **subtree** — a branch's aggregated text, recursing into kept English branches — so a translation fragmented into terse sections, or nested under an English chapter, is still caught. Dropped only on a strong signal: >30% non-Latin script, OR sparse English **and** a real density of distinctively-foreign function words (the latter keeps stopword-poor English specs tables that sparse-English alone would wrongly flag). Removes the major Latin languages + all non-Latin; a 24-EU-language boilerplate block is the known gap. Off by default. |
 | `--pdf-backend` | `marker` | `marker` (default, fast), `docling` (accuracy-first, requires `pagespeak[pdf-docling]`), or `tophat` (Top Hat quiz-export PDFs → per-question markdown, requires `pagespeak[tophat]`). See [docs/backends.md](backends.md) / [docs/tophat-quizzes.md](tophat-quizzes.md). |
+| `--heading-hierarchy` | off | Docling PDF only. Infer real heading levels from PDF bookmarks → section numbering → font style, instead of Docling's flat single-level default. Helps documents with an outline or `Section N.`/`N.M` numbering; not a win on documents with neither. Requires `docling>=2.109`. See [docs/backends.md](backends.md). |
 | `--repair-tables` / `--no-repair-tables` | off | Marker PDF only. After ingest, splice Docling's clean grid over Marker-broken tables — both `<br>`-collapsed mega-cells (a multi-column table jammed into one cell) and split multi-line-cell tables (one row per wrapped line). Requires `pagespeak[pdf-docling]`; off by default (no Docling cost unless asked). Same fix as the standalone `pagespeak repair-tables` command, run inline. See [docs/repair-tables.md](repair-tables.md). |
 | `--docx-backend` | `markitdown` | `markitdown` (default) or `python-docx` (structure-faithful, requires `pagespeak[docx-structured]`). Ignored for non-`.docx`. |
 | `--docx-outline-heading-depth` | `0` | python-docx only. The outline→heading switch. `0` (default) = the ENTIRE Word outline is retained as a nested list (only the document title is `#`). `N>0` overrides the top N outline levels into headings (`1` = `ilvl0` → `#` section spine; higher promotes more). |
 | `--preset` | none | Curated config bundle: `rag-default` / `flat` / `textbook` / `archival` / `qti`. Per-flag CLI args win over preset values. See [docs/presets.md](presets.md). |
 | `--normalize-headings` / `--no-normalize-headings` | off | Fix flattened chapter+subsection levels (textbook-style PDFs). See [docs/normalize-headings.md](normalize-headings.md). |
-| `--normalize-headings-mode` | `heuristic` | `heuristic` (default — fast, free, deterministic), `llm` (headers-only LLM), `llm_full` (LLM with body anchors — for badly-flattened textbooks), or `auto` (pick `heuristic`/`llm_full` per-document from a $0 heading-shape signal; see [normalize-headings.md](normalize-headings.md#auto-mode)). |
+| `--normalize-headings-mode` | `heuristic` | `heuristic` (default — fast, free, deterministic), `llm` (headers-only LLM), `llm_full` (LLM with body anchors — for badly-flattened textbooks), `llm_dehead` (same payload; drops junk headings but never changes a level — for a doc whose hierarchy is already correct), or `auto` (pick `heuristic`/`llm_full` per-document from a $0 heading-shape signal; see [normalize-headings.md](normalize-headings.md#auto-mode)). |
 | `--normalize-headings-model` | from `config/model_router.yaml` (`agents.heading_normalize{,_full}.backends.<backend>.model`) | LLM-mode only. The legacy `$PAGESPEAK_NORMALIZE_HEADINGS_MODEL` env var is no longer consulted — edit the YAML for non-CLI overrides. |
 | `--strip-frontmatter` / `--no-strip-frontmatter` | preset-controlled | DOCX template-frontmatter strip (TOC anchors, revision-history table, `<Project Name>` placeholders). |
 | `--provenance` / `--no-provenance` | preset-controlled (on for `rag-default`) | Emit **rich** output provenance frontmatter on the whole-doc markdown **and every section file**: source tags (`source_type` / `source_label` / `source_file`) + `doc_title` + per-section locators `section_title`, `section_path` (the ancestor-heading breadcrumb), `section_number`, `heading_level` — so a multi-source RAG DB can tag and locate each chunk. With no `--source-label`, the label is auto-derived from the cleaned filename stem; `source_type` is omitted from the block unless `--source-type` is given. Off → output is byte-for-byte frontmatter-free. Setting `--source-type`/`--source-label` also turns it on. Re-tag an existing conversion cheaply with `--from split --preset rag-default`. Distinct from `--strip-frontmatter` (which strips *input* frontmatter). |
@@ -153,6 +165,8 @@ bin/lint                             # ergonomic shortcut for ruff + mypy via `b
 | `PAGESPEAK_WORKERS` | `1` | Default `--workers` for `pagespeak ingest` / `pagespeak convert` (chunked-parallel PDF). |
 | `PAGESPEAK_LOG_LEVEL` | `INFO` | CLI logger verbosity. `DEBUG` reveals per-image vision progress, cache stats, normalize details. Library consumers configure their own logging. |
 | `PAGESPEAK_CLAUDE_CODE_TIMEOUT_S` | `1800` | Subprocess timeout (seconds) for `claude --print` invocations during heading-normalize. Bump if a very large `llm_full` payload (≥~400K tokens) hits the default. |
+| `PAGESPEAK_DEHEAD_GUARD_MIN_BODY_WORDS` | `10` | De-headify guard: a heading followed by at least this many words of its own body is treated as a section boundary and is never de-headified. Raise to let the LLM drop more aggressively. |
+| `PAGESPEAK_DEHEAD_GUARD_MAX_RECURRENCE` | `25` | De-headify guard: a heading whose exact text recurs more than this many times in one document counts as running page furniture and is exempt from the body guard, so it can still be dropped. |
 | `PAGESPEAK_VISION_CLAUDE_CODE_TIMEOUT_S` | `120` | Subprocess timeout (seconds) for `claude --print` per vision image. Bump for large diagrams or slow networks. |
 | `PAGESPEAK_CHUNK_PAGES` | `50` | Pages per chunk in `--workers > 1` parallel ingest. Smaller = finer-grained resume; larger = fewer Marker model-loads but more per-worker RAM. |
 | `PAGESPEAK_DOWNLOAD_REMOTE_IMAGES` | `1` | HTML ingest: download remote `<img>` URLs into `images/<name>` + retarget refs so the vision pass can process them. `0` = leave as external URLs. Already-downloaded files are reused. |
@@ -162,7 +176,10 @@ bin/lint                             # ergonomic shortcut for ruff + mypy via `b
 | `PAGESPEAK_DEFAULT_DEVICE` | (unset → backend autodetects) | Default torch device for PDF backends (`cpu` / `mps` / `cuda`). Set to `cpu` on Apple Silicon to avoid the surya/MPS crash. Explicit `--device` still wins. |
 | `PAGESPEAK_FLAT_H1_THRESHOLD` | `5` | `structure` phase: minimum number of consecutive H1s (no H2 between) before the flat-source-demote pass fires. Conservative; tune lower to catch shorter clusters. |
 | `PAGESPEAK_ORPHAN_H1_RATIO_THRESHOLD` | `70` | `structure` phase: percent of H1s (excluding the title) that must be "orphan" (no H2 child) for the orphan-H1 rebalance to fire. Catches machine-flattened HTML-export PDFs while sparing authored-flat docs. |
+| `PAGESPEAK_TRUSTED_OUTLINE_MIN_DEPTH` | `2` | Minimum PDF bookmark-outline depth before the outline is treated as an authoritative heading hierarchy (standing the structure phase's level-rewriting passes down). A depth-1 outline is a bare chapter list, so 2 is the floor. |
+| `PAGESPEAK_OUTLINE_TRUST_MAX_SKIP_RATE` | `0.10` | Share of headings that may skip a tier before an outline-derived hierarchy is judged incoherent and re-levelled anyway. Raise to trust outlines more, lower to rebuild more. |
 | `DATABASE_URL` | `sqlite:///~/.pagespeak/llm_tracking.db` | pf-core `llm_runs` tracking DB. Point at postgres / mysql to share with other pf-core consumers. A postgres URL needs the driver: `bin/setup --postgres` (or `--all`). |
+| `PAGESPEAK_DB_DEFAULT_DIR` | `~/.pagespeak` | Parent directory for the default sqlite tracking DB. Ignored when `DATABASE_URL` is set explicitly. |
 | `PAGESPEAK_CONVERSIONS_DIR` | `<cwd>/conversions` | Web console: root directory holding `in/` (sources) and `out/` (per-doc output dirs). |
 | `PAGESPEAK_WEB_HOST` | `127.0.0.1` | Web console bind host. |
 | `PAGESPEAK_WEB_PORT` | `8810` | Web console bind port. |

@@ -265,3 +265,169 @@ def test_convert_pdf_docling_unknown_backend_kwarg_logs_warning(
         convert_pdf_docling(src, backend_kwargs={"definitely_not_a_real_option": 42})
 
     assert any("docling_unknown_pipeline_option" in r.message for r in caplog.records)
+
+
+# --- heading_hierarchy wiring ---
+
+
+def _capture_opts(fn) -> dict[str, object]:
+    """Run `fn` against a mocked Docling and return the PdfPipelineOptions
+    the wrapper built."""
+    captured: dict[str, object] = {}
+
+    def capture_format_option(*, pipeline_options):
+        captured["opts"] = pipeline_options
+        return MagicMock()
+
+    fake_converter = MagicMock()
+    fake_converter.convert.return_value = MagicMock(document=_fake_docling_doc(0))
+    with (
+        patch("docling.document_converter.DocumentConverter", return_value=fake_converter),
+        patch("docling.document_converter.PdfFormatOption", side_effect=capture_format_option),
+    ):
+        fn()
+    return captured
+
+
+def test_heading_hierarchy_off_by_default(tmp_path: Path) -> None:
+    src = tmp_path / "doc.pdf"
+    src.write_bytes(b"%PDF-1.4\n")
+    opts = _capture_opts(lambda: convert_pdf_docling(src))["opts"]
+    assert opts.heading_hierarchy_options.enabled is False
+    assert opts.generate_parsed_pages is False
+
+
+def test_heading_hierarchy_sets_a_real_options_instance(tmp_path: Path) -> None:
+    """It must be a HeadingHierarchyOptions instance, not a bool or dict —
+    docling reads `.enabled` off it mid-conversion."""
+    from docling.datamodel.pipeline_options import HeadingHierarchyOptions
+
+    src = tmp_path / "doc.pdf"
+    src.write_bytes(b"%PDF-1.4\n")
+    opts = _capture_opts(lambda: convert_pdf_docling(src, heading_hierarchy=True))["opts"]
+
+    assert isinstance(opts.heading_hierarchy_options, HeadingHierarchyOptions)
+    assert opts.heading_hierarchy_options.enabled is True
+
+
+def test_heading_hierarchy_uses_full_depth(tmp_path: Path) -> None:
+    """max_level stays 6 — the 7-hash render overflow is fixed at the
+    markdown layer so the deepest tier survives distinct."""
+    src = tmp_path / "doc.pdf"
+    src.write_bytes(b"%PDF-1.4\n")
+    opts = _capture_opts(lambda: convert_pdf_docling(src, heading_hierarchy=True))["opts"]
+    assert opts.heading_hierarchy_options.max_level == 6
+
+
+def test_heading_hierarchy_no_title_preserves_all_six_tiers(tmp_path: Path) -> None:
+    """No-title doc: promotion shifts 2..7 hashes to 1..6 — nothing merges."""
+    src = tmp_path / "doc.pdf"
+    src.write_bytes(b"%PDF-1.4\n")
+
+    doc = MagicMock()
+    doc.export_to_markdown.return_value = (
+        "## C\n\n### S\n\n#### T\n\n##### U\n\n###### Banner\n\n####### Payload\n"
+    )
+    doc.pictures = []
+    fake_converter = MagicMock()
+    fake_converter.convert.return_value = MagicMock(document=doc)
+
+    with (
+        patch("docling.document_converter.DocumentConverter", return_value=fake_converter),
+        patch("docling.document_converter.PdfFormatOption"),
+    ):
+        result = convert_pdf_docling(src, heading_hierarchy=True)
+
+    assert "##### Banner" in result.markdown
+    assert "###### Payload" in result.markdown  # distinct tiers, both valid
+
+
+def test_heading_hierarchy_titled_doc_clamps_overflow(tmp_path: Path) -> None:
+    """Title present: promotion is blocked, so a 7-hash heading clamps to 6."""
+    src = tmp_path / "doc.pdf"
+    src.write_bytes(b"%PDF-1.4\n")
+
+    doc = MagicMock()
+    doc.export_to_markdown.return_value = "# Title\n\n## C\n\n####### Deep\n"
+    doc.pictures = []
+    fake_converter = MagicMock()
+    fake_converter.convert.return_value = MagicMock(document=doc)
+
+    with (
+        patch("docling.document_converter.DocumentConverter", return_value=fake_converter),
+        patch("docling.document_converter.PdfFormatOption"),
+    ):
+        result = convert_pdf_docling(src, heading_hierarchy=True)
+
+    assert "###### Deep" in result.markdown
+    assert "#######" not in result.markdown
+
+
+def test_heading_hierarchy_enables_parsed_pages(tmp_path: Path) -> None:
+    """`use_style` silently does nothing unless generate_parsed_pages is on."""
+    src = tmp_path / "doc.pdf"
+    src.write_bytes(b"%PDF-1.4\n")
+    opts = _capture_opts(lambda: convert_pdf_docling(src, heading_hierarchy=True))["opts"]
+    assert opts.generate_parsed_pages is True
+
+
+def test_backend_kwargs_dict_is_coerced_to_the_option_model(tmp_path: Path) -> None:
+    """A raw dict assigned to a nested pydantic option field is stored
+    verbatim by a bare setattr and raises AttributeError mid-conversion.
+    It must be coerced to the real model instead."""
+    from docling.datamodel.pipeline_options import HeadingHierarchyOptions
+
+    src = tmp_path / "doc.pdf"
+    src.write_bytes(b"%PDF-1.4\n")
+    opts = _capture_opts(
+        lambda: convert_pdf_docling(
+            src, backend_kwargs={"heading_hierarchy_options": {"enabled": True, "max_level": 4}}
+        )
+    )["opts"]
+
+    assert isinstance(opts.heading_hierarchy_options, HeadingHierarchyOptions)
+    assert opts.heading_hierarchy_options.enabled is True
+    assert opts.heading_hierarchy_options.max_level == 4
+
+
+def test_heading_hierarchy_promotes_headings_in_output(tmp_path: Path) -> None:
+    """End to end: with hierarchy on and no title in the output, the tree
+    is shifted so it starts at H1."""
+    src = tmp_path / "doc.pdf"
+    src.write_bytes(b"%PDF-1.4\n")
+
+    doc = MagicMock()
+    doc.export_to_markdown.return_value = "## Chapter\n\nbody\n\n### Section\n"
+    doc.pictures = []
+    fake_converter = MagicMock()
+    fake_converter.convert.return_value = MagicMock(document=doc)
+
+    with (
+        patch("docling.document_converter.DocumentConverter", return_value=fake_converter),
+        patch("docling.document_converter.PdfFormatOption"),
+    ):
+        result = convert_pdf_docling(src, heading_hierarchy=True)
+
+    assert result.markdown.splitlines()[0] == "# Chapter"
+    assert "## Section" in result.markdown
+
+
+def test_heading_hierarchy_does_not_promote_when_off(tmp_path: Path) -> None:
+    """The existing docling path stays byte-identical — the promotion is
+    scoped to the opt-in flag so prior conversions don't shift."""
+    src = tmp_path / "doc.pdf"
+    src.write_bytes(b"%PDF-1.4\n")
+
+    doc = MagicMock()
+    doc.export_to_markdown.return_value = "## Chapter\n\nbody\n"
+    doc.pictures = []
+    fake_converter = MagicMock()
+    fake_converter.convert.return_value = MagicMock(document=doc)
+
+    with (
+        patch("docling.document_converter.DocumentConverter", return_value=fake_converter),
+        patch("docling.document_converter.PdfFormatOption"),
+    ):
+        result = convert_pdf_docling(src)
+
+    assert result.markdown.splitlines()[0] == "## Chapter"

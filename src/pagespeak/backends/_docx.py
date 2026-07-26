@@ -56,6 +56,36 @@ def _convert_html_string(converter: Any, html: str) -> Any:
         Path(tmp).unlink(missing_ok=True)
 
 
+_TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
+
+
+def _apply_html_title_as_h1(markdown: str, html: str) -> str:
+    """Prepend the page's `<title>` as an H1 when the converted body has none.
+
+    A page titled only in `<title>` converts to a tree starting at H2, leaving
+    the splitter no top-level boundary. The title is stated by the source, so
+    lifting it is a transfer — unlike promoting an arbitrary H2, which cleanup
+    is deliberately forbidden from doing.
+    """
+    if re.search(r"^#\s+\S", markdown, re.MULTILINE):
+        return markdown
+    match = _TITLE_RE.search(html)
+    if match is None:
+        return markdown
+    title = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", match.group(1))).strip()
+    if not title:
+        return markdown
+
+    def key(s: str) -> str:
+        return re.sub(r"[^a-z0-9]+", "", s.lower())
+
+    first = re.search(r"^#+\s+(\S.*)$", markdown, re.MULTILINE)
+    if first is not None and key(first.group(1)) == key(title):
+        # Same section named twice; re-level the existing heading instead.
+        return re.sub(r"^#+(\s+\S.*)$", r"#\1", markdown, count=1, flags=re.MULTILINE)
+    return f"# {title}\n\n{markdown.lstrip()}"
+
+
 def _run_markitdown(converter: Any, path: Path) -> str:
     """Run markitdown on `path`, pre-resolving MathML to ``$LaTeX$`` for HTML
     inputs — markitdown otherwise double-renders the parallel
@@ -63,6 +93,7 @@ def _run_markitdown(converter: Any, path: Path) -> str:
     for escape-proof placeholder tokens before conversion and restored after,
     so markitdown never sees (and can't mangle) it."""
     math_map: dict[str, str] = {}
+    html: str | None = None
     if path.suffix.lower() in (".html", ".htm"):
         html = path.read_text(encoding="utf-8", errors="replace")
         tokenized, math_map = prepare_mathml_for_markdown(html)
@@ -74,6 +105,8 @@ def _run_markitdown(converter: Any, path: Path) -> str:
     text = result.text_content or ""
     if math_map:
         text = restore_math(text, math_map)
+    if html is not None:
+        text = _apply_html_title_as_h1(text, html)
     return _strip_dead_data_uri_images(text)
 
 

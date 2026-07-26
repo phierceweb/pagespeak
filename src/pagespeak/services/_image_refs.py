@@ -16,7 +16,13 @@ import re
 from pathlib import Path
 from urllib.parse import unquote
 
-_IMG_REF_RE = re.compile(r"!\[([^\]]*)\]\(([^)\n]+)\)")
+# `![alt](destination "title")` — the optional CommonMark title is NOT part of
+# the destination. Folding it in makes every titled ref resolve to a path that
+# cannot exist, so a present image is degraded away.
+_IMG_REF_RE = re.compile(
+    r"!\[([^\]]*)\]\(\s*(<[^>\n]*>|[^\s)]+)"
+    r"(?:\s+(?:\"[^\"\n]*\"|'[^'\n]*'|\([^)\n]*\)))?\s*\)"
+)
 _EXTERNAL_SCHEMES = ("http://", "https://", "data:")
 
 

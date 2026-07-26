@@ -751,7 +751,7 @@ def test_normalize_gather_runs_after_cleanup(fake_docx: Path, tmp_path: Path) ->
 
     call_order: list[str] = []
 
-    def record_cleanup(text, *, level, cross_refs):
+    def record_cleanup(text, *, level, cross_refs, stats=None, **kwargs):
         call_order.append("cleanup")
         return text  # no-op for the test
 
@@ -1117,6 +1117,66 @@ def test_rerun_from_unknown_stage_raises():
 # --- directory-input mode -------------------------------------------
 
 
+def _partial_chunked_out(tmp_path: Path) -> Path:
+    """An out dir in the state a chunked ingest leaves when one chunk failed."""
+    import json
+
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "doc.raw.md").write_text("# Doc\n\nOnly the first chunk.\n", encoding="utf-8")
+    (out / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "chunks": [
+                    {"page_range": "0-49", "status": "completed"},
+                    {"page_range": "50-99", "status": "failed"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return out
+
+
+def test_convert_refuses_output_dir_with_failed_chunks(tmp_path):
+    """Resume keys on the raw.md snapshot, so without the guard a failed chunk
+    ships a document missing its pages at exit 0."""
+    from pagespeak.orchestrators._ingest import PartialIngestError
+
+    out = _partial_chunked_out(tmp_path)
+
+    with pytest.raises(PartialIngestError, match="50-99"):
+        to_markdown(out, output_dir=out, diagrams=False, cleanup="basic")
+
+    assert not (out / "doc.md").exists()
+
+
+def test_convert_allows_partial_ingest_when_opted_in(tmp_path):
+    out = _partial_chunked_out(tmp_path)
+
+    result = to_markdown(
+        out, output_dir=out, diagrams=False, cleanup="basic", allow_partial_ingest=True
+    )
+
+    assert result.markdown.startswith("# Doc")
+    assert (out / "doc.md").exists()
+
+
+def test_convert_ignores_foreign_manifest_json(tmp_path):
+    """An upstream ingester's manifest.json must not be read as chunk state."""
+    import json
+
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "doc.raw.md").write_text("# Doc\n\nBody.\n", encoding="utf-8")
+    (out / "manifest.json").write_text(json.dumps({"kind": "pdf", "pages": 12}), encoding="utf-8")
+
+    result = to_markdown(out, output_dir=out, diagrams=False, cleanup="basic")
+
+    assert result.markdown.startswith("# Doc")
+
+
 def test_to_markdown_directory_input_resumes_from_raw_md(tmp_path, monkeypatch):
     """to_markdown(<outdir>) where <outdir>/<stem>.raw.md exists:
     skips backend, runs Phase 3 on raw.md."""
@@ -1187,7 +1247,7 @@ def test_to_markdown_defaults_cross_refs_to_remap_when_manifest_present(tmp_path
 
     captured: dict[str, object] = {}
 
-    def fake_cleanup(md, *, level, cross_refs):
+    def fake_cleanup(md, *, level, cross_refs, stats=None, **kwargs):
         captured["cross_refs"] = cross_refs
         return md
 
@@ -1208,7 +1268,7 @@ def test_to_markdown_keeps_cross_refs_when_no_manifest(tmp_path, monkeypatch):
 
     captured: dict[str, object] = {}
 
-    def fake_cleanup(md, *, level, cross_refs):
+    def fake_cleanup(md, *, level, cross_refs, stats=None, **kwargs):
         captured["cross_refs"] = cross_refs
         return md
 
@@ -1232,7 +1292,7 @@ def test_to_markdown_explicit_cross_refs_wins_over_manifest(tmp_path, monkeypatc
 
     captured: dict[str, object] = {}
 
-    def fake_cleanup(md, *, level, cross_refs):
+    def fake_cleanup(md, *, level, cross_refs, stats=None, **kwargs):
         captured["cross_refs"] = cross_refs
         return md
 
@@ -1339,6 +1399,7 @@ def test_vision_phase_threads_cache_only(monkeypatch, tmp_path):
         decoration_hamming_distance=None,
         pdf_backend="marker",
         pdf_backend_kwargs=None,
+        heading_hierarchy=False,
         repair_tables=False,
         docx_backend="markitdown",
         docx_outline_heading_depth=0,

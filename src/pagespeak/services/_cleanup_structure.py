@@ -22,6 +22,7 @@ from ._cleanup_regexes import (
     SCAFFOLD_STUB_MAX_CONTENT_CHARS,
     TOC_PAGE_NUM_SUFFIX_RE,
 )
+from ._fences import fence_flags
 
 
 def heading_slug(line: str) -> str:
@@ -165,6 +166,7 @@ def demote_toc_phantom_headings(text: str) -> tuple[str, int]:
     ``is_toc_phantom_heading`` detector alone does not.
     """
     lines = text.splitlines()
+    _fenced = fence_flags(lines)
 
     # Pass 1: collect the match-keys of "clean" headings (no page-num
     # suffix) — the real-section twins a TOC phantom must match. The key
@@ -252,10 +254,11 @@ def demote_recurring_scaffold_headings(text: str) -> tuple[str, int]:
     Returns ``(rewritten_text, demoted_count)``.
     """
     lines = text.splitlines()
+    _fenced = fence_flags(lines)
     # Pass 1: collect heading-line records.
     headings: list[tuple[int, str]] = []  # (line_index, heading_text)
     for i, line in enumerate(lines):
-        m = HEADING_HASH_RE.match(line.strip())
+        m = None if _fenced[i] else HEADING_HASH_RE.match(line.strip())
         if m:
             _, content = m.groups()
             headings.append((i, content.strip()))
@@ -351,10 +354,11 @@ def demote_front_matter_headings(text: str) -> tuple[str, int]:
     guard fails.
     """
     lines = text.splitlines()
+    _fenced = fence_flags(lines)
     heading_idxs: list[int] = []
     h1_idxs: list[int] = []
     for i, line in enumerate(lines):
-        m = HEADING_HASH_RE.match(line.strip())
+        m = None if _fenced[i] else HEADING_HASH_RE.match(line.strip())
         if not m:
             continue
         heading_idxs.append(i)
@@ -414,10 +418,11 @@ def demote_toc_outline_headings(text: str) -> tuple[str, int]:
     ``(rewritten_text, demoted_count)``; a no-op (count 0) when clean.
     """
     lines = text.splitlines()
+    _fenced = fence_flags(lines)
     heading_idxs: list[int] = []
     h1_count = 0
     for i, line in enumerate(lines):
-        m = HEADING_HASH_RE.match(line.strip())
+        m = None if _fenced[i] else HEADING_HASH_RE.match(line.strip())
         if m:
             heading_idxs.append(i)
             if len(m.group(1)) == 1:

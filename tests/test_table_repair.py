@@ -66,6 +66,15 @@ def test_find_collapsed_cells_ignores_fenced() -> None:
     assert find_collapsed_cells(text) == []
 
 
+def test_tilde_fenced_tables_are_not_repair_candidates() -> None:
+    """A `~~~` block is a fence too — the markup inside it is an example."""
+    from pagespeak.services._table_repair import find_split_tables
+
+    assert find_collapsed_cells(f"~~~\n| {_MEGA} |\n~~~\n") == []
+    split = "~~~markdown\n| Key | Value |\n| --- | --- |\n| a | wraps |\n|  | continued |\n~~~\n"
+    assert find_split_tables(split) == []
+
+
 # ── find_split_tables ───────────────────────────────────────────────────────
 
 

@@ -139,7 +139,8 @@ async def deliver(request: Request, dir_name: str) -> Response:
     conv = get_conversion(cfg, dir_name)
     if conv is None:
         raise HTTPException(status_code=404, detail=f"No conversion {dir_name!r}")
-    dest = cfg.delivery_dir / dir_name
+    # From the resolved dir, never the raw segment: the latter can carry path syntax.
+    dest = cfg.delivery_dir / conv.out_dir.name
     try:
         result = strip_for_delivery(conv.out_dir, dest)
     except (OSError, ValueError) as exc:

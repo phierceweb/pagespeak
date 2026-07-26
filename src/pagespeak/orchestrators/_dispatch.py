@@ -30,6 +30,7 @@ from ._dispatch_setup import (
     resolve_dir_mode_stem as resolve_dir_mode_stem,
 )
 from ._ingest import PDF_SUFFIXES as _PDF_SUFFIXES
+from ._ingest import assert_ingest_complete
 from ._ingest import ingest as _ingest_orchestrator
 from ._phase import Phase
 from ._phases import build_phases
@@ -66,6 +67,7 @@ def to_markdown(
     decoration_hamming_distance: int | None = None,
     pdf_backend: PdfBackendName = DEFAULT_PDF_BACKEND,
     pdf_backend_kwargs: dict[str, Any] | None = None,
+    heading_hierarchy: bool = False,
     repair_tables: bool = False,
     docx_backend: DocxBackendName = DEFAULT_DOCX_BACKEND,
     docx_outline_heading_depth: int = 0,
@@ -81,6 +83,7 @@ def to_markdown(
     stop_after: str | None = None,
     workers: int = 1,
     answer_key: bool = True,
+    allow_partial_ingest: bool = False,
 ) -> IngestResult:
     """Convert a document to markdown, optionally enriching diagrams to Mermaid.
 
@@ -161,6 +164,8 @@ def to_markdown(
             through chunked `ingest()` then re-enters for Phase 3; needs
             `output_dir`. Default 1.
         answer_key: QTI-only. Emit the answer key in the per-exam output.
+        allow_partial_ingest: Build the document even though a chunked ingest
+            left failed chunks. The output will be missing those pages.
 
     Returns:
         IngestResult with markdown, saved image paths, and diagram metadata.
@@ -205,6 +210,7 @@ def to_markdown(
             workers=workers,
             pdf_backend=pdf_backend,
             pdf_backend_kwargs=pdf_backend_kwargs,
+            heading_hierarchy=heading_hierarchy,
             device=device,
             force_ocr=force_ocr,
         )
@@ -241,6 +247,7 @@ def to_markdown(
             rerun_from=rerun_from,
             start=start,
             stop_after=stop_after,
+            allow_partial_ingest=allow_partial_ingest,
         )
 
     # validate rerun_from before any other checks so a bogus
@@ -277,6 +284,10 @@ def to_markdown(
             from ..services._rerun import invalidate_caches
 
             invalidate_caches(out, rerun_from, _doc_stem if _doc_stem is not None else src.stem)  # type: ignore[arg-type]
+
+        # After invalidation: `--rerun-from ingest` drops manifest.json, so a
+        # re-ingest is not held back by the previous run's failed chunks.
+        assert_ingest_complete(out, allow_partial=allow_partial_ingest)
 
         # auto-snapshot the previous run when __version__
         # changed since it ran. Non-fatal — never blocks conversion.
@@ -364,11 +375,8 @@ def to_markdown(
     visioned_md_path = out / f"{effective_stem}.visioned.md" if out is not None else None
 
     # === Phase pipeline ==================================================
-    # A list of independently-runnable `Phase` objects sequenced by
-    # `run_pipeline`. Thin adapter: build the context, run the phases, hand
-    # the result to the teardown below. `rerun_from` is NOT passed to the
-    # sequencer — its cache invalidation already ran in the preamble and
-    # each phase fast-paths via the surviving checkpoint.
+    # `rerun_from` is NOT passed to the sequencer — its cache invalidation already
+    # ran in the preamble, and each phase fast-paths via the surviving checkpoint.
     if _dir_mode:
         source_format = "raw"
     elif suffix in _PDF_SUFFIXES:
@@ -413,6 +421,7 @@ def to_markdown(
         decoration_hamming_distance=decoration_hamming_distance,
         pdf_backend=pdf_backend,
         pdf_backend_kwargs=pdf_backend_kwargs,
+        heading_hierarchy=heading_hierarchy,
         repair_tables=repair_tables,
         docx_backend=docx_backend,
         docx_outline_heading_depth=docx_outline_heading_depth,
@@ -438,25 +447,20 @@ def to_markdown(
     result = ctx.result
     section_count = ctx.section_count
 
-    # drain the per-conversion LLM-call accumulator. Always
-    # drain (even if `out is None`) so the module-level list doesn't
-    # leak into the next call.
+    # Drain even when `out is None`, or the accumulator leaks into the next call.
     from .._agent_runtime import end_call_recording
 
     llm_call_records = end_call_recording()
 
-    # stamp the resolved config into <output>/.pagespeak-run.json
-    # so re-run drift is diagnosable as a one-line file diff. Failures
-    # are non-fatal — a successful conversion shouldn't be killed by an
-    # unwritable output dir.
+    # Stamp the resolved config into <output>/.pagespeak-run.json so re-run drift
+    # is a one-line diff. Write failures are non-fatal.
     if out is not None:
         from .. import __version__
         from ..services._provenance import persistable_source_identity
         from ..services._run_record import summarize_llm_calls, write_run_record
 
-        # The final master, written by the library so every consumer gets it
-        # (was CLI-only — a library-consumer trap). An earlier stop leaves
-        # result.markdown as an intermediate checkpoint; writing that would
+        # Written by the library so every consumer gets it. An earlier stop leaves
+        # result.markdown as an intermediate checkpoint — writing that would
         # clobber the real final document.
         if stop_after in (None, "vision", "split"):
             (out / f"{effective_stem}.md").write_text(result.markdown, encoding="utf-8")

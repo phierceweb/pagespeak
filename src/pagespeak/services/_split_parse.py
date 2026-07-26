@@ -15,6 +15,8 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ._fences import fence_flags
+
 NUMBERED_HEADING_RE = re.compile(r"^(#{1,6})\s+(\d+(?:\.\d+)*)\.?\s+(.+?)\s*$")
 
 MEASUREMENT_HEADING_RE = re.compile(r"^#{1,6}\s+\d+(?:\.\d+)?\s+[a-z]")
@@ -382,7 +384,14 @@ def _parse_sections(
     current: _Section | None = None
     preamble: list[str] = []
 
-    for line in lines:
+    # A `#` inside a fenced block is a comment. Parsing it as a heading splits
+    # the code across files and leaves every fragment unbalanced.
+    fenced = fence_flags(lines)
+
+    for line, in_fence in zip(lines, fenced, strict=True):
+        if in_fence:
+            (current.content_lines if current is not None else preamble).append(line)
+            continue
         is_ancestor_only = False
         if min_level is None:
             parsed_num = _parse_numbered_heading(line)

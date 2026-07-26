@@ -10,6 +10,7 @@ from pagespeak.models._pipeline import (
     MANIFEST_VERSION,
     ChunkState,
     Manifest,
+    read_chunk_statuses,
     sha256_file,
 )
 
@@ -214,6 +215,38 @@ def test_manifest_load_accepts_v3(tmp_path: Path) -> None:
     mf = Manifest.load_or_create(out)
     assert mf.version == 3
     assert mf.input_sha256 == "abc"
+
+
+def test_read_chunk_statuses_reads_pairs(tmp_path: Path) -> None:
+    (tmp_path / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "chunks": [
+                    {"page_range": "0-49", "status": "completed"},
+                    {"page_range": "50-99", "status": "failed"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert read_chunk_statuses(tmp_path) == [("0-49", "completed"), ("50-99", "failed")]
+
+
+def test_read_chunk_statuses_tolerates_foreign_manifest(tmp_path: Path) -> None:
+    """Upstream ingesters write their own manifest.json — it must read as 'not chunked'."""
+    assert read_chunk_statuses(tmp_path) == []
+
+    (tmp_path / "manifest.json").write_text(
+        json.dumps({"kind": "pdf", "pages": 12}), encoding="utf-8"
+    )
+    assert read_chunk_statuses(tmp_path) == []
+
+    (tmp_path / "manifest.json").write_text("{not json", encoding="utf-8")
+    assert read_chunk_statuses(tmp_path) == []
+
+    (tmp_path / "manifest.json").write_text(json.dumps([1, 2, 3]), encoding="utf-8")
+    assert read_chunk_statuses(tmp_path) == []
 
 
 def test_manifest_to_dict_omits_consolidated_md_when_unset(tmp_path: Path) -> None:

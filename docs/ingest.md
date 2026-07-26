@@ -27,7 +27,7 @@ Regardless of worker count, `pagespeak ingest` always produces:
       images/
 ```
 
-Single-process and chunked runs are identical from Phase 3's perspective: it always reads `<stem>.raw.md` and `images/`. The manifest and `chunks/` dirs are an implementation detail of the chunked path; Phase 3 does not read them.
+Single-process and chunked runs are identical from Phase 3's perspective: it always reads `<stem>.raw.md` and `images/`. The manifest and `chunks/` dirs are an implementation detail of the chunked path — Phase 3 reads the manifest for one thing only: to refuse an ingest that never finished (see [Partial ingest](#partial-ingest)).
 
 ## The two execution paths
 
@@ -86,6 +86,14 @@ pagespeak ingest thick.pdf -o ./out --workers 4
 On the single-process path there is no manifest; resume means the same thing as on `pagespeak convert` — `<stem>.raw.md` exists and is fresher than the source file, so the backend step is skipped entirely.
 
 **Backend mismatch:** if the manifest records `pdf_backend: marker` but you invoke with `--pdf-backend docling`, the command refuses with a clear message. Pass `--force` to override and re-run all chunks from scratch.
+
+### Partial ingest
+
+`pagespeak ingest` exits 2 when a chunk fails, but `<stem>.raw.md` is still written from the chunks that succeeded — it holds part of the document. In the two-command workflow the second command would otherwise accept that partial snapshot and build a finished-looking document missing those pages.
+
+So `pagespeak convert <outdir>` reads `manifest.json` and **refuses to run while any chunk is `failed` or `in_progress`**, exiting 2 and naming the page ranges. Re-run `pagespeak ingest` (without `--force`) to retry just the failed chunks, then convert.
+
+To build the document anyway, accepting the gap, pass `--allow-partial-ingest` (`allow_partial_ingest=True` on `to_markdown()`); the run logs `ingest_incomplete_accepted` at WARNING. `--rerun-from ingest` drops the manifest, so a full re-ingest is never held back by the previous run's failures.
 
 **Manifest schema v3:** `manifest.json` uses schema version
 3. Files written by older versions (v1 / v2) are refused with a `--force` / `rm -rf` remediation message.

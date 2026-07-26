@@ -93,6 +93,7 @@ from ._cleanup_transforms import (
 from ._cleanup_transforms import (
     unescape_underscores as unescape_underscores,
 )
+from ._fences import fence_flags
 from ._outline import promote_outline
 
 logger = get_logger(__name__)
@@ -206,11 +207,18 @@ def _preserve_list_indent(original: str, normalized: str) -> str:
     return normalized
 
 
+# The line must BE the TOC heading, not merely mention it: a substring test
+# discards prose such as "The Table of Contents on page 3 lists every chapter".
+_TOC_HEADING_LINE_RE = re.compile(r"^\s*#{0,6}\s*table of contents\s*:?\s*$", re.I)
+
+
 def cleanup_markdown(
     text: str,
     level: CleanupLevel = "basic",
     *,
     cross_refs: CrossRefs = "keep",
+    stats: dict[str, int] | None = None,
+    structure_authoritative: bool = False,
 ) -> str:
     """Run the cleanup pipeline at the requested level.
 
@@ -224,6 +232,10 @@ def cleanup_markdown(
     `cross_refs="strip"`: rewrite to plain `label`, dropping the broken anchor.
     Pair with `aggressive` to avoid orphan refs after page-span targets are
     stripped.
+
+    `structure_authoritative=True` stands the heading-demote passes down: they
+    fix *inferred* structure, and against read structure they delete real
+    sections. See `IngestResult.structure_authoritative`.
     """
     if level == "off":
         return text
@@ -251,8 +263,11 @@ def cleanup_markdown(
     # heading` (built for Marker's false positives) would only hurt here,
     # demoting legitimate long-sentence-shaped section titles. Track the
     # outline-doc state so the heading branch can skip prose-demote.
+    # A backend that read the structure earns the same skip.
     text, outline_promoted = promote_outline(text)
-    is_outline_doc = outline_promoted > 0
+    is_outline_doc = outline_promoted > 0 or structure_authoritative
+    if stats is not None:
+        stats["outline_promoted"] = outline_promoted
     if outline_promoted:
         logger.info("cleanup_promoted_outline_to_headings count=%d", outline_promoted)
 
@@ -264,11 +279,19 @@ def cleanup_markdown(
     table_buf: list[str] = []
     blank_run = 0
 
-    for raw_line in text.splitlines():
+    _src_lines = text.splitlines()
+    _fenced = fence_flags(_src_lines)
+    for _li, raw_line in enumerate(_src_lines):
         line = raw_line.rstrip()
 
+        # A `#` inside a fenced block is a comment, never a heading — emit it
+        # untouched so no heading transform can rewrite code.
+        if _fenced[_li]:
+            out.append(raw_line)
+            continue
+
         if aggressive:
-            if "Table of Contents" in line:
+            if _TOC_HEADING_LINE_RE.match(line):
                 # Normalize the heading but preserve any TOC table that follows.
                 # stripped TOC table rows entirely, but on some real-world
                 # docs that table is the only TOC the doc has — preserve it.

@@ -10,6 +10,7 @@ from pathlib import Path
 
 from pagespeak.services._split import split_into_sections
 from pagespeak.services._split_filter import (
+    _drop_toc_phantom_sections,
     _has_substantive_body,
     _select_kept_sections,
 )
@@ -20,6 +21,60 @@ def _section(heading: str, content: list[str]) -> _Section:
     return _Section(
         level=2, number=None, title=heading, heading_line=heading, content_lines=content
     )
+
+
+# ── _drop_toc_phantom_sections ─────────────────────────────────────────────
+
+_SUMMARY = [
+    "- Cells are the smallest living units, specialised for different functions.",
+    "- Tissues combine into organs; organ systems perform whole-body tasks.",
+    "- The internal environment is the fluid surrounding the body's cells.",
+]
+
+
+def _numbered(display: str, content: list[str]) -> _Section:
+    number, _, title = display.partition(" ")
+    s = _Section(
+        level=2, number=number, title=title, heading_line=f"## {display}", content_lines=content
+    )
+    return s
+
+
+def test_phantom_shaped_heading_with_real_body_is_kept() -> None:
+    """A chapter-review summary restates its subsection with a page
+    back-reference (`1.1 Organization of the Body, p. 32`) and then carries
+    unique prose. It matches the TOC shape but is real content."""
+    s = _numbered("1.1 Organization of the Body, p. 32", _SUMMARY)
+    kept, dropped = _drop_toc_phantom_sections([s])
+    assert dropped == 0, "dropped a phantom-shaped heading that has real content"
+    assert kept == [s]
+
+
+def test_bodyless_phantom_is_still_dropped() -> None:
+    """The real TOC entry — same shape, no body — must still go."""
+    s = _numbered("1.1 Organization of the Body, p. 32", [])
+    kept, dropped = _drop_toc_phantom_sections([s])
+    assert (kept, dropped) == ([], 1)
+
+
+def test_phantom_parent_is_kept_when_a_descendant_has_content() -> None:
+    """Pruning a parent takes its whole subtree, so an empty phantom whose
+    child carries content must not be dropped."""
+    parent = _numbered("2.2 Cell Structure, p. 59", [])
+    child = _numbered("2.2.1 The Membrane, p. 60", _SUMMARY)
+    child.parent = parent
+    parent.children = [child]
+    kept, dropped = _drop_toc_phantom_sections([parent, child])
+    assert dropped == 0
+    assert kept == [parent, child]
+
+
+def test_numbered_heading_ending_in_a_number_is_not_a_phantom() -> None:
+    """`2.4 IEEE 802.11` is a real title whose trailing digits are part of the
+    name, not a page reference."""
+    s = _numbered("2.4 IEEE 802.11", _SUMMARY)
+    _, dropped = _drop_toc_phantom_sections([s])
+    assert dropped == 0
 
 
 # ── _has_substantive_body ──────────────────────────────────────────────────
@@ -130,3 +185,70 @@ def test_link_list_section_without_children_is_untouched(tmp_path: Path) -> None
     names = sorted(p.name for p in written)
     assert "related-links.md" in names
     assert "real-section.md" in names
+
+
+# ── suffix must not land on a name another section already owns ─────────
+#
+# `Foo`, `Foo`, `Foo 2`: the second `Foo` is suffixed to `foo-2`, which the
+# third section already owns. The writer truncates, so one body is lost.
+
+
+def _sec(title: str, body: str):
+    from pagespeak.services._split_parse import _Section
+
+    return _Section(
+        level=2,
+        number=None,
+        title=title,
+        heading_line=f"## {title}",
+        content_lines=[body],
+        children=[],
+        parent=None,
+    )
+
+
+def _paths(kept, out, nested=False):
+    from pagespeak.services._split_write import _section_output_path
+
+    seen: dict[str, list[str]] = {}
+    for s in kept:
+        seen.setdefault(_section_output_path(s, out, nested=nested).name, []).append(
+            s.content_lines[0]
+        )
+    return seen
+
+
+def test_suffix_skips_a_name_another_section_owns(tmp_path) -> None:
+    from pagespeak.services._split_filter import _dedupe_section_paths
+
+    secs = [_sec("Foo", "A"), _sec("Foo", "B"), _sec("Foo 2", "C")]
+    kept, _ = _dedupe_section_paths(secs, tmp_path, nested=False)
+    seen = _paths(kept, tmp_path)
+    assert len(kept) == 3
+    assert all(len(v) == 1 for v in seen.values()), f"collision: {seen}"
+
+
+def test_suffix_walks_past_several_owned_names(tmp_path) -> None:
+    from pagespeak.services._split_filter import _dedupe_section_paths
+
+    secs = [
+        _sec("Foo", "A"),
+        _sec("Foo", "B"),
+        _sec("Foo", "C"),
+        _sec("Foo 2", "D"),
+        _sec("Foo 3", "E"),
+    ]
+    kept, _ = _dedupe_section_paths(secs, tmp_path, nested=False)
+    seen = _paths(kept, tmp_path)
+    assert len(kept) == 5
+    assert len(seen) == 5, f"collision: {seen}"
+
+
+def test_body_identical_duplicates_still_drop(tmp_path) -> None:
+    """The suffix fix must not resurrect body-identical dupes."""
+    from pagespeak.services._split_filter import _dedupe_section_paths
+
+    kept, collisions = _dedupe_section_paths(
+        [_sec("Foo", "SAME"), _sec("Foo", "SAME")], tmp_path, nested=False
+    )
+    assert len(kept) == 1 and len(collisions) == 1

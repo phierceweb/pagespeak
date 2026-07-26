@@ -60,9 +60,14 @@ class IngestResult:
         source_format: Detected file extension (e.g. `"pdf"`, `"docx"`)
             for the input. Useful for branching on source-type in
             downstream consumers without re-sniffing the original path.
+        structure_authoritative: The backend read heading structure from the
+            source's own format (Word `w:ilvl` / Heading styles) rather than
+            inferring it, so passes that repair *inferred* structure must
+            stand down. Set by the backend that produced the markdown.
     """
 
     markdown: str
     images: list[Path] = field(default_factory=list)
     diagrams: list[Diagram] = field(default_factory=list)
     source_format: str = ""
+    structure_authoritative: bool = False

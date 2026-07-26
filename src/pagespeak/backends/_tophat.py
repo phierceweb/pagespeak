@@ -103,13 +103,14 @@ def convert_pdf_tophat(
     force_ocr: bool = False,
     device: str | None = None,
     page_range: str | list[int] | None = None,
+    heading_hierarchy: bool = False,
     backend_kwargs: dict[str, object] | None = None,
 ) -> IngestResult:
     """Convert a Top Hat quiz-export PDF to per-question markdown.
 
     Matches the `PdfConverter` signature so it slots into `_pdf_dispatch`.
-    `force_ocr`, `device`, `page_range`, and `backend_kwargs` are accepted for
-    protocol compatibility and ignored. When `output_dir` is given, embedded
+    `force_ocr`, `device`, `page_range`, `heading_hierarchy`, and
+    `backend_kwargs` are accepted for protocol compatibility and ignored. When `output_dir` is given, embedded
     figures are extracted into `output_dir/images/` and referenced in the
     relevant question (so the vision pass can caption them); without it, the
     conversion is text-only.

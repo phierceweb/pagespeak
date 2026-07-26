@@ -56,6 +56,7 @@ _FLAG_TYPES: dict[str, type] = {
     "decoration_threshold": int,
     "decoration_hamming_distance": int,
     "pdf_backend": str,
+    "heading_hierarchy": bool,
     "repair_tables": bool,
     "docx_backend": str,
     "docx_outline_heading_depth": int,

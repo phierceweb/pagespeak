@@ -271,7 +271,9 @@ def test_cli_convert_rejects_bad_normalize_mode(tmp_path: Path) -> None:
     src.write_bytes(b"%PDF-1.4\n")
     result = runner.invoke(app, ["convert", str(src), "--normalize-headings-mode", "bogus"])
     assert result.exit_code != 0
-    assert "must be one of ('heuristic', 'llm', 'llm_full', 'auto')" in _plain(result.output)
+    assert "must be one of ('heuristic', 'llm', 'llm_full', 'llm_dehead', 'auto')" in _plain(
+        result.output
+    )
 
 
 # ============================================================================

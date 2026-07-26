@@ -454,6 +454,41 @@ def test_resolve_model_llm_full_uses_full_agent_slug(
     assert _resolve_model(None, mode="llm_full") == "gemini-for-llm-full"
 
 
+def test_resolve_model_llm_dehead_uses_dehead_agent_slug(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`mode='llm_dehead'` must resolve through `heading_normalize_dehead`.
+
+    The resolved name is passed to `invoke_agent` as `model_override`, which
+    outranks the agent slug's own config — so resolving the wrong slug here
+    silently runs dehead on the plain `heading_normalize` model no matter what
+    the dehead block declares.
+    """
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "model_router.yaml").write_text(
+        """agents:
+  heading_normalize:
+    backends:
+      claude_code:
+        model: haiku-for-llm
+  heading_normalize_full:
+    backends:
+      claude_code:
+        model: gemini-for-llm-full
+  heading_normalize_dehead:
+    backends:
+      claude_code:
+        model: opus-for-dehead
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PAGESPEAK_HEADING_NORMALIZE_BACKEND", "claude_code")
+    monkeypatch.setenv("PAGESPEAK_HEADING_NORMALIZE_FULL_BACKEND", "claude_code")
+    monkeypatch.setenv("PAGESPEAK_HEADING_NORMALIZE_DEHEAD_BACKEND", "claude_code")
+    assert _resolve_model(None, mode="llm_dehead") == "opus-for-dehead"
+
+
 def test_normalize_records_resolved_yaml_model_in_cache(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1120,3 +1155,68 @@ def test_claude_code_timeout_falls_back_on_invalid_env(
     value here so this test doesn't couple to pf-core's log format."""
     monkeypatch.setenv("PAGESPEAK_CLAUDE_CODE_TIMEOUT_S", "not-an-int")
     assert _claude_code_timeout_s() == _CLAUDE_CODE_TIMEOUT_S_DEFAULT
+
+
+# --- llm_dehead mode ---------------------------------------------------------
+
+
+def _heading_lines(md: str) -> list[str]:
+    return [ln for ln in md.splitlines() if ln.startswith("#")]
+
+
+def _dehead_md() -> str:
+    return (
+        "# Product Guide\n\nIntro body.\n\n"
+        "## 1 Setup\n\nSetup body.\n\n"
+        "### Note\n\nBe careful here.\n\n"
+        "## 2 Operation\n\nOperation body.\n"
+    )
+
+
+def test_llm_dehead_drops_junk_and_preserves_every_level() -> None:
+    """The defining property: a kept heading keeps the level it arrived
+    with, even when the model is only asked about junk."""
+    from pagespeak.services._heading_normalize import (
+        apply_normalization,
+        gather_normalize_levels,
+    )
+
+    md = _dehead_md()
+    data = gather_normalize_levels(
+        md, mode="llm_dehead", invoke=lambda _p: "1: KEEP\n2: KEEP\n3: DROP\n4: KEEP\n"
+    )
+    out = apply_normalization(md, data)
+    assert "# Product Guide" in out
+    assert "## 1 Setup" in out
+    assert "## 2 Operation" in out
+    assert "### Note" not in out
+    assert "Note" in out  # text survives as a paragraph
+
+
+def test_llm_dehead_ignores_level_numbers_in_a_malformed_response() -> None:
+    """A response in llm_full's `<idx>: <level>` shape must not re-level."""
+    from pagespeak.services._heading_normalize import (
+        apply_normalization,
+        gather_normalize_levels,
+    )
+
+    md = _dehead_md()
+    data = gather_normalize_levels(
+        md, mode="llm_dehead", invoke=lambda _p: "1: 3\n2: 4\n3: 0\n4: 5\n"
+    )
+    out = apply_normalization(md, data)
+    # No verdict line parsed → nothing applied; every heading line intact.
+    assert _heading_lines(out) == _heading_lines(md)
+
+
+def test_llm_dehead_all_keep_is_a_clean_noop() -> None:
+    from pagespeak.services._heading_normalize import (
+        apply_normalization,
+        gather_normalize_levels,
+    )
+
+    md = _dehead_md()
+    data = gather_normalize_levels(
+        md, mode="llm_dehead", invoke=lambda _p: "1: KEEP\n2: KEEP\n3: KEEP\n4: KEEP\n"
+    )
+    assert _heading_lines(apply_normalization(md, data)) == _heading_lines(md)

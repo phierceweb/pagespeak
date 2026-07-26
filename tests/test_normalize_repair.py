@@ -98,10 +98,18 @@ def test_odd_repetition_kept() -> None:
 
 
 def test_doubled_preserves_level_and_newline() -> None:
-    md = "#### Notes Notes\n"
+    md = "#### Reference Notes Reference Notes\n"
     out, n = dedupe_doubled_heading_text(md)
     assert n == 1
-    assert out == "#### Notes\n"
+    assert out == "#### Reference Notes\n"
+
+
+def test_a_single_short_repeated_word_is_left_alone() -> None:
+    """`Bora Bora` and `Notes Notes` are indistinguishable by shape. Keeping a
+    doubled word is recoverable; deleting a real one is not, so short
+    single-word repeats are no longer collapsed."""
+    md = "#### Notes Notes\n"
+    assert dedupe_doubled_heading_text(md) == (md, 0)
 
 
 # --- demote_spaced_letter_headings (pass 4: letter-spaced dividers) -------
@@ -265,3 +273,106 @@ def test_repair_outline_doc_preserves_author_level_skip() -> None:
     out, counts = repair_headings(md, is_outline_doc=True)
     assert "### Intentional Sub" in out  # skip preserved
     assert "repair_closed_heading_level_gaps" not in counts
+
+
+# ── repair heuristics must not destroy legitimate headings ─────────────
+
+
+def test_reduplicated_names_are_not_collapsed() -> None:
+    """`Bora Bora` is a place, not a doubled heading — collapsing deletes a word."""
+    from pagespeak.services._normalize_repair import dedupe_doubled_heading_text
+
+    for name in ("## Bora Bora", "## Duran Duran", "## Walla Walla", "## Pago Pago"):
+        out, n = dedupe_doubled_heading_text(f"{name}\n\nbody\n")
+        assert out.splitlines()[0] == name and n == 0, name
+
+
+def test_genuine_doubled_headings_still_collapse() -> None:
+    from pagespeak.services._normalize_repair import dedupe_doubled_heading_text
+
+    out, n = dedupe_doubled_heading_text("## Chapter Summary Chapter Summary\n\nbody\n")
+    assert out.splitlines()[0] == "## Chapter Summary" and n == 1
+
+
+def test_year_headings_survive_number_only_demote() -> None:
+    """Timelines and annual reports title sections with a year."""
+    from pagespeak.services._normalize_repair import demote_number_only_headings
+
+    for year in ("# 1984", "# 2024", "# 1066"):
+        out, n = demote_number_only_headings(f"{year}\n\nbody\n")
+        assert out.splitlines()[0] == year and n == 0, year
+
+
+def test_page_numbers_are_still_demoted() -> None:
+    from pagespeak.services._normalize_repair import demote_number_only_headings
+
+    for page in ("# 780", "# 42", "# 12345"):
+        out, n = demote_number_only_headings(f"{page}\n\nbody\n")
+        assert not out.splitlines()[0].startswith("#") and n == 1, page
+
+
+def test_spaced_math_headings_are_not_demoted() -> None:
+    """A spaced formula has the same token shape as letter-spaced display
+    text; the operator is what distinguishes them."""
+    from pagespeak.services._normalize_repair import demote_spaced_letter_headings
+
+    for formula in (
+        "## f ( x ) = 3 x",
+        "## a = b + c",
+        "## x ^ 2 + y ^ 2 = r ^ 2",
+        "## H 2 O and C O 2",
+        "## Step 1 2 3 4",
+    ):
+        out, n = demote_spaced_letter_headings(f"{formula}\n\nbody\n")
+        assert out.splitlines()[0] == formula and n == 0, formula
+
+
+def test_letter_spaced_dividers_are_still_demoted() -> None:
+    from pagespeak.services._normalize_repair import demote_spaced_letter_headings
+
+    for divider in ("# S K E L E T A L", "# C H A P T E R  O N E", "# T H E  E N D"):
+        out, n = demote_spaced_letter_headings(f"{divider}\n\nbody\n")
+        assert not out.splitlines()[0].startswith("#") and n == 1, divider
+
+
+class TestRepairPassesRespectFences:
+    """A `#` inside a fenced block is code, not a heading: a markdown-about-
+    markdown fence, a shell script and a C header must all pass through
+    untouched, and must not be counted as repairs."""
+
+    def test_number_only_demote_skips_fenced_code(self) -> None:
+        from pagespeak.services._normalize_repair import demote_number_only_headings
+
+        text = "# Real 780\n\n```markdown\n# 780\n```\n"
+        out, n = demote_number_only_headings(text)
+        assert "# 780" in out, f"fenced heading was demoted:\n{out}"
+        assert n == 0, f"reported {n} repairs on fenced content"
+
+    def test_doubled_text_dedupe_skips_fenced_code(self) -> None:
+        from pagespeak.services._normalize_repair import dedupe_doubled_heading_text
+
+        text = "## Intro\n\n```markdown\n# Overview Overview\n```\n"
+        out, n = dedupe_doubled_heading_text(text)
+        assert "# Overview Overview" in out, f"fenced heading was rewritten:\n{out}"
+        assert n == 0, f"reported {n} repairs on fenced content"
+
+    def test_span_strip_skips_fenced_code(self) -> None:
+        from pagespeak.services._normalize_repair import strip_heading_spans
+
+        text = '## Intro\n\n```html\n# <span id="page-31-0"></span>Example\n```\n'
+        out, n = strip_heading_spans(text)
+        assert 'id="page-31-0"' in out, f"fenced span was stripped:\n{out}"
+        assert n == 0, f"reported {n} repairs on fenced content"
+
+    def test_real_headings_outside_fences_still_repaired(self) -> None:
+        """The fix must not disable the passes — only scope them."""
+        from pagespeak.services._normalize_repair import (
+            demote_number_only_headings,
+            strip_heading_spans,
+        )
+
+        out, n = demote_number_only_headings("# 780\n\nbody\n")
+        assert n == 1 and "# 780" not in out
+
+        out, n = strip_heading_spans('# <span id="page-1-0"></span>Title\n')
+        assert n == 1 and out.strip() == "# Title"

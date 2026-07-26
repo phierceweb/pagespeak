@@ -26,10 +26,13 @@ wording.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
 from pf_core.log import get_logger
+from pf_core.utils.env import resolve_str
 
 from ._heading_normalize import (
     NormalizeMode,
@@ -39,10 +42,34 @@ from ._heading_normalize import (
 
 logger = get_logger(__name__)
 
+_HEADING_LINE = re.compile(r"^(#{1,6})\s+\S", re.M)
+# Below this a document is too small for "malformed" to mean anything — a
+# short spec sheet legitimately has one tier.
+_MIN_HEADINGS_TO_JUDGE = 10
+_MAX_SKIP_RATE_DEFAULT = 0.10
+_MAX_SKIP_RATE_ENV_VAR = "PAGESPEAK_OUTLINE_TRUST_MAX_SKIP_RATE"
+
+
+def _max_skip_rate() -> float:
+    """Share of headings that may skip a tier before an outline-derived tree
+    is judged incoherent. Read at call time so `.env` edits apply per run."""
+    raw = resolve_str(None, _MAX_SKIP_RATE_ENV_VAR, default=str(_MAX_SKIP_RATE_DEFAULT))
+    try:
+        return float(raw or _MAX_SKIP_RATE_DEFAULT)
+    except (TypeError, ValueError):
+        logger.warning(
+            "env_var_malformed name=%s value=%r using=%s",
+            _MAX_SKIP_RATE_ENV_VAR,
+            raw,
+            _MAX_SKIP_RATE_DEFAULT,
+        )
+        return _MAX_SKIP_RATE_DEFAULT
+
+
 # Caller-facing mode option: "auto" is resolved to a concrete NormalizeMode
 # by `resolve_normalize_mode` (below) before gather_normalize_levels runs;
 # gather itself never sees "auto".
-NormalizeModeOption = Literal["heuristic", "llm", "llm_full", "auto"]
+NormalizeModeOption = Literal["heuristic", "llm", "llm_full", "llm_dehead", "auto"]
 
 # Below this many headings, structure is too thin to renormalize.
 MIN_HEADINGS = 6
@@ -182,6 +209,66 @@ def resolve_normalize_mode(md: str) -> NormalizeMode:
     return d.mode
 
 
+def outline_tree_is_coherent(markdown: str, *, max_skip_rate: float | None = None) -> bool:
+    """Whether a heading tree is well-formed enough to be worth preserving.
+
+    Disqualified by a tier left unused inside the range (every `##` child sits
+    at `####`, so `###` never appears) or too many tier-skipping descents —
+    either way the levels are not describing a tree.
+    """
+    levels = [len(m.group(1)) for m in _HEADING_LINE.finditer(markdown)]
+    if len(levels) < _MIN_HEADINGS_TO_JUDGE:
+        return True  # too small to call malformed; leave the caller's default
+    used = sorted(set(levels))
+    if used != list(range(used[0], used[0] + len(used))):
+        return False
+    skips = sum(1 for a, b in zip(levels, levels[1:], strict=False) if b > a + 1)
+    ceiling = _max_skip_rate() if max_skip_rate is None else max_skip_rate
+    return (skips / len(levels)) <= ceiling
+
+
+def route_authoritative_hierarchy(
+    mode: NormalizeMode,
+    src: Path | None,
+    *,
+    pdf_backend: str,
+    heading_hierarchy: bool,
+    out: Path | None = None,
+    markdown: str | None = None,
+    in_memory: bool = False,
+) -> NormalizeMode:
+    """Downgrade a re-leveling mode to junk-removal when the source stated its
+    own hierarchy AND that hierarchy is coherent.
+
+    `llm` and `llm_full` reassign every heading's depth — useful when the
+    backend inferred depth from typography, harmful when it was read from the
+    document's bookmark outline. `llm_dehead` keeps the junk removal and leaves
+    levels alone.
+
+    "Outline-derived" is not the same as "correct": an outline can be coarser
+    than the document, or rendered with a tier missing throughout, and
+    `llm_dehead` can never repair that. Pass `markdown` to enable the check;
+    without it the old behaviour is kept.
+    """
+    if mode not in ("llm", "llm_full"):
+        return mode
+    from ._hierarchy_trust import has_authoritative_hierarchy
+
+    if not has_authoritative_hierarchy(
+        src,
+        pdf_backend=pdf_backend,
+        heading_hierarchy=heading_hierarchy,
+        out=out,
+        in_memory=in_memory,
+    ):
+        return mode
+    if markdown is not None and not outline_tree_is_coherent(markdown):
+        logger.info("normalize_mode_downgrade_skipped reason=incoherent_outline_tree mode=%s", mode)
+        return mode
+    logger.info("normalize_mode_downgraded from=%s to=llm_dehead", mode)
+    return "llm_dehead"
+
+
 __all__ = [
     "COLLAPSE_MIN",
     "MIN_HEADINGS",
@@ -190,4 +277,5 @@ __all__ = [
     "NormalizeModeOption",
     "classify_normalize_mode",
     "resolve_normalize_mode",
+    "route_authoritative_hierarchy",
 ]

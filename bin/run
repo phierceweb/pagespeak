@@ -6,6 +6,7 @@
 #   bin/run pip [args]         pip in the project venv
 #   bin/run ruff [args]        ruff in the project venv
 #   bin/run mypy [args]        mypy in the project venv
+#   bin/run pf-doctor          pf-core console script, from the venv
 #   bin/run <pagespeak-cmd>    forward to the pagespeak CLI (convert / ingest /
 #                              deliver / audit / …)
 #   bin/run --help             show pagespeak's command list
@@ -46,8 +47,10 @@ if [ ! -d ".venv" ]; then
 fi
 
 # Special-case venv binaries. Pass-through to .venv/bin/<cmd>.
+# pf-*: pf-core's console scripts (pf-doctor, …) — the prefix can't collide
+# with a pagespeak command.
 case "${1:-}" in
-  pytest|python|pip|ruff|mypy)
+  pytest|python|pip|ruff|mypy|pf-*)
     cmd="$1"
     shift
     if [ ! -x ".venv/bin/$cmd" ]; then

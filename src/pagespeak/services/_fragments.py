@@ -28,6 +28,7 @@ from __future__ import annotations
 import re
 
 from ._cleanup import strip_page_spans
+from ._fences import fence_flags
 
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 _HEADING_DEMOTE_RE = re.compile(r"^(\s*)#{1,6}\s+(.*)$")
@@ -102,10 +103,11 @@ def demote_orphan_fragments(text: str) -> tuple[str, int]:
     ``(rewritten_text, demoted_count)``.
     """
     lines = text.splitlines()
+    _fenced = fence_flags(lines)
     headings: list[tuple[int, int, str]] = []  # (line_idx, level, clean_text)
     histogram: dict[int, int] = {}
     for idx, line in enumerate(lines):
-        m = _HEADING_RE.match(line.strip())
+        m = None if _fenced[idx] else _HEADING_RE.match(line.strip())
         if not m:
             continue
         level = len(m.group(1))

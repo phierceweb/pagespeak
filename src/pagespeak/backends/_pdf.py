@@ -50,6 +50,7 @@ def convert_pdf(
     force_ocr: bool = False,
     device: str | None = None,
     page_range: str | list[int] | None = None,
+    heading_hierarchy: bool = False,
     backend_kwargs: dict[str, object] | None = None,
 ) -> IngestResult:
     """Convert a PDF to markdown via Marker.
@@ -69,6 +70,9 @@ def convert_pdf(
             silently ignored (a WARNING is logged).
         page_range: Convert only these pages (0-based). String spec like
             `"0-19"` / `"0-3,5,7-9"` or `list[int]`. `None` converts all pages.
+        heading_hierarchy: Accepted for protocol compatibility and ignored —
+            Marker has no bookmark/outline/numbering signal, so heading depth
+            always comes from its font clustering. Docling-only.
         backend_kwargs: Forwarded into Marker's `PdfConverter(config=…)`.
             Use to reach Marker-specific options the common surface
             doesn't expose. Empty by default.

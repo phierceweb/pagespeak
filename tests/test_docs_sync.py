@@ -159,3 +159,35 @@ def test_all_source_modules_in_architecture_md() -> None:
         if needle not in text:
             missing.append(str(rel))
     assert not missing, f"architecture.md module tables missing: {missing}"
+
+
+def _security_section(heading: str) -> str:
+    text = (_ROOT / "SECURITY.md").read_text(encoding="utf-8")
+    return text.split(heading)[1].split("\n### ")[0]
+
+
+def test_security_md_discloses_tracked_payloads() -> None:
+    """Tracking persists prompts + responses, so SECURITY.md must say document text lands there."""
+    runtime = (_ROOT / "src" / "pagespeak" / "_agent_runtime.py").read_text(encoding="utf-8")
+    assert "tracked_messages_call" in runtime, (
+        "payload persistence changed — re-check the SECURITY.md tracking-DB disclosure"
+    )
+    text = (_ROOT / "SECURITY.md").read_text(encoding="utf-8").lower()
+    missing = [phrase for phrase in ("rendered prompt", "raw model response") if phrase not in text]
+    assert not missing, f"SECURITY.md must disclose that the tracking DB stores {missing}"
+
+
+def test_security_md_states_ssrf_rebinding_limit() -> None:
+    """pf-core documents its SSRF guard as rebinding-defeatable; SECURITY.md must not overclaim."""
+    from pf_core.utils import url_safety
+
+    assert "Not TOCTOU-safe" in (url_safety.__doc__ or ""), (
+        "pf-core's SSRF guard changed — re-check the SECURITY.md remote-fetch claim"
+    )
+    section = _security_section("### Remote image fetching")
+    assert "rebinding" in section.lower(), (
+        "SECURITY.md must state the SSRF check is not DNS-rebinding-proof"
+    )
+    assert "cannot steer" not in section, (
+        "SECURITY.md overclaims the SSRF guard as absolute; pf-core disclaims that"
+    )

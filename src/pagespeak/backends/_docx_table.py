@@ -14,13 +14,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from ._docx_structured import _render_runs
+from ._docx_runs import render_runs
 
 
 def _render_cell(cell: Any) -> str:
     parts: list[str] = []
     for p in cell.paragraphs:
-        s = _render_runs(p)
+        s = render_runs(p)
         if s:
             parts.append(s)
     text = "<br>".join(parts)

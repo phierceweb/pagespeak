@@ -16,6 +16,8 @@ import re
 from collections import Counter
 from dataclasses import dataclass
 
+from ._fences import fence_flags
+
 # A cell holding this many <br>-joined lines is a collapsed sheet, not a
 # legitimate multi-line cell — the sole collapsed-table signal. Calibrated
 # so real multi-line spec/list cells (~22 <br> max) stay below and genuine
@@ -60,17 +62,11 @@ class AuditFinding:
 
 
 def _fenced_lines(lines: list[str]) -> set[int]:
-    """0-based indices of lines inside ``` fences, delimiters included."""
-    fenced: set[int] = set()
-    in_fence = False
-    for i, line in enumerate(lines):
-        if line.lstrip().startswith("```"):
-            fenced.add(i)
-            in_fence = not in_fence
-            continue
-        if in_fence:
-            fenced.add(i)
-    return fenced
+    """0-based indices of lines inside a fence, delimiters included.
+
+    Markup inside a fence is code, never a document defect.
+    """
+    return {i for i, is_fenced in enumerate(fence_flags(lines)) if is_fenced}
 
 
 def _prose_lines(text: str) -> list[tuple[int, str]]:

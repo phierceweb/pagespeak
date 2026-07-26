@@ -83,6 +83,29 @@ agents:
         model: google/gemini-2.5-flash
         max_tokens: 8000
 
+  heading_normalize_dehead:
+    # `llm_dehead` mode — same headings + body-context payload as
+    # `heading_normalize_full`, but the model is asked only whether each
+    # heading is real (KEEP/DROP); levels are never reassigned. For a
+    # document whose hierarchy the extractor already got right (an
+    # embedded outline or a section-numbering spine), re-leveling is both
+    # unnecessary and a regression risk — junk removal is the only thing
+    # no deterministic pass can do.
+    backends:
+      claude_code:
+        model: opus
+        max_input_tokens: 800000
+      anthropic:
+        model: claude-opus-4-8
+        max_tokens: 8000
+        max_input_tokens: 150000
+        temperature: null
+        top_p: null
+      openrouter:
+        model: anthropic/claude-opus-4.8
+        max_tokens: 16000
+        max_input_tokens: 900000
+
   heading_normalize_full:
     # `llm_full` mode — all headings + body-context anchors. The
     # reasoning-heavy task: inferring parent-child relationships from prose

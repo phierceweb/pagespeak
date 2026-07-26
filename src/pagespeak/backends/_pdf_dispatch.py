@@ -92,12 +92,16 @@ def convert(
     force_ocr: bool = False,
     device: str | None = None,
     page_range: str | list[int] | None = None,
+    heading_hierarchy: bool = False,
     backend_kwargs: dict[str, Any] | None = None,
 ) -> IngestResult:
     """Single entry point for both PDF backends. Routes to the right
     converter and forwards the common args. `backend_kwargs` is the
     backend-specific escape hatch (e.g. `docling_kwargs` /
-    `marker_kwargs` from `to_markdown`)."""
+    `marker_kwargs` from `to_markdown`).
+
+    `heading_hierarchy` is honoured by Docling only; the other backends
+    accept and ignore it."""
     converter = get_pdf_converter(name)
     return converter(
         path,
@@ -105,5 +109,6 @@ def convert(
         force_ocr=force_ocr,
         device=_resolve_device(device),
         page_range=page_range,
+        heading_hierarchy=heading_hierarchy,
         backend_kwargs=backend_kwargs or {},
     )

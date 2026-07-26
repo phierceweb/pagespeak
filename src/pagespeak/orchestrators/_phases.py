@@ -21,10 +21,12 @@ from ._resume import _try_resume_from_checkpoint, _try_resume_from_cleaned
 
 logger = get_logger(__name__)
 
+
 # Suffix tables — imported at module load from the ingest module.
 from ._ingest import MARKDOWN_SUFFIXES as _MARKDOWN_SUFFIXES  # noqa: E402
 from ._ingest import MARKITDOWN_SUFFIXES as _MARKITDOWN_SUFFIXES  # noqa: E402
 from ._ingest import PDF_SUFFIXES as _PDF_SUFFIXES  # noqa: E402
+from ._ingest import unsupported_format_error  # noqa: E402
 
 
 def _require_result(ctx: PipelineContext) -> IngestResult:
@@ -37,10 +39,7 @@ def _require_result(ctx: PipelineContext) -> IngestResult:
 
 def _load_input(c: PipelineContext, checkpoint: Path | None) -> None:
     """Hydrate `c.result` from this phase's INPUT checkpoint when an earlier
-    phase didn't run (single-phase / `--from` start). No-op in the full
-    pipeline (the prior phase populated `c.result`), which keeps a full run
-    byte-identical. Raises when the needed checkpoint is absent.
-    """
+    phase didn't run (single-phase / `--from` start); no-op in a full run."""
     if c.result is not None:
         return
     if checkpoint is None or not checkpoint.exists():
@@ -58,11 +57,8 @@ def _load_input(c: PipelineContext, checkpoint: Path | None) -> None:
 
 
 def _maybe_repair_tables(c: PipelineContext, markdown: str) -> str:
-    """Opt-in (`--repair-tables`) Docling table-splice, run as an ingest
-    sub-step: replace `<br>`-collapsed mega-cells with Docling's clean grid for
-    the same PDF page. Marker-PDF only (Docling is the fix for Marker's
-    collapse). A no-op when the flag is off, nothing collapsed, or Docling isn't
-    installed (warn + leave the markdown untouched)."""
+    """Opt-in (`--repair-tables`) ingest sub-step: replace `<br>`-collapsed
+    mega-cells with Docling's grid for the same PDF page. Marker-PDF only."""
     if not c.repair_tables or c.pdf_backend != "marker" or c.suffix not in _PDF_SUFFIXES:
         return markdown
     from ..services._table_repair import repair_tables_in_markdown
@@ -91,6 +87,8 @@ class IngestPhase:
         return False
 
     def run(self, ctx: object) -> None:
+        from ..services._hierarchy_trust import record_hierarchy_source, record_structured
+
         c = _ctx(ctx)
         src, out, raw_md_path = c.src, c.out, c.raw_md_path
         if c.dir_mode:
@@ -122,6 +120,7 @@ class IngestPhase:
                     force_ocr=c.force_ocr,
                     device=c.device,
                     page_range=c.page_range,
+                    heading_hierarchy=c.heading_hierarchy,
                     backend_kwargs=c.pdf_backend_kwargs,
                 )
             elif suffix in _MARKITDOWN_SUFFIXES:
@@ -145,10 +144,7 @@ class IngestPhase:
 
                 result = convert_markdown(src)
             else:
-                raise ValueError(
-                    f"Unsupported format: {suffix!r}. Supported: "
-                    f"{sorted(_PDF_SUFFIXES | _MARKITDOWN_SUFFIXES | _MARKDOWN_SUFFIXES)}"
-                )
+                raise unsupported_format_error(suffix)
 
             result.markdown = _maybe_repair_tables(c, result.markdown)
             # Co-locate sibling images so vision's out/images glob sees them.
@@ -160,6 +156,14 @@ class IngestPhase:
                 )
             if raw_md_path is not None:
                 raw_md_path.write_text(result.markdown, encoding="utf-8")
+            # Only the run that produced raw.md may claim its structure; a
+            # resume rehydrates the flag to False and would clear a true one.
+            record_structured(out, authoritative=result.structure_authoritative)
+
+        # Stamp provenance now: a resume run resolves src to a checkpoint.
+        record_hierarchy_source(
+            out, src, pdf_backend=c.pdf_backend, heading_hierarchy=c.heading_hierarchy
+        )
 
         c.result = result
 
@@ -240,10 +244,26 @@ class CleanupPhase:
 
         if c.cleanup != "off":
             from ..services._cleanup import cleanup_markdown
+            from ..services._hierarchy_trust import hierarchy_is_trusted, record_outline_promoted
 
+            # Same invariant as repair. `trusted_structure` alone reads only the
+            # DOCX reader's claim, which no PDF ever sets.
+            _cleanup_stats: dict[str, int] = {}
             result.markdown = cleanup_markdown(
-                result.markdown, level=c.cleanup, cross_refs=c.cross_refs
+                result.markdown,
+                level=c.cleanup,
+                cross_refs=c.cross_refs,
+                stats=_cleanup_stats,
+                structure_authoritative=hierarchy_is_trusted(
+                    c.src,
+                    c.out,
+                    pdf_backend=c.pdf_backend,
+                    heading_hierarchy=c.heading_hierarchy,
+                    in_memory=result.structure_authoritative,
+                ),
             )
+            # Repair runs separately and cannot see cleanup's locals.
+            record_outline_promoted(c.out, promoted=_cleanup_stats.get("outline_promoted", 0) > 0)
 
         if c.cleaned_md_path is not None:
             c.cleaned_md_path.write_text(result.markdown, encoding="utf-8")
@@ -266,12 +286,24 @@ class NormalizePhase:
                 apply_normalization,
                 gather_normalize_levels,
             )
+            from ..services._normalize_decision import (
+                resolve_normalize_mode,
+                route_authoritative_hierarchy,
+            )
 
             mode = c.normalize_headings_mode
             if mode == "auto":
-                from ..services._normalize_decision import resolve_normalize_mode
-
                 mode = resolve_normalize_mode(result.markdown)
+            # Re-leveling rewrites depths an outline-derived source stated —
+            # but only when coherent, hence the markdown.
+            mode = route_authoritative_hierarchy(
+                mode,
+                c.src,
+                pdf_backend=c.pdf_backend,
+                heading_hierarchy=c.heading_hierarchy,
+                out=c.out,
+                markdown=result.markdown,
+            )
 
             normalize_handoff = gather_normalize_levels(
                 result.markdown,
@@ -286,14 +318,7 @@ class NormalizePhase:
 
 
 class RepairPhase:
-    """Post-LLM deterministic heading repair → `<stem>.repaired.md`.
-
-    Reads `normalized.md`, runs the $0 detect→correct repair passes
-    (numbered-depth lock + artifact demotes), writes `repaired.md`. Mirrors
-    NormalizePhase's shape; the LLM is never called. `is_outline_doc=False`
-    is safe: the artifact passes self-no-op on structure-faithful reader
-    output and the numbered-depth lock is universal.
-    """
+    """Post-LLM $0 heading repair → `<stem>.repaired.md`. No LLM call."""
 
     name = "repair"
 
@@ -304,9 +329,18 @@ class RepairPhase:
         c = _ctx(ctx)
         _load_input(c, c.normalized_md_path)  # input: normalized.md
         result = _require_result(c)
+        # Never second-guess a hierarchy the source itself stated.
+        from ..services._hierarchy_trust import hierarchy_is_trusted
         from ..services._normalize_repair import repair_headings
 
-        result.markdown, counts = repair_headings(result.markdown)
+        trusted = hierarchy_is_trusted(
+            c.src,
+            c.out,
+            pdf_backend=c.pdf_backend,
+            heading_hierarchy=c.heading_hierarchy,
+            in_memory=result.structure_authoritative,
+        )
+        result.markdown, counts = repair_headings(result.markdown, is_outline_doc=trusted)
         applied = {k: v for k, v in counts.items() if v}
         if applied:
             logger.info("repair_headings_applied %s", applied)
@@ -317,20 +351,9 @@ class RepairPhase:
 class StructurePhase:
     """Holistic doc-level structural passes → `<stem>.structured.md`.
 
-    Runs after `repair` (post-LLM, post-deterministic-heading-repair) and
-    before `vision`. Pure-text, deterministic, $0 — operates on the heading
-    structure as a whole (not per-line like cleanup).
-
-    Houses passes that reason about the document's overall heading
-    distribution: flat-source over-promotion (rule 27), bullet-glyph
-    headings (rule 31), and similar. Each pass is a small independent
-    utility in `services/`; this phase composes them in sequence.
-
-    Targets a doc-level failure mode no per-line cleanup pass can reach:
-    flat-source PDFs (help sites, API docs, knowledge bases, …) publish
-    every article as a sibling `# `, needing a holistic post-normalize
-    rebalance.
-    """
+    $0 passes over the whole heading distribution, which no per-line cleanup
+    pass can reach: flat-source exports publish every article as a sibling
+    `# `. Composes small utilities from `services/`."""
 
     name = "structure"
 
@@ -342,23 +365,19 @@ class StructurePhase:
         _load_input(c, c.repaired_md_path)  # input: repaired.md
         result = _require_result(c)
 
-        from ..services._enumerated_nest import nest_enumerated_item_runs
-        from ..services._flat_source_demote import demote_flat_h1_runs
-        from ..services._h1_ratio_rebalance import rebalance_orphan_h1s
+        from ..services._hierarchy_trust import has_authoritative_hierarchy
+        from ..services._structure_passes import apply_structure_passes
 
-        # Nest enumerated-item runs (`Foo (1)`, `Bar (Step 2)`) FIRST, while
-        # original H1 boundaries are intact — after flat-demote a run could
-        # over-extend; also keeps nested items out of the orphan-H1 count.
-        result.markdown = nest_enumerated_item_runs(result.markdown)
-
-        # Conservative pass: long pure-H1 runs (≥N consecutive, threshold
-        # env-tunable). Rare but high-confidence.
-        result.markdown = demote_flat_h1_runs(result.markdown)
-
-        # Broader signal: orphan H1s (H1 with no child heading of any
-        # level before the next H1). Catches the flat HTML-export pattern
-        # (every childless leaf article published as `# Title`).
-        result.markdown = rebalance_orphan_h1s(result.markdown)
+        result.markdown = apply_structure_passes(
+            result.markdown,
+            trusted=has_authoritative_hierarchy(
+                c.src,
+                pdf_backend=c.pdf_backend,
+                heading_hierarchy=c.heading_hierarchy,
+                out=c.out,
+                in_memory=result.structure_authoritative,
+            ),
+        )
 
         if c.structured_md_path is not None:
             c.structured_md_path.write_text(result.markdown, encoding="utf-8")
@@ -419,11 +438,8 @@ class VisionPhase:
             if n_degraded:
                 logger.info("degraded %d dangling image ref(s) to caption text", n_degraded)
 
-        # Vision's output checkpoint: post-inject + post-TOC markdown.
-        # Makes `split` independently runnable from the real post-vision
-        # state (was the one phase with no checkpoint). Written even when
-        # vision/TOC were no-ops so the checkpoint always exists for a
-        # downstream `--from split`.
+        # Vision's output checkpoint: post-inject + post-TOC markdown. Written
+        # even when both were no-ops, so `--from split` always has an input.
         if c.visioned_md_path is not None:
             c.visioned_md_path.write_text(result.markdown, encoding="utf-8")
 
@@ -438,18 +454,11 @@ class SplitPhase:
 
     def run(self, ctx: object) -> None:
         c = _ctx(ctx)
-        # Input: visioned.md — vision's post-inject + post-TOC
-        # checkpoint. `--from split` now splits the true post-vision
-        # content (no longer pre-vision best-effort). Full-pipeline runs
-        # are unaffected (result already populated → _load_input no-op).
-        _load_input(c, c.visioned_md_path)
+        _load_input(c, c.visioned_md_path)  # input: visioned.md
         result = _require_result(c)
 
-        # Write sections/ (when enabled) + prepend master-doc frontmatter.
-        # Quiz docs (source_type=="quiz") get rich per-question frontmatter;
-        # everything else gets the opt-in base provenance triple. Both split
-        # the frontmatter-free clean text, so re-runs are idempotent. Logic
-        # lives in `_split_output` to keep this phase under its file budget.
+        # Sections + master-doc frontmatter. Both split the frontmatter-free
+        # clean text, so re-runs are idempotent.
         from ._split_output import write_sections
 
         write_sections(c, result)

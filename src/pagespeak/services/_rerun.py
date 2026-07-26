@@ -64,6 +64,9 @@ PAGESPEAK_REGISTRY = StageRegistry(
                 "images",
                 "chunks",
                 "manifest.json",
+                # Ingest-written; a stale copy would gate repair passes off after
+                # a re-ingest switches backends.
+                ".pagespeak-hierarchy.json",
             ),
         ),
         StageDefinition(

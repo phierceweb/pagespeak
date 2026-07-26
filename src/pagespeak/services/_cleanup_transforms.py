@@ -35,8 +35,8 @@ from ._cleanup_regexes import (
     PAGE_REF_RE,
     PAGE_SPAN_RE,
 )
+from ._fences import apply_outside_fences, transform_outside_fences
 
-_FENCE_SPLIT_RE = re.compile(r"(```.*?```)", re.DOTALL)
 _SHATTER_RUN_RE = re.compile(r"\*{4,}")
 _HR_ONLY_RE = re.compile(r"^\s*\*{3,}\s*$")  # a markdown thematic break (HR)
 
@@ -57,19 +57,9 @@ def collapse_shattered_emphasis(text: str) -> str:
     """
     if "****" not in text:
         return text
-    parts = _FENCE_SPLIT_RE.split(text)
-    out: list[str] = []
-    for i, part in enumerate(parts):
-        if i % 2:  # fenced block — leave verbatim
-            out.append(part)
-            continue
-        out.append(
-            "\n".join(
-                line if _HR_ONLY_RE.match(line) else _SHATTER_RUN_RE.sub("**", line)
-                for line in part.split("\n")
-            )
-        )
-    return "".join(out)
+    return apply_outside_fences(
+        text, lambda line: line if _HR_ONLY_RE.match(line) else _SHATTER_RUN_RE.sub("**", line)
+    )[0]
 
 
 def decode_html_entities(text: str) -> str:
@@ -86,8 +76,7 @@ def decode_html_entities(text: str) -> str:
     """
     if "&" not in text:
         return text
-    parts = _FENCE_SPLIT_RE.split(text)
-    return "".join(p if i % 2 else html.unescape(p) for i, p in enumerate(parts))
+    return transform_outside_fences(text, html.unescape)
 
 
 def strip_marker_pollution(text: str) -> str:
@@ -189,6 +178,9 @@ def lock_numbered_section_depth(line: str) -> str:
     trailing lowercase letter marks a textbook subsection one level
     deeper: `2.3a` → H3 (one deeper than `2.3` → H2). `3.5GHz` (uppercase
     unit) and `2.3ab` (two letters) are NOT subsections — left untouched.
+    UPPERCASE suffixes are ambiguous per-line (`1.5V` is a voltage) and are
+    handled by `lock_lettered_subsection_runs_pass`, which requires a
+    sibling run.
 
     `N.M`-style numeric prefixes are unambiguously textbook section
     headings, and the dot count is the natural depth signal. Some

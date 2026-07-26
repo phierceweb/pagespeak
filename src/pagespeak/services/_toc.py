@@ -15,9 +15,37 @@ from __future__ import annotations
 import re
 
 from ._cleanup import heading_slug
+from ._fences import fence_flags
 
 _TOC_HEADING_RE = re.compile(r"^\s*#+\s*Table of Contents\s*$", re.IGNORECASE)
+
+# Entries cap at H4 (listing every H5/H6 is noise); the block boundary must not
+# — a heading of any depth ends the TOC.
 _HEADING_LINE_RE = re.compile(r"^(#{1,4})\s+(.+?)\s*$")
+_ANY_HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
+
+# Shapes a contents block is made of: table rows, list entries, leader lines,
+# and bare titles ending in a page number.
+_TABLE_ROW_RE = re.compile(r"^\s*\|.*\|\s*$")
+_LIST_ITEM_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s")
+_LEADER_RE = re.compile(r"[.·_]{3,}|\s\d{1,4}\s*$")
+_SENTENCE_RE = re.compile(r"[.!?]\s*$")
+
+
+def _is_toc_block_line(line: str) -> bool:
+    """Whether a line belongs to the contents block rather than the body.
+
+    The block used to run to the next heading, so a manual placing safety copy
+    between its contents and the first section had that copy replaced along with
+    the table. Prose ends the block; only contents-shaped lines extend it.
+    """
+    s = line.strip()
+    if not s:
+        return True
+    if _TABLE_ROW_RE.match(s) or _LIST_ITEM_RE.match(s) or _LEADER_RE.search(s):
+        return True
+    # A short bare title is plausibly an entry; a sentence is body text.
+    return len(s.split()) <= 8 and not _SENTENCE_RE.search(s)
 
 
 def regenerate_toc(markdown: str) -> str:
@@ -27,22 +55,33 @@ def regenerate_toc(markdown: str) -> str:
     No-op if no Table-of-Contents heading is present in the markdown.
     """
     lines = markdown.splitlines()
+    fenced = fence_flags(lines)
 
     toc_idx = next(
-        (i for i, line in enumerate(lines) if _TOC_HEADING_RE.match(line)),
+        (i for i, line in enumerate(lines) if not fenced[i] and _TOC_HEADING_RE.match(line)),
         None,
     )
     if toc_idx is None:
         return markdown
 
-    # Boundary: next heading line after the TOC heading.
-    next_heading_idx = next(
-        (i for i in range(toc_idx + 1, len(lines)) if _HEADING_LINE_RE.match(lines[i])),
-        len(lines),
-    )
+    # A fence bounds the block too: crossing one swallows a document whose
+    # remaining headings all sit inside it. Body prose bounds it as well — see
+    # `_is_toc_block_line`.
+    block_end = len(lines)
+    for i in range(toc_idx + 1, len(lines)):
+        if fenced[i] or _ANY_HEADING_RE.match(lines[i]) or not _is_toc_block_line(lines[i]):
+            block_end = i
+            break
+    # don't carry the blank run that preceded the terminator into the new block
+    while block_end - 1 > toc_idx and not lines[block_end - 1].strip():
+        block_end -= 1
+    next_heading_idx = block_end
 
     entries: list[tuple[int, str, str]] = []  # (depth, title, slug)
-    for line in lines[next_heading_idx:]:
+    for i in range(next_heading_idx, len(lines)):
+        if fenced[i]:
+            continue
+        line = lines[i]
         m = _HEADING_LINE_RE.match(line)
         if not m:
             continue

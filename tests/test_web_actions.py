@@ -135,6 +135,23 @@ def test_deliver_unknown_conversion_404(monkeypatch, tmp_path):
     assert r.status_code == 404
 
 
+def test_deliver_rejects_out_root_alias(monkeypatch, tmp_path):
+    # `%2e` decodes to `.`, which resolved to the out root itself — making the
+    # destination `delivery/.` and rmtree'ing every previous delivery.
+    client, conv = _client(monkeypatch, tmp_path)
+    out = conv / "out" / "doc"
+    out.mkdir(parents=True)
+    (out / "Doc.md").write_text("# master", encoding="utf-8")
+    keeper = conv / "delivery" / "precious-old-delivery" / "keepme.md"
+    keeper.parent.mkdir(parents=True)
+    keeper.write_text("# earlier handoff", encoding="utf-8")
+
+    r = client.post("/api/deliver/%2e")
+
+    assert r.status_code == 404
+    assert keeper.exists()
+
+
 def test_run_live_vision_confirmed_creates_job(monkeypatch, tmp_path):
     client, conv = _client(monkeypatch, tmp_path)
     out = conv / "out" / "doc"

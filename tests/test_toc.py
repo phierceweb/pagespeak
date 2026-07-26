@@ -95,3 +95,131 @@ def test_regenerate_toc_strips_trailing_emphasis_markers() -> None:
     out = regenerate_toc(raw)
     # Title text should appear cleanly (heading_slug also strips the bolds).
     assert "TITLE" in out
+
+
+class TestTocNeverDeletesContent:
+    """Entries cap at H4, but the block boundary must not: a document whose only
+    later headings are H5/H6 must keep them and their bodies."""
+
+    def test_h5_section_and_its_body_survive(self) -> None:
+        from pagespeak.services._toc import regenerate_toc
+
+        doc = (
+            "## Table of Contents\n\n"
+            "| ARCHIT | ECTURE |\n\n"
+            "##### Appendix A\n\n"
+            "Body text that must not vanish.\n\n"
+            "###### Appendix B\n\n"
+            "More body text.\n"
+        )
+        out = regenerate_toc(doc)
+        assert "Body text that must not vanish." in out, f"body deleted:\n{out!r}"
+        assert "##### Appendix A" in out
+        assert "More body text." in out
+
+    def test_h4_boundary_still_works(self) -> None:
+        """The common case must be unchanged: an H2 after the TOC bounds it."""
+        from pagespeak.services._toc import regenerate_toc
+
+        doc = "## Table of Contents\n\nbroken table\n\n## Overview\n\nBody.\n"
+        out = regenerate_toc(doc)
+        assert "broken table" not in out
+        assert "## Overview" in out and "Body." in out
+
+
+class TestTocIsFenceAware:
+    """A `#` inside a fenced block is a shell comment, never a heading — the
+    rule `services/_fences.py` exists to enforce."""
+
+    def test_fenced_block_between_toc_and_first_heading_survives_intact(self) -> None:
+        from pagespeak.services._toc import regenerate_toc
+
+        doc = (
+            "## Table of Contents\n\n"
+            "```bash\n"
+            "# install the tool\n"
+            "pip install thing\n"
+            "```\n\n"
+            "## Real Section\n\n"
+            "Body.\n"
+        )
+        out = regenerate_toc(doc)
+        # The block boundary stops at the fence, so a torn fence is impossible —
+        # an orphaned delimiter would turn the rest of the doc into code.
+        assert out.count("```") % 2 == 0, f"fence delimiters unbalanced:\n{out}"
+        assert "pip install thing" in out
+        assert "## Real Section" in out and "Body." in out
+
+    def test_body_survives_when_every_later_heading_is_fenced(self) -> None:
+        """The boundary scan must not treat "no live heading" as "no content".
+
+        Both a balanced example block and an unterminated fence (a model-emitted
+        mermaid payload that opens one) hide every following heading.
+        """
+        from pagespeak.services._toc import regenerate_toc
+
+        balanced = (
+            "# Guide\n\n## Table of Contents\n\n| ARCHIT | ECTURE |\n\n"
+            "```markdown\n## Example Heading\n```\n\nClosing prose.\n"
+        )
+        assert "Closing prose." in regenerate_toc(balanced)
+
+        unterminated = (
+            "# Manual\n\n## Table of Contents\n\n```\nstray opener\n\n## Setup\n\nSetup body.\n"
+        )
+        out = regenerate_toc(unterminated)
+        assert "## Setup" in out and "Setup body." in out
+
+    def test_shell_comment_does_not_become_a_toc_entry(self) -> None:
+        from pagespeak.services._toc import regenerate_toc
+
+        doc = (
+            "## Table of Contents\n\n"
+            "## Real Section\n\n"
+            "```bash\n"
+            "# install the tool\n"
+            "```\n\n"
+            "## Another Section\n\n"
+            "Body.\n"
+        )
+        out = regenerate_toc(doc)
+        toc_block = out.split("## Real Section")[0]
+        assert "install the tool" not in toc_block, (
+            f"a shell comment was listed as a heading:\n{toc_block}"
+        )
+
+
+def test_regenerate_toc_keeps_prose_between_the_toc_and_the_next_heading() -> None:
+    """The block ran to the next HEADING, so unheaded prose after the contents
+    table was replaced along with it.
+
+    Manuals routinely place safety text between the contents and the first real
+    section; that copy is exactly the kind a converted manual must not lose.
+    """
+    raw = (
+        "# Owner's Manual\n\n"
+        "## Table of Contents\n\n"
+        "| INTRODUCTION | 3 |\n"
+        "| PARTS LIST | 19 |\n\n"
+        "Read these instructions.\n\n"
+        "Do not use this apparatus near water.\n\n"
+        "Clean only with dry cloth.\n\n"
+        "# Greetings\n\n"
+        "body\n"
+    )
+    out = regenerate_toc(raw)
+    assert "Do not use this apparatus near water." in out
+    assert "Clean only with dry cloth." in out
+    assert "Read these instructions." in out
+    # the broken table is still replaced by a generated list
+    assert "| PARTS LIST | 19 |" not in out
+    assert "- [Greetings](#greetings)" in out
+
+
+def test_regenerate_toc_still_consumes_a_list_style_toc() -> None:
+    """A TOC written as bullets with page numbers is part of the block and must
+    still be replaced — the guard keys on prose, not on 'anything unrecognised'."""
+    raw = "## Table of Contents\n\n- Introduction 3\n- Parts List 19\n\n# Introduction\n\nbody\n"
+    out = regenerate_toc(raw)
+    assert "- Introduction 3" not in out
+    assert "- [Introduction](#introduction)" in out

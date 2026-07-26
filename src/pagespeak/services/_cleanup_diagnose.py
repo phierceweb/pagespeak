@@ -26,8 +26,13 @@ from ._cleanup import (
     lock_numbered_section_depth,
     strip_emphasis_from_heading,
 )
+from ._fences import apply_outside_fences, fence_flags
 from ._fragments import demote_orphan_fragments
-from ._heading_sanity import demote_prose_heading
+from ._heading_sanity import (
+    demote_prose_heading,
+    is_toc_phantom_heading,
+    normalize_spaced_heading_numbering,
+)
 from ._listish_headings import (
     demote_listish_bare_int_headings,
     demote_listish_dotted_int_headings,
@@ -79,9 +84,10 @@ def demote_empty_shell_headings(text: str) -> tuple[str, int]:
     output, which has a single ``#`` title and no second heading).
     """
     lines = text.splitlines()
+    _fenced = fence_flags(lines)
     levels: dict[int, int] = {}
     for idx, line in enumerate(lines):
-        m = _HEADING_RE.match(line)
+        m = None if _fenced[idx] else _HEADING_RE.match(line)
         if m:
             levels[idx] = len(m.group(2))
 
@@ -103,7 +109,7 @@ def demote_empty_shell_headings(text: str) -> tuple[str, int]:
     out: list[str] = []
     for idx, line in enumerate(lines):
         if idx in demote:
-            m = _HEADING_RE.match(line)
+            m = None if _fenced[idx] else _HEADING_RE.match(line)
             out.append(f"{m.group(1)}{m.group(3)}" if m else line)
         else:
             out.append(line)
@@ -124,17 +130,111 @@ def lock_numbered_section_depth_pass(text: str) -> tuple[str, int]:
     ``_cleanup.lock_numbered_section_depth`` (no-op on any non-``#``
     or non-``N.M`` line).
     """
+    return apply_outside_fences(text, lock_numbered_section_depth)
+
+
+_LETTERED_SUB_RE = re.compile(
+    r"^(\s*)(#{1,6})\s+(\d+(?:\.\d+)+)([A-Z])(?![A-Za-z])(\.?\s+\S.*?)\s*$"
+)
+
+
+def lock_lettered_subsection_runs_pass(text: str) -> tuple[str, int]:
+    """Level `N.M<LETTER>` subsections one deeper than their numeric stem.
+
+    An uppercase suffix is ambiguous on its own line — `1.5V Rail` is a
+    voltage, `1.3A Transport` is a subsection — so a lone match is left
+    alone. A genuine lettered outline arrives as a RUN: two or more distinct
+    letters sharing one stem (`1.3A`, `1.3B`, `1.3C`). A unit never does.
+
+    Complements `lock_numbered_section_depth`, which handles the unambiguous
+    lowercase form per line.
+    """
+    lines = text.splitlines()
+    fenced = fence_flags(lines)
+    stems: dict[str, set[str]] = {}
+    for ln, fen in zip(lines, fenced, strict=True):
+        if fen:
+            continue
+        m = _LETTERED_SUB_RE.match(ln)
+        if m:
+            stems.setdefault(m.group(3), set()).add(m.group(4))
+    runs = {s for s, letters in stems.items() if len(letters) >= 2}
+    if not runs:
+        return text, 0
     out: list[str] = []
     n = 0
-    for line in text.splitlines():
-        new = lock_numbered_section_depth(line)
-        if new != line:
+    for ln, fen in zip(lines, fenced, strict=True):
+        m = None if fen else _LETTERED_SUB_RE.match(ln)
+        if not m or m.group(3) not in runs:
+            out.append(ln)
+            continue
+        depth = min(m.group(3).count(".") + 2, 6)
+        new = f"{m.group(1)}{'#' * depth} {m.group(3)}{m.group(4)}{m.group(5)}"
+        if new != ln:
             n += 1
         out.append(new)
     res = "\n".join(out)
     if text.endswith("\n") and not res.endswith("\n"):
         res += "\n"
     return res, n
+
+
+_CHAPTER_HEADING_RE = re.compile(r"^(\s*)(#{1,6})\s+\**\s*(\d{1,3})(?!\S)\s*\**\s+(\S.*?)\s*$")
+_DOTTED_CHILD_RE = re.compile(r"^\s*#{1,6}\s+\**\s*(\d{1,3})\.(\d+)")
+
+
+def lock_numbered_chapter_parents_pass(text: str) -> tuple[str, int]:
+    """Lift a bare-integer chapter above the dotted sections it owns.
+
+    ``lock_numbered_section_depth`` levels ``N.M`` by dot count, but a bare
+    ``N`` has no dots and was never levelled — so a backend that put the
+    chapter at or below its own children leaves the two indistinguishable,
+    and an inverted chapter then reads as a bodiless shell downstream.
+
+    Parenthood is proved POSITIONALLY: the first ``N.M`` after the ``N``
+    heading, before the next bare chapter, must be ``N.1`` — a chapter's
+    sections start at .1, so meeting ``N.2`` first means this line sits
+    INSIDE chapter N rather than at its head. Co-existence alone would
+    promote anything merely starting with a number (a ToC entry, a
+    "5 Things About X" sidebar, a numbered legend item).
+    """
+    lines = text.split("\n")
+    fenced = fence_flags(lines)
+    seq: list[tuple[int, int | None, str]] = []  # (line idx, heading level|None, number)
+    for idx, line in enumerate(lines):
+        if fenced[idx]:
+            continue
+        child = _DOTTED_CHILD_RE.match(line)
+        if child:
+            seq.append((idx, None, f"{child.group(1)}.{child.group(2)}"))
+            continue
+        m = _CHAPTER_HEADING_RE.match(line)
+        if m and not is_toc_phantom_heading(f"{m.group(3)} {m.group(4)}"):
+            seq.append((idx, len(m.group(2)), m.group(3)))
+
+    n = 0
+    for pos, (idx, level, number) in enumerate(seq):
+        if level is None or level == 1:
+            continue
+        # Scan forward to the next bare chapter heading. The first dotted
+        # child of THIS number in that span must be `N.1`: a chapter's
+        # sections begin at .1, so meeting `N.2` first means we are standing
+        # INSIDE chapter N (past its head), not at it — the candidate is a
+        # sidebar that merely opens with the number.
+        owns = False
+        for nxt_level, nxt_key in ((lv, key) for _, lv, key in seq[pos + 1 :]):
+            if nxt_level is not None:
+                break
+            if nxt_key.split(".", 1)[0] == number:
+                owns = nxt_key == f"{number}.1"
+                break
+        if not owns:
+            continue
+        m = _CHAPTER_HEADING_RE.match(lines[idx])
+        if m:  # always true; re-matched for its groups
+            lines[idx] = f"{m.group(1)}# {m.group(3)} {m.group(4)}"
+            n += 1
+    return "\n".join(lines), n
 
 
 def strip_heading_emphasis_pass(text: str) -> tuple[str, int]:
@@ -147,17 +247,16 @@ def strip_heading_emphasis_pass(text: str) -> tuple[str, int]:
     sees emphasis-stripped titles. Unconditional — emphasis in a heading
     is always redundant, regardless of doc type.
     """
-    out: list[str] = []
-    n = 0
-    for line in text.splitlines():
-        new = strip_emphasis_from_heading(line)
-        if new != line:
-            n += 1
-        out.append(new)
-    res = "\n".join(out)
-    if text.endswith("\n") and not res.endswith("\n"):
-        res += "\n"
-    return res, n
+    return apply_outside_fences(text, strip_emphasis_from_heading)
+
+
+def normalize_spaced_numbering_pass(text: str) -> tuple[str, int]:
+    """Collapse tokenized heading numbering (`## 1 . Title` → `## 1. Title`).
+
+    Runs before every numbering-consuming pass: the spaced form defeats
+    `NUMBERED_HEADING_RE` in depth-lock and prose-demote (which then reads
+    `. Title` as a sentence boundary and demotes a real heading)."""
+    return apply_outside_fences(text, normalize_spaced_heading_numbering)
 
 
 def demote_prose_headings(text: str) -> tuple[str, int]:
@@ -171,17 +270,7 @@ def demote_prose_headings(text: str) -> tuple[str, int]:
     the caller on outline-promoted docs (their reconstructed section
     titles are legitimately sentence-shaped).
     """
-    out: list[str] = []
-    n = 0
-    for line in text.splitlines():
-        new = demote_prose_heading(line)
-        if new != line:
-            n += 1
-        out.append(new)
-    res = "\n".join(out)
-    if text.endswith("\n") and not res.endswith("\n"):
-        res += "\n"
-    return res, n
+    return apply_outside_fences(text, demote_prose_heading)
 
 
 # Ordered registry: (log_event, pass_fn). Order is load-bearing — each pass
@@ -236,9 +325,15 @@ def apply_heading_demotions(
 ) -> tuple[str, dict[str, int]]:
     """Run the detect→correct heading passes in load-bearing order.
 
+    0. **spaced-numbering normalize** (unconditional) — `## 1 . Title` →
+       `## 1. Title`, so every numbering-consuming pass below sees the
+       canonical form.
     1. **numbered-depth lock** — the deterministic structural promote,
        first; structural promotes must precede demotes. ``N.M``
        dot-count depth is the sole language-agnostic structural-depth rule.
+    1b. **chapter-parent lock** — immediately after, so a bare ``N``
+       chapter sits above the ``N.M`` sections just levelled. An inverted
+       chapter otherwise reads as a bodiless shell downstream.
     2. **emphasis-strip** (unconditional) — so the prose pass sees
        clean titles.
     3. **prose-demote** — only when ``not is_outline_doc`` (the
@@ -257,8 +352,12 @@ def apply_heading_demotions(
     was absent). Each pass is conservative and a no-op when clean.
     """
     counts: dict[str, int] = {}
+    text, n = normalize_spaced_numbering_pass(text)
+    counts["cleanup_normalized_spaced_numbering"] = n
     text, n = lock_numbered_section_depth_pass(text)
     counts["cleanup_locked_numbered_section_depth"] = n
+    text, n = lock_numbered_chapter_parents_pass(text)
+    counts["cleanup_locked_numbered_chapter_parents"] = n
     text, n = strip_heading_emphasis_pass(text)
     counts["cleanup_stripped_heading_emphasis"] = n
     if not is_outline_doc:

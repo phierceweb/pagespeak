@@ -144,3 +144,22 @@ def test_packed_output_keeps_identity_order(tmp_path: Path) -> None:
     assert "order: 1" in _read(written, "1-small.md")
     assert "order: 2" in _read(written, "2-big.md")
     assert "order: 3" in _read(written, "2-1-huge.md")
+
+
+def test_tilde_inside_backtick_fence_does_not_split_the_block() -> None:
+    """A ``` block is closed only by ```; splitting here would leave both halves
+    carrying an unbalanced fence."""
+    from pagespeak.services._split_pack import _blocks
+
+    # The blank line is load-bearing: `_blocks` only splits where it believes it
+    # is outside a fence.
+    lines = [
+        "```markdown",
+        "Here is a tilde fence example:",
+        "~~~",
+        "",
+        "still inside the backtick block",
+        "```",
+    ]
+    blocks = _blocks(lines)
+    assert len(blocks) == 1, f"fenced block was split into {len(blocks)}: {blocks}"

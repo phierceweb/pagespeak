@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pagespeak"
-version = "0.12.0"
+version = "0.13.0"
 description = "Convert PDF, Word, and other documents into retrieval-ready markdown — one document or a whole corpus, diagrams turned to Mermaid."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -27,7 +27,7 @@ dependencies = [
     "beautifulsoup4>=4.12",
     "markdownify>=0.13",
     "markitdown[docx,pptx,xlsx,outlook]>=0.0.1a3",
-    "pf-core[image-phash,tracking,llm]~=0.13.0",
+    "pf-core[image-phash,tracking,llm]~=0.19.0",
     "typer>=0.12.0",
 ]
 # beautifulsoup4 + markdownify back the inline-HTML→markdown utility
@@ -42,7 +42,10 @@ pdf = [
     "pypdfium2",
 ]
 pdf-docling = [
-    "docling>=2.0",
+    # >=2.109 for heading-level inference incl. the PDF-bookmark signal
+    # (`--heading-hierarchy`). A bare >=2.0 resolves to a pre-feature release
+    # on a fresh install, and the flag then silently degrades to flat levels.
+    "docling>=2.109",
     "pypdfium2",
 ]
 docx-structured = [
@@ -99,7 +102,15 @@ pagespring = "https://github.com/phierceweb/pagespring"
 where = ["src"]
 
 [tool.setuptools.package-data]
-pagespeak = ["py.typed", "prompts/*.yaml", "model_router.yaml"]
+# Every non-.py file here must be matched, or it is missing from the wheel and
+# fails at runtime for installed users only. Guarded by tests/test_packaging.py.
+pagespeak = [
+    "py.typed",
+    "prompts/*.yaml",
+    "model_router.yaml",
+    "web/static/*",
+    "web/templates/**/*.html",
+]
 
 [tool.ruff]
 line-length = 100

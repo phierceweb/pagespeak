@@ -68,6 +68,7 @@ def resolved_flags_from_ctx(ctx: PipelineContext) -> dict[str, Any]:
         "decoration_threshold": ctx.decoration_threshold,
         "decoration_hamming_distance": ctx.decoration_hamming_distance,
         "pdf_backend": ctx.pdf_backend,
+        "heading_hierarchy": ctx.heading_hierarchy,
         "repair_tables": ctx.repair_tables,
         "docx_backend": ctx.docx_backend,
         "docx_outline_heading_depth": ctx.docx_outline_heading_depth,

@@ -50,6 +50,7 @@ conversions/out/*
 !conversions/out/.gitkeep
 conversions/delivery/*
 !conversions/delivery/.gitkeep
+conversions/backup/
 
 # ─── AI / agent workspace (local-only; not shipped) ────────────────────────
 # The entire .ai/ tree, the AI-tool configs, and CLAUDE.md are build-time

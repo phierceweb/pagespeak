@@ -43,12 +43,39 @@ _CAPTION_PREFIX_RE = re.compile(r"^(?:Figure|Fig\.|Table|Tbl\.|Eq\.|Equation)\s+
 # contain `Abbr. Word` shapes.
 INTERNAL_SENTENCE_RE = re.compile(r"\. [A-Z]")
 
+# Enumerated-title prefix: one word + a short number + dot (`Section 2. `,
+# `Chapter 4. `). That dot is numbering, not a sentence boundary — strip it
+# before the internal-sentence test or every such chapter heading reads as
+# prose and gets demoted.
+_ENUM_PREFIX_RE = re.compile(r"^[A-Za-z]\w*\s+\d{1,3}\.\s+")
+
+# Heading whose leading section number is tokenized with spaces (`1 .`,
+# `3 . 6`). Digits capped at 3 so years (`1990 .`) never match.
+_SPACED_NUMBERING_RE = re.compile(r"^(#{1,6}\s+)(\d{1,3}(?:\s*\.\s*\d{1,3})*\s*\.?)(\s+)(.+)$")
+
 # Trim trailing-punctuation tolerance: a title can end in `?` / `!` / `.`
 # if it's short. The threshold below decides "short".
 SHORT_TERMINAL_OK_LEN = 40
 
 # Hard length cap. Real section titles rarely exceed this.
 MAX_TITLE_LEN = 120
+
+
+def normalize_spaced_heading_numbering(line: str) -> str:
+    """Collapse tokenized numbering in a heading: `## 1 . Title` → `## 1. Title`.
+
+    Docling (and Marker on OCR text) emit the section number and its dot as
+    separate tokens. The spaced form breaks `NUMBERED_HEADING_RE` everywhere
+    downstream — prose-demote then reads `. Title` as a sentence boundary
+    and demotes a real heading."""
+    m = _SPACED_NUMBERING_RE.match(line)
+    if not m:
+        return line
+    hashes, num, _, rest = m.groups()
+    if not re.search(r"\s", num):
+        return line
+    compact = re.sub(r"\s+", "", num)
+    return f"{hashes}{compact} {rest}"
 
 
 def is_prose_shaped_title(title: str) -> bool:
@@ -139,8 +166,9 @@ def demote_prose_heading(line: str) -> str:
     # `is_prose_shaped_title`'s lowercase check but aren't prose).
     if title.isupper():
         return line
+    probe = _ENUM_PREFIX_RE.sub("", title, count=1)
     has_terminal_punct = len(title) > 40 and title.endswith((".", "?", "!"))
-    has_internal_sentence = len(title) > 10 and INTERNAL_SENTENCE_RE.search(title[:-10]) is not None
+    has_internal_sentence = len(probe) > 10 and INTERNAL_SENTENCE_RE.search(probe[:-10]) is not None
     if has_terminal_punct or has_internal_sentence:
         return title
     return line

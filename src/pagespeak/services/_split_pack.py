@@ -13,9 +13,8 @@ content heuristics, no per-document level tuning.
 
 from __future__ import annotations
 
+from ._fences import fence_flags
 from ._split_parse import _build_heading_line, _Section
-
-_FENCE_PREFIXES = ("```", "~~~")
 
 
 def _own_size(section: _Section) -> int:
@@ -47,16 +46,14 @@ def _blocks(lines: list[str]) -> list[list[str]]:
     between blocks on join)."""
     blocks: list[list[str]] = []
     cur: list[str] = []
-    in_fence = False
-    for line in lines:
-        if not in_fence and not line.strip():
+    fenced = fence_flags(lines)
+    for i, line in enumerate(lines):
+        if not fenced[i] and not line.strip():
             if cur:
                 blocks.append(cur)
                 cur = []
             continue
         cur.append(line)
-        if line.lstrip().startswith(_FENCE_PREFIXES):
-            in_fence = not in_fence
     if cur:
         blocks.append(cur)
     return blocks

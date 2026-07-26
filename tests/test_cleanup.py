@@ -1371,3 +1371,15 @@ def test_cleanup_uses_new_outline_promote_and_strips_markers() -> None:
     # emphasis stripped from headings by strip_emphasis_from_heading
     assert "# 1. Left pump" in out
     assert "## 1. left chamber" in out
+
+
+def test_aggressive_toc_normalizes_only_a_real_heading_line() -> None:
+    """A substring test discarded prose that merely mentions the phrase."""
+    from pagespeak.services._cleanup import cleanup_markdown
+
+    prose = "# B\n\nThe Table of Contents on page 3 lists every chapter and its author.\n"
+    assert "lists every chapter" in cleanup_markdown(prose, "aggressive")
+
+    for heading in ("## Table of Contents", "Table of Contents", "# TABLE OF CONTENTS"):
+        doc = f"# B\n\n{heading}\n\n| a | 1 |\n"
+        assert "## Table of Contents" in cleanup_markdown(doc, "aggressive"), heading

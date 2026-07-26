@@ -25,10 +25,13 @@ logger = get_logger(__name__)
 COPY_LOCAL_IMAGES_ENV_VAR = "PAGESPEAK_COPY_LOCAL_IMAGES"
 DEFAULT_COPY_LOCAL_IMAGES = True
 
-# Local relative refs only — no scheme, not absolute, not data:. Unlike the
-# remote pass this INCLUDES `images/`-prefixed refs: here they resolve under
-# the SOURCE dir, not the output dir.
-_LOCAL_IMG_REF_RE = re.compile(r"!\[[^\]]*\]\((?!https?://|/|data:|file:)([^)\s]+)\)")
+# Destination split from the optional CommonMark title: folding the title in
+# yields a path that cannot exist. Mirrors `services/_image_refs._IMG_REF_RE`.
+_LOCAL_IMG_REF_RE = re.compile(
+    r"(!\[[^\]]*\]\(\s*)(<[^>\n]*>|[^\s)]+)"
+    r"((?:\s+(?:\"[^\"\n]*\"|'[^'\n]*'|\([^)\n]*\)))?\s*\))"
+)
+_EXTERNAL_PREFIXES = ("http://", "https://", "/", "data:", "file:")
 
 
 def copy_local_images_enabled() -> bool:
@@ -41,16 +44,16 @@ def copy_local_images_enabled() -> bool:
     return bool(resolve_bool(None, COPY_LOCAL_IMAGES_ENV_VAR, default=DEFAULT_COPY_LOCAL_IMAGES))
 
 
-def _local_refs(markdown: str) -> list[str]:
-    """Unique local relative image refs, in document order."""
-    refs: list[str] = []
-    seen: set[str] = set()
-    for m in _LOCAL_IMG_REF_RE.finditer(markdown):
-        ref = m.group(1)
-        if ref not in seen:
-            seen.add(ref)
-            refs.append(ref)
-    return refs
+def _destination(raw: str) -> str:
+    """The ref's destination, unwrapped from CommonMark angle brackets."""
+    dest = raw.strip()
+    if dest.startswith("<") and dest.endswith(">"):
+        dest = dest[1:-1].strip()
+    return dest
+
+
+def _is_local(dest: str) -> bool:
+    return bool(dest) and not dest.startswith(_EXTERNAL_PREFIXES)
 
 
 def _flat_name(rel: Path) -> str:
@@ -117,26 +120,30 @@ def localize_local_images_in_markdown(
     base = list(images or [])
     if not copy_local_images_enabled():
         return markdown, base
-    refs = _local_refs(markdown)
-    if not refs:
-        return markdown, base
 
     src_root = source_path.parent.resolve()
     images_dir = output_dir / "images"
     present: list[Path] = []
-    rewrites: dict[str, str] = {}
-    for ref in refs:
-        localized = _localize_one(ref, src_root, images_dir)
-        if localized is None:
-            continue
-        dest, rewrite = localized
-        present.append(dest)
-        if rewrite is not None:
-            rewrites[ref] = rewrite
+    # Each unique ref is resolved once; None records a ref that did not
+    # localize, so a repeat occurrence is not retried.
+    resolved: dict[str, tuple[Path, str | None] | None] = {}
 
-    rewritten = markdown
-    for ref, local in rewrites.items():
-        rewritten = rewritten.replace(f"]({ref})", f"]({local})")
+    def _repl(match: re.Match[str]) -> str:
+        ref = _destination(match.group(2))
+        if not _is_local(ref):
+            return match.group(0)
+        if ref not in resolved:
+            localized = _localize_one(ref, src_root, images_dir)
+            resolved[ref] = localized
+            if localized is not None:
+                present.append(localized[0])
+        entry = resolved[ref]
+        if entry is None or entry[1] is None:
+            return match.group(0)
+        # Rebuild with the retargeted destination; the title (group 3) survives.
+        return f"{match.group(1)}{entry[1]}{match.group(3)}"
+
+    rewritten = _LOCAL_IMG_REF_RE.sub(_repl, markdown)
 
     seen = {str(p) for p in base}
     for p in present:
@@ -144,5 +151,5 @@ def localize_local_images_in_markdown(
             seen.add(str(p))
             base.append(p)
     if present:
-        logger.debug("local_images_localized ok=%d of=%d", len(present), len(refs))
+        logger.debug("local_images_localized ok=%d of=%d", len(present), len(resolved))
     return rewritten, base

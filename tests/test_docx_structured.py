@@ -41,6 +41,65 @@ def _p_heading(style: str, text: str) -> str:
     return f'<w:p><w:pPr><w:pStyle w:val="{style}"/></w:pPr><w:r><w:t>{text}</w:t></w:r></w:p>'
 
 
+_STYLE_NUM_STYLES = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style>
+<w:style w:type="paragraph" w:styleId="ListNumber"><w:name w:val="List Number"/>
+  <w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>
+</w:style>
+<w:style w:type="paragraph" w:styleId="ListNumber2"><w:name w:val="List Number 2"/>
+  <w:basedOn w:val="ListNumber"/>
+</w:style>
+</w:styles>"""
+
+
+def test_numbering_carried_by_the_paragraph_style_is_seen(make_docx) -> None:
+    """Word stores a list's `numPr` on the STYLE when the author applied a
+    list style rather than the toolbar button. Reading only the paragraph's own
+    `pPr` collapses every item into one run-on paragraph."""
+    xml = _p_heading("Heading1", "Section") + "".join(
+        f'<w:p><w:pPr><w:pStyle w:val="ListNumber"/></w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>'
+        for t in ("First step", "Second step", "Third step")
+    )
+    md = render_markdown(
+        Document(
+            str(make_docx(document_xml=xml, numbering_xml=_NUM, styles_xml=_STYLE_NUM_STYLES))
+        ),
+        None,
+    )
+    assert "1. First step" in md, f"style-inherited numbering lost:\n{md}"
+    assert "2. Second step" in md
+    assert "3. Third step" in md
+
+
+def test_style_numbering_resolves_through_based_on(make_docx) -> None:
+    """`w:basedOn` chains — a derived list style inherits its parent's numPr."""
+    xml = '<w:p><w:pPr><w:pStyle w:val="ListNumber2"/></w:pPr><w:r><w:t>Item</w:t></w:r></w:p>'
+    md = render_markdown(
+        Document(
+            str(make_docx(document_xml=xml, numbering_xml=_NUM, styles_xml=_STYLE_NUM_STYLES))
+        ),
+        None,
+    )
+    assert "1. Item" in md, f"basedOn chain not followed:\n{md}"
+
+
+def test_direct_numpr_still_wins_over_the_style(make_docx) -> None:
+    """A paragraph's own numPr is the direct override and takes precedence."""
+    xml = (
+        '<w:p><w:pPr><w:pStyle w:val="ListNumber"/><w:numPr>'
+        '<w:ilvl w:val="1"/><w:numId w:val="1"/></w:numPr></w:pPr>'
+        "<w:r><w:t>Nested</w:t></w:r></w:p>"
+    )
+    md = render_markdown(
+        Document(
+            str(make_docx(document_xml=xml, numbering_xml=_NUM, styles_xml=_STYLE_NUM_STYLES))
+        ),
+        None,
+    )
+    assert "Nested" in md
+
+
 def test_heading_style_to_atx(make_docx) -> None:
     # Genuine `Heading N` styles → ATX (no numPr ⇒ literal level).
     # `Title` is NOT a section-heading style (covered by the ilvl0
@@ -246,6 +305,34 @@ def test_indent_drives_nesting_depth_across_numids(make_docx) -> None:
     assert "    1. back-up" in lines  # left 1440 → back to the a1 depth
 
 
+def test_bullet_parent_restarts_deeper_ordered_counter(make_docx) -> None:
+    """Word restarts a level when ANY shallower level of the same numbering is
+    used — the shallower level's format is not a condition. A bullet parent
+    therefore resets its ordered children, and the second parent's sub-list
+    starts at 1, not 3."""
+    bullet_over_ordered = """
+    <w:abstractNum w:abstractNumId="0">
+      <w:lvl w:ilvl="0"><w:numFmt w:val="bullet"/></w:lvl>
+      <w:lvl w:ilvl="1"><w:numFmt w:val="decimal"/></w:lvl>
+    </w:abstractNum>
+    <w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>
+    """
+    xml = (
+        _p_list(1, 0, "first parent")
+        + _p_list(1, 1, "one")
+        + _p_list(1, 1, "two")
+        + _p_list(1, 0, "second parent")
+        + _p_list(1, 1, "alpha")
+        + _p_list(1, 1, "beta")
+    )
+    lines = render_markdown(
+        Document(str(make_docx(document_xml=xml, numbering_xml=bullet_over_ordered))), None
+    ).splitlines()
+    assert "- second parent" in lines
+    assert "    1. alpha" in lines, f"deeper counter not reset by a bullet parent: {lines}"
+    assert "    2. beta" in lines
+
+
 def test_runs_bold_italic(make_docx) -> None:
     xml = (
         "<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>bold</w:t></w:r>"
@@ -416,6 +503,36 @@ def test_blank_line_before_list_after_plain_paragraph(make_docx) -> None:
     assert lines[i + 2] == "1. First item"  # numPr ilvl1 → outline list, col 0
 
 
+def test_consecutive_body_paragraphs_are_separate_blocks(make_docx) -> None:
+    # Adjacent non-blank lines are ONE paragraph in CommonMark, so two
+    # authored Word paragraphs emitted on adjacent lines fuse and the
+    # authored boundary is lost. Outside a list a paragraph is a block:
+    # a blank line must separate it from the preceding one.
+    xml = (
+        _p_heading("Heading1", "Chapter One")
+        + "<w:p><w:r><w:t>First paragraph.</w:t></w:r></w:p>"
+        + "<w:p><w:r><w:t>Second paragraph.</w:t></w:r></w:p>"
+        + "<w:p><w:r><w:t>Third paragraph.</w:t></w:r></w:p>"
+    )
+    lines = render_markdown(Document(str(make_docx(document_xml=xml))), None).splitlines()
+    i = lines.index("First paragraph.")
+    assert lines[i : i + 5] == [
+        "First paragraph.",
+        "",
+        "Second paragraph.",
+        "",
+        "Third paragraph.",
+    ]
+
+
+def test_paragraph_after_a_heading_keeps_one_blank(make_docx) -> None:
+    # The heading already emits its own trailing blank — separating the
+    # first body paragraph must not double it.
+    xml = _p_heading("Heading1", "Sec") + "<w:p><w:r><w:t>Body prose.</w:t></w:r></w:p>"
+    lines = render_markdown(Document(str(make_docx(document_xml=xml))), None).splitlines()
+    assert lines == ["# Sec", "", "Body prose."]
+
+
 def test_numpr_ilvl0_boilerplate_preamble_is_a_heading(make_docx) -> None:
     # `I. Before you begin, ...:` is numPr ilvl0 — the document's
     # top-level spine, parent of the A/B/C sub-outline. A text-pattern
@@ -509,7 +626,13 @@ def test_hyperlink_remains_a_segment_boundary(make_docx) -> None:
         ),
     )
     md = render_markdown(Document(str(path)), None)
-    assert "**see **[here](https://x.test/)** now**" in md
+    # Edge whitespace sits OUTSIDE the emphasis marks. The previous expectation
+    # here — `**see **[here](…)** now**` — was not renderable markdown: CommonMark
+    # cannot close emphasis on whitespace nor open it before whitespace, so
+    # markdown-it renders that as nested `<strong>` with the link double-bolded.
+    # This form renders as `<strong>see</strong> <a>here</a> <strong>now</strong>`,
+    # which is what Word actually encoded.
+    assert "**see** [here](https://x.test/) **now**" in md
 
 
 def test_table_renders_gfm_at_document_position(make_docx) -> None:

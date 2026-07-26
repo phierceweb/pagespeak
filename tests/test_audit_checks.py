@@ -404,3 +404,12 @@ def test_real_shattered_run_still_flags() -> None:
     text = "The compound ****CO****2**** dissolves readily.\n"
     findings = check_shattered_emphasis(text)
     assert len(findings) == 1 and findings[0].check == "shattered_emphasis"
+
+
+def test_tilde_fenced_html_is_not_reported_as_a_defect() -> None:
+    """A `~~~html` block is code, not prose — its markup is not a defect."""
+    markup = "<td>cell</td> &amp;\n"
+    assert check_html_fragment(f"# Doc\n\n~~~html\n{markup}~~~\n\nReal prose.\n") == []
+    assert check_html_entity(f"# Doc\n\n~~~html\n{markup}~~~\n\nReal prose.\n") == []
+    # The same markup outside a fence is still reported.
+    assert check_html_fragment(f"# Doc\n\n{markup}") and check_html_entity(f"# Doc\n\n{markup}")

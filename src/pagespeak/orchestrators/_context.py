@@ -67,6 +67,10 @@ class PipelineContext:
     decoration_hamming_distance: int | None
     pdf_backend: str
     pdf_backend_kwargs: dict[str, Any] | None
+    # Opt-in (`--heading-hierarchy`): infer real heading levels from PDF
+    # bookmarks / section numbering / font style instead of Docling's flat
+    # single-level default. Docling-PDF only; other backends ignore it.
+    heading_hierarchy: bool
     # Opt-in (`--repair-tables`): after a Marker PDF ingest, splice Docling's
     # clean grid over any `<br>`-collapsed table. Marker-PDF only; off by
     # default (never runs Docling unless asked). Runs as an ingest sub-step.

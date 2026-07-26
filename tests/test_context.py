@@ -49,6 +49,7 @@ def _ctx(**over: object) -> PipelineContext:
         decoration_hamming_distance=None,
         pdf_backend="marker",
         pdf_backend_kwargs=None,
+        heading_hierarchy=False,
         repair_tables=False,
         docx_backend="markitdown",
         docx_outline_heading_depth=0,

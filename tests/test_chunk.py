@@ -431,7 +431,16 @@ def test_run_one_chunk_writes_raw_md_and_images(
     out = tmp_path / "out"
     out.mkdir()
 
-    def fake_convert(path, *, output_dir, force_ocr, device, page_range, backend_kwargs=None):
+    def fake_convert(
+        path,
+        *,
+        output_dir,
+        force_ocr,
+        device,
+        page_range,
+        heading_hierarchy=False,
+        backend_kwargs=None,
+    ):
         # Simulate Marker writing an image as it does in real life.
         img_dir = output_dir / "images"
         img_dir.mkdir(parents=True, exist_ok=True)
@@ -469,7 +478,8 @@ def test_run_one_chunk_prefixes_image_basenames_and_absolutizes_anchors(
         force_ocr: bool,
         device: object,
         page_range: str,
-        backend_kwargs: object,
+        heading_hierarchy: bool = False,
+        backend_kwargs: object = None,
     ) -> IngestResult:
         # Simulate Marker emitting chunk-local page 3 with one image and one anchor.
         img_dir = output_dir / "images"

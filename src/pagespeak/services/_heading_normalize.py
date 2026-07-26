@@ -33,6 +33,7 @@ from pf_core.utils.io import atomic_write_json
 from ..prompts._heading_normalize import (
     HEADING_NORMALIZE_PROMPT_VERSION as NORMALIZE_PROMPT_VERSION,
 )
+from ..prompts._heading_normalize_dehead import HEADING_NORMALIZE_DEHEAD_PROMPT_VERSION
 from ..prompts._heading_normalize_full import HEADING_NORMALIZE_FULL_PROMPT_VERSION
 from ._cleanup import strip_marker_pollution as _strip_marker_pollution
 from ._normalize_heuristic import (
@@ -54,9 +55,13 @@ from ._normalize_llm import (
     DEFAULT_NORMALIZE_MAX_INPUT_TOKENS as DEFAULT_NORMALIZE_MAX_INPUT_TOKENS,
 )
 from ._normalize_llm import (
+    _build_dehead_prompt_with_gate,
     _build_llm_full_prompt_with_gate,
     _build_prompt,
     _cache_key,
+    _guard_body_drops,
+    _guard_parent_drops,
+    _parse_dehead_response,
     _parse_response,
     _resolve_model,
 )
@@ -81,7 +86,7 @@ from ._normalize_llm import (
 
 logger = get_logger(__name__)
 
-NormalizeMode = Literal["heuristic", "llm", "llm_full"]
+NormalizeMode = Literal["heuristic", "llm", "llm_full", "llm_dehead"]
 DEFAULT_NORMALIZE_MODE: NormalizeMode = "heuristic"
 
 ANY_HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
@@ -111,8 +116,19 @@ class _HeadingRecord:
 
 
 def _extract_headings(md: str) -> list[_HeadingRecord]:
+    """Heading records outside fenced code.
+
+    A `#` inside a fence is a comment. Collecting it would show the LLM a
+    heading that does not exist and let `_apply_normalization` rewrite the
+    code — the same line_index list drives both.
+    """
+    from ._fences import fence_flags
+
+    lines = md.splitlines()
     out: list[_HeadingRecord] = []
-    for i, line in enumerate(md.splitlines()):
+    for i, (line, fenced) in enumerate(zip(lines, fence_flags(lines), strict=True)):
+        if fenced:
+            continue
         m = ANY_HEADING_RE.match(line)
         if m:
             hashes, text = m.group(1), m.group(2)
@@ -223,7 +239,11 @@ def gather_normalize_levels(
 
     # `llm_full` always operates on the full heading list — the whole
     # point of the mode is to bypass the structural-only filter.
-    effective_filter_structural = filter_structural and mode != "llm_full"
+    # Both full-document modes see EVERY heading: llm_full to rebuild the
+    # hierarchy, llm_dehead because the junk it must catch (admonitions,
+    # page furniture, bare labels) is exactly what the structural filter
+    # would strip from its view.
+    effective_filter_structural = filter_structural and mode not in ("llm_full", "llm_dehead")
 
     target_headings = (
         _select_structural_headings(all_headings) if effective_filter_structural else all_headings
@@ -282,6 +302,15 @@ def gather_normalize_levels(
             from ..prompts._heading_normalize_full import HEADING_NORMALIZE_FULL_PROMPT
 
             agent_system_prompt = HEADING_NORMALIZE_FULL_PROMPT
+        elif mode == "llm_dehead":
+            prompt, include_anchors = _build_dehead_prompt_with_gate(
+                md, target_headings, max_input_tokens=max_input_tokens
+            )
+            prompt_version_for_cache = HEADING_NORMALIZE_DEHEAD_PROMPT_VERSION
+            agent_slug = "heading_normalize_dehead"
+            from ..prompts._heading_normalize_dehead import HEADING_NORMALIZE_DEHEAD_PROMPT
+
+            agent_system_prompt = HEADING_NORMALIZE_DEHEAD_PROMPT
         else:
             prompt = _build_prompt(target_headings)
             include_anchors = False  # not applicable
@@ -331,7 +360,46 @@ def gather_normalize_levels(
                 },
             )
 
-    levels = _parse_response(response)
+    levels = _parse_dehead_response(response) if mode == "llm_dehead" else _parse_response(response)
+    if levels:
+        # Both modes can emit the level-0 sentinel, so both need the guard.
+        levels, body_refused = _guard_body_drops(levels, target_headings, md)
+        if body_refused:
+            logger.warning(
+                "heading_normalize_body_guard_kept count=%d "
+                "(a heading owning its own body is a section boundary)",
+                body_refused,
+            )
+    if mode == "llm_dehead" and levels is not None:
+        # Belt and braces: the parser only emits 0s, but a future prompt
+        # edit must never be able to make this mode re-level a document.
+        levels = {idx: lv for idx, lv in levels.items() if lv == 0}
+        proposed = len(levels)
+        levels = _guard_parent_drops(levels, target_headings)
+        refused = proposed - len(levels)
+        if refused:
+            logger.warning(
+                "heading_normalize_dehead_parents_kept count=%d proposed=%d "
+                "(a heading owning child headings is a real section)",
+                refused,
+                proposed,
+            )
+        logger.info(
+            "heading_normalize_dehead_drops count=%d target=%d",
+            len(levels),
+            len(target_headings),
+        )
+        # An empty verdict map is a legitimate "nothing to drop" — distinct
+        # from the parse failure the shared guard below treats it as.
+        if not levels:
+            return NormalizeData(
+                gather=GatherResult(
+                    target_count=len(target_headings),
+                    target_texts=tuple(h.text for h in target_headings),
+                    data={},
+                ),
+                filter_structural=effective_filter_structural,
+            )
     if not levels:
         logger.warning("heading_normalize_no_levels_parsed response_len=%d", len(response))
         return None

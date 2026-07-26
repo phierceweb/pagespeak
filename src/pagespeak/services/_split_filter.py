@@ -11,9 +11,17 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from pf_core.log import get_logger
+
 from ._heading_sanity import is_toc_phantom_heading
 from ._split_parse import _PAGE_ANCHOR_LINE_RE, _Collision, _Section
 from ._split_write import _section_output_path
+
+logger = get_logger(__name__)
+
+# A TOC entry's "body" is at most a page anchor; anything longer is content
+# a subtree prune would destroy.
+_PHANTOM_BODY_CHARS = 40
 
 _NAV_LINK_LINE_RE = re.compile(r"^\s*(?:[-*+]\s+)?\[[^\]]+\]\([^)\s]*\)\s*$")
 _NAV_LIST_MIN_LINKS = 2
@@ -84,21 +92,31 @@ def _drop_toc_phantom_sections(
     These duplicate the real subsection content. The detection logic
     lives in `_heading_sanity.is_toc_phantom_heading`.
 
+    The shape alone is not enough. A chapter-review summary restates its
+    subsection with a page back-reference and then carries unique prose, and a
+    real title can simply end in a number (`2.4 IEEE 802.11`). A true TOC entry
+    has no body, so a phantom-shaped heading whose SUBTREE holds real content is
+    kept — dropping is a subtree prune, and content is not recoverable after it.
+
     Filtering happens BEFORE empty-body filtering so the
     `split_dropped_empty_sections` count reflects real content, not
-    TOC bloat. Children lists are also filtered (a phantom can't have
-    real subsections, but if it does we drop them too — they're noise
-    too).
+    TOC bloat.
 
     Returns `(kept, dropped_count)`.
     """
     kept_ids: set[int] = set()
 
+    def _subtree_has_content(section: _Section) -> bool:
+        if _has_substantive_body(section, min_body_chars=_PHANTOM_BODY_CHARS):
+            return True
+        return any(_subtree_has_content(c) for c in section.children)
+
     def _walk(section: _Section) -> None:
         # Use `display_name` (number + title) so the "Chapter N <title>"
         # and "N.M <title>" prefix-based rules in is_toc_phantom_heading
         # see the full shape, not just the post-prefix title.
-        if is_toc_phantom_heading(section.display_name):
+        if is_toc_phantom_heading(section.display_name) and not _subtree_has_content(section):
+            logger.info("split_toc_phantom_dropped title=%r", section.display_name)
             return  # Drop this section AND any descendants — implicit prune.
         kept_ids.add(id(section))
         for child in section.children:
@@ -277,6 +295,12 @@ def _dedupe_section_paths(
 
     dropped: set[int] = set()
     collisions: list[_Collision] = []
+    # Every path a section already owns — including single-member groups, whose
+    # names are never suffixed. A suffix must not land on one of these: a
+    # document with `Foo`, `Foo` and `Foo 2` would otherwise give the second
+    # `Foo` the name `foo-2`, which the third section already owns, and the
+    # writer truncates rather than merges.
+    claimed: set[Path] = set(by_path)
     for path, group in by_path.items():
         if len(group) == 1:
             continue
@@ -300,8 +324,14 @@ def _dedupe_section_paths(
                     )
                 )
             else:
-                # Body-distinct → numeric suffix, both kept.
-                s.filename_suffix = f"-{next_suffix}"
-                next_suffix += 1
+                # Body-distinct → numeric suffix, both kept. Skip any suffix
+                # whose path another section already owns.
+                while True:
+                    s.filename_suffix = f"-{next_suffix}"
+                    next_suffix += 1
+                    candidate = _section_output_path(s, output_dir, nested=nested)
+                    if candidate not in claimed:
+                        claimed.add(candidate)
+                        break
 
     return [s for s in sections if id(s) not in dropped], collisions

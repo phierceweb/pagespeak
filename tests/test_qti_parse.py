@@ -316,3 +316,118 @@ def test_parse_assessment_meta_title_points_instructions() -> None:
     # instructions <h3> demoted to bold, not an ATX heading
     assert "#" not in instructions
     assert "Good luck." in instructions
+
+
+# ── Scoring vs. non-scoring respconditions ───────────────────────────────
+
+
+_MC_WITH_PER_ANSWER_FEEDBACK = """
+<item ident="g9" title="Question">
+  <itemmetadata><qtimetadata>
+    <qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>multiple_choice_question</fieldentry></qtimetadatafield>
+    <qtimetadatafield><fieldlabel>points_possible</fieldlabel><fieldentry>1.0</fieldentry></qtimetadatafield>
+  </qtimetadata></itemmetadata>
+  <presentation>
+    <material><mattext texttype="text/plain">Which one?</mattext></material>
+    <response_lid ident="response1" rcardinality="Single"><render_choice>
+      <response_label ident="1111"><material><mattext texttype="text/plain">right</mattext></material></response_label>
+      <response_label ident="2222"><material><mattext texttype="text/plain">wrong</mattext></material></response_label>
+      <response_label ident="3333"><material><mattext texttype="text/plain">also wrong</mattext></material></response_label>
+    </render_choice></response_lid>
+  </presentation>
+  <resprocessing><outcomes><decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/></outcomes>
+    <respcondition continue="Yes">
+      <conditionvar><varequal respident="response1">2222</varequal></conditionvar>
+      <displayfeedback feedbacktype="Response" linkrefid="2222_fb"/>
+    </respcondition>
+    <respcondition continue="Yes">
+      <conditionvar><varequal respident="response1">3333</varequal></conditionvar>
+      <displayfeedback feedbacktype="Response" linkrefid="3333_fb"/>
+    </respcondition>
+    <respcondition continue="No">
+      <conditionvar><varequal respident="response1">1111</varequal></conditionvar>
+      <setvar action="Set" varname="SCORE">100</setvar>
+    </respcondition>
+  </resprocessing>
+</item>
+"""
+
+
+def test_per_answer_feedback_conditions_are_not_correct_answers() -> None:
+    """Correctness belongs to the `<respcondition>` that sets SCORE.
+
+    Canvas emits an extra `continue="Yes"` condition per option when the
+    instructor entered per-answer feedback comments. Those name the option but
+    carry `<displayfeedback>`, not `<setvar>`. Collecting every `<varequal>` in
+    the subtree unions them and marks all three options correct — an answer key
+    that says everything is right.
+    """
+    q = _one(_MC_WITH_PER_ANSWER_FEEDBACK)
+    correct = {o.ident for o in q.options if o.is_correct}
+    assert correct == {"1111"}, f"feedback conditions leaked into the key: {correct}"
+
+
+_MC_WITH_ZERO_SCORE_CONDITION = """
+<item ident="g10" title="Question">
+  <itemmetadata><qtimetadata>
+    <qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>multiple_choice_question</fieldentry></qtimetadatafield>
+    <qtimetadatafield><fieldlabel>points_possible</fieldlabel><fieldentry>1.0</fieldentry></qtimetadatafield>
+  </qtimetadata></itemmetadata>
+  <presentation>
+    <material><mattext texttype="text/plain">Which one?</mattext></material>
+    <response_lid ident="response1" rcardinality="Single"><render_choice>
+      <response_label ident="1111"><material><mattext texttype="text/plain">right</mattext></material></response_label>
+      <response_label ident="2222"><material><mattext texttype="text/plain">wrong</mattext></material></response_label>
+    </render_choice></response_lid>
+  </presentation>
+  <resprocessing><outcomes><decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/></outcomes>
+    <respcondition continue="No">
+      <conditionvar><varequal respident="response1">1111</varequal></conditionvar>
+      <setvar action="Set" varname="SCORE">100</setvar>
+    </respcondition>
+    <respcondition continue="No">
+      <conditionvar><varequal respident="response1">2222</varequal></conditionvar>
+      <setvar action="Set" varname="SCORE">0</setvar>
+    </respcondition>
+  </resprocessing>
+</item>
+"""
+
+
+def test_zero_score_condition_is_not_a_correct_answer() -> None:
+    """A condition setting SCORE 0 enumerates a WRONG selection. Treating any
+    `<setvar>` as scoring would mark it correct — worse than the union it
+    replaces."""
+    q = _one(_MC_WITH_ZERO_SCORE_CONDITION)
+    correct = {o.ident for o in q.options if o.is_correct}
+    assert correct == {"1111"}, f"a zero-score condition was read as correct: {correct}"
+
+
+_MC_NO_SETVAR_AT_ALL = """
+<item ident="g11" title="Question">
+  <itemmetadata><qtimetadata>
+    <qtimetadatafield><fieldlabel>question_type</fieldlabel><fieldentry>multiple_choice_question</fieldentry></qtimetadatafield>
+    <qtimetadatafield><fieldlabel>points_possible</fieldlabel><fieldentry>1.0</fieldentry></qtimetadatafield>
+  </qtimetadata></itemmetadata>
+  <presentation>
+    <material><mattext texttype="text/plain">Which one?</mattext></material>
+    <response_lid ident="response1" rcardinality="Single"><render_choice>
+      <response_label ident="1111"><material><mattext texttype="text/plain">right</mattext></material></response_label>
+      <response_label ident="2222"><material><mattext texttype="text/plain">wrong</mattext></material></response_label>
+    </render_choice></response_lid>
+  </presentation>
+  <resprocessing><outcomes><decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/></outcomes>
+    <respcondition continue="No">
+      <conditionvar><varequal respident="response1">1111</varequal></conditionvar>
+    </respcondition>
+  </resprocessing>
+</item>
+"""
+
+
+def test_falls_back_to_whole_subtree_when_nothing_awards_credit() -> None:
+    """A producer that scores some way this doesn't model must still yield a
+    key rather than silently yielding none."""
+    q = _one(_MC_NO_SETVAR_AT_ALL)
+    correct = {o.ident for o in q.options if o.is_correct}
+    assert correct == {"1111"}, f"fallback produced no key: {correct}"

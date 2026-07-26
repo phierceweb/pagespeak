@@ -198,3 +198,31 @@ def test_docx_backend_flag_passed(monkeypatch, tmp_path: Path) -> None:
     )
     assert result.exit_code == 0, result.output
     assert captured.get("docx_backend") == "python-docx"
+
+
+def test_convert_exits_2_on_partial_ingest(tmp_path: Path) -> None:
+    """A failed chunk must fail the command loudly — the web console and any
+    scripted two-command workflow key on the exit code."""
+    import json
+
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "doc.raw.md").write_text("# Doc\n\nFirst chunk only.\n", encoding="utf-8")
+    (out / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "chunks": [
+                    {"page_range": "0-49", "status": "completed"},
+                    {"page_range": "50-99", "status": "failed"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(app, ["convert", str(out), "-o", str(out), "--no-diagrams"])
+
+    assert result.exit_code == 2, result.output
+    assert "50-99" in result.output
+    assert not (out / "doc.md").exists()

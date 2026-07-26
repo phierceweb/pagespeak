@@ -58,7 +58,7 @@ Patterns that aren't safe to apply universally but are worth a flag for clean si
 | Step | Why aggressive | What it does |
 |---|---|---|
 | 10. Drop image-only lines | Only matches `![](...)` with **empty** alt text — captioned images are preserved. Cleanup runs **before** vision, so a bare ref dropped here is gone before captions are injected; enable only on documents whose alt-less image lines are decoration (the phash decoration pass already strips the repeated ones). | Lines matching `^\s*!\[\]\([^)]+\)\s*$` are removed |
-| 11. Normalize "Table of Contents" heading | The literal string "Table of Contents" anywhere on a line becomes `## Table of Contents`. The body that follows is preserved (the TOC regenerator replaces it later with a generated bullet list). | Heading promoted; body preserved |
+| 11. Normalize "Table of Contents" heading | A line that **is** the TOC heading (`Table of Contents`, with or without `#` markers, case-insensitive) becomes `## Table of Contents`. The body that follows is preserved (the TOC regenerator replaces it later with a generated bullet list). Prose that merely *mentions* the phrase is left alone. | Heading normalized; body preserved |
 | 12. Strip `<span id="page-X-Y"></span>` anchors | Marker emits these as cross-ref targets; they render as nothing but pollute the source. | Regex strip |
 | 13. Strip all non-ASCII characters | Some PDFs leak placeholder Greek/math glyphs from font tables (`Δ`, etc.). **Caveat:** also strips en-dashes, `©`, `®`, smart quotes — only enable on documents you know are ASCII-only. | `Δ` → *(removed)* |
 
@@ -120,6 +120,8 @@ Refs to slugs that don't match any section heading, real anchors, and URLs are p
 Opt-in via `split_sections=True` (plus optional `nested_split=True` and `split_min_level=N`).
 
 - **Default** (`split_min_level` unset): `to_markdown()` and the CLI resolve it to `1` — split on **every** heading, numbered and semantic alike. (Only a direct low-level `split_into_sections(min_level=None)` call keeps the old numbered-headings-only behavior.)
+
+> **`split_into_sections()` is destructive.** It deletes every `*.md` under `output_dir` before writing (recursively, and removes emptied directories) so a re-run leaves no stale sections. The pipeline passes `<out>/sections`, which it owns. If you call it directly, pass a directory you own — pointing it at an existing docs tree deletes it.
 - **Semantic mode** (`split_min_level=N`): also split on any heading at depth ≥ N. `split_min_level=2` is the right choice for product manuals that use `## Quick Start`-style headings. Numbered sections get `<number>. <title>.md` filenames; semantic ones use the heading text only (`Quick Start.md`).
 - **Capped depth** (`split_max_level=N`): headings deeper than N stay inline as content of their enclosing section instead of splitting out. `split_max_level=2` yields one file per H2 (section-level chunks) with `### `+ subsections inline — the fix for textbook-shaped docs (a single `# Title`, numbered `## N.M` sections, plus unnumbered back-matter H2) that otherwise over-fragment into thousands of tiny per-heading files. Opt-in per doc, since the right cap depends on how much content lives below the section heading.
 - **Nested mode** (`nested_split=True`): sections nest by heading hierarchy. Numbered sections use the number string for folder names (`1/1-4/1-4-1-workflow-triggers.md`); semantic sections use the slugified heading title (`quick-start/foot-switches.md`). Top-level sections land in their own folder named after themselves.

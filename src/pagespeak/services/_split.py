@@ -154,7 +154,13 @@ def split_into_sections(
 
     Args:
         markdown: The full markdown text to split.
-        output_dir: Directory to write per-section files into. Created if missing.
+        output_dir: Directory to write per-section files into. Created if
+            missing. **DESTRUCTIVE — every `*.md` under this directory is
+            deleted first** (recursively, emptied dirs removed) so a re-run
+            cannot leave stale sections behind. The pipeline always passes
+            `<out>/sections`, which it owns. A direct caller must pass a
+            directory it owns too: pointing this at an existing docs tree
+            deletes it.
         nested: If True, write numbered sections into nested numeric-prefix folders.
         source_name: Display name used in the `INDEX.md` heading.
         min_level: If set, also split on semantic headings at this depth or deeper.
