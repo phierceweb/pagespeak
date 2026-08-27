@@ -20,6 +20,7 @@ from pathlib import Path
 from urllib.parse import unquote
 
 from ._audit_checks import AuditFinding, run_text_checks
+from ._image_refs import parse_image_refs
 
 _CHECKPOINT_SUFFIXES = (
     ".raw.md",
@@ -32,7 +33,6 @@ _CHECKPOINT_SUFFIXES = (
 _MAX_SHOWN_PER_CHECK = 3  # per file, in the rendered report
 
 _PAGE_ANCHOR_RE = re.compile(r'<span id="page-\d+-\d+"></span>\s*')
-_IMG_REF_RE = re.compile(r"!\[[^\]]*\]\(([^)\n]+)\)")
 _EXTERNAL_SCHEMES = ("http://", "https://", "data:")
 
 
@@ -111,10 +111,8 @@ def check_dangling_image_refs(path: Path, text: str | None = None) -> list[Audit
     if text is None:
         text = path.read_text(encoding="utf-8", errors="replace")
     findings: list[AuditFinding] = []
-    for match in _IMG_REF_RE.finditer(text):
-        target = match.group(1).strip()
-        if target.startswith("<") and target.endswith(">"):
-            target = target[1:-1].strip()
+    for ref in parse_image_refs(text):
+        target = ref.target
         if target.startswith(_EXTERNAL_SCHEMES) or not target:
             continue
         # A `%`-encoded target resolves to its decoded file on disk; check both.
@@ -123,7 +121,7 @@ def check_dangling_image_refs(path: Path, text: str | None = None) -> list[Audit
                 AuditFinding(
                     check="dangling_image_ref",
                     severity="error",
-                    line=text.count("\n", 0, match.start()) + 1,
+                    line=ref.line,
                     message=f"image target not found: {target}",
                 )
             )

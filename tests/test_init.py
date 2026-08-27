@@ -30,6 +30,6 @@ def test_version_matches_pyproject() -> None:
     assert pagespeak.__version__ == data["project"]["version"]
 
 
-def test_python_is_311_plus() -> None:
-    """`requires-python >= 3.11` — tomllib + modern syntax depend on it."""
-    assert sys.version_info >= (3, 11)
+def test_python_is_312_plus() -> None:
+    """`requires-python >= 3.12` — pf-core 0.20 sets the floor."""
+    assert sys.version_info >= (3, 12)

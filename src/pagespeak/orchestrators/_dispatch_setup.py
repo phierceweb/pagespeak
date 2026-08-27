@@ -12,11 +12,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from ..services._cleanup import CleanupLevel
+from pf_core.log import get_logger
+
+from ..services._cleanup import CleanupLevel, CrossRefs
 from ..services._heading_normalize import NormalizeMode
 from ..services._normalize_decision import NormalizeModeOption
 from ..services._presets import resolve_preset
 from ._context import PipelineContext
+
+logger = get_logger(__name__)
 
 # Original to_markdown defaults for the preset-controlled flags.
 # Used when no preset is set and the caller didn't pass a value.
@@ -193,3 +197,61 @@ def _resolve_directory_input(
     doc_stem = resolve_dir_mode_stem(src_dir)
     raw_md = src_dir / f"{doc_stem}.raw.md"
     return raw_md, src_dir, doc_stem
+
+
+def prepare_output_dir(
+    src: Path,
+    out: Path | None,
+    *,
+    qti_mode: bool,
+    rerun_from: str | None,
+    cross_refs: CrossRefs,
+    cross_refs_was_default: bool,
+    allow_partial_ingest: bool,
+) -> tuple[Path, Path | None, str | None, CrossRefs, bool]:
+    """Validate `rerun_from`, resolve dir-mode input, and ready the output dir.
+
+    Returns `(src, out, doc_stem, cross_refs, dir_mode)` — dir-mode rewrites
+    `src`/`out` and supplies a `doc_stem` overriding `src.stem`; chunked input
+    upgrades `cross_refs` to "remap". Every step's position here is load-bearing.
+    """
+    if rerun_from is not None:
+        from ..services._rerun import RERUN_STAGES
+
+        if rerun_from not in RERUN_STAGES:
+            raise ValueError(f"unknown rerun_from stage: {rerun_from!r}. Valid: {RERUN_STAGES}")
+
+    # A QTI export is also a directory, but it is a SOURCE, never dir-mode.
+    doc_stem: str | None = None
+    dir_mode = src.is_dir() and not qti_mode
+    if dir_mode:
+        src, out, doc_stem = _resolve_directory_input(src, out)
+
+    if not src.exists():
+        raise FileNotFoundError(f"No such file: {src}")
+
+    # Cross-chunk page anchors only resolve after concatenation, so "remap" is
+    # the right default for chunked input. A user-supplied value always wins.
+    if cross_refs_was_default and out is not None and (out / "manifest.json").exists():
+        cross_refs = "remap"
+        logger.info("cross_refs_auto_remap reason=manifest_present output_dir=%s", out)
+
+    if out is not None:
+        out.mkdir(parents=True, exist_ok=True)
+
+        # Must precede invalidation: any `rerun_from` deletes `sections/`, and a
+        # snapshot with no sections is skipped. Non-fatal.
+        from .. import __version__
+        from ..services._baseline import auto_snapshot_on_version_change
+
+        auto_snapshot_on_version_change(out, current_version=__version__)
+
+        if rerun_from is not None:
+            from ..services._rerun import invalidate_caches
+
+            invalidate_caches(out, rerun_from, doc_stem if doc_stem is not None else src.stem)  # type: ignore[arg-type]
+        from ._ingest import assert_ingest_complete
+
+        assert_ingest_complete(out, allow_partial=allow_partial_ingest)
+
+    return src, out, doc_stem, cross_refs, dir_mode

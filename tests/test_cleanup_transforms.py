@@ -96,3 +96,38 @@ def test_inversion_is_repaired_end_to_end() -> None:
     depths = [len(ln) - len(ln.lstrip("#")) for ln in out.splitlines() if ln.startswith("#")]
     assert depths[0] < depths[1], f"parent must be shallower: {out}"
     assert depths[1] == depths[2], "siblings must match"
+
+
+def test_double_encoded_entities_decode_to_a_fixpoint() -> None:
+    """`html.unescape` is single-pass, so `&amp;lt;` half-decodes to `&lt;`."""
+    from pagespeak.services._cleanup_transforms import decode_html_entities
+
+    assert decode_html_entities("&amp;lt;!-- no-selfclose --&amp;gt;") == "<!-- no-selfclose -->"
+
+
+def test_triple_encoded_entities_still_converge() -> None:
+    from pagespeak.services._cleanup_transforms import decode_html_entities
+
+    assert decode_html_entities("&amp;amp;lt;x&amp;amp;gt;") == "<x>"
+
+
+def test_decode_is_bounded_and_does_not_hang() -> None:
+    """Decoding stops at the pass cap instead of unwinding forever."""
+    from pagespeak.services._cleanup_transforms import (
+        _MAX_UNESCAPE_PASSES,
+        decode_html_entities,
+    )
+
+    text = "&" + "amp;" * (_MAX_UNESCAPE_PASSES + 3) + "lt;"
+    out = decode_html_entities(text)
+    assert "&" in out, "a capped decode must leave the surplus escaping in place"
+    assert out == "&" + "amp;" * 3 + "lt;"
+
+
+def test_fenced_double_encoded_entity_survives_verbatim() -> None:
+    from pagespeak.services._cleanup_transforms import decode_html_entities
+
+    text = "prose &amp;lt;a&amp;gt;\n\n```html\n&amp;lt;div&amp;gt;\n```\n"
+    out = decode_html_entities(text)
+    assert "```html\n&amp;lt;div&amp;gt;\n```" in out
+    assert "prose <a>" in out

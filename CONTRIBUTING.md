@@ -16,7 +16,7 @@ prose is not.
 
 ## Development setup
 
-Python 3.11+ is required.
+Python 3.12+ is required.
 
 ```bash
 git clone https://github.com/phierceweb/pagespeak
@@ -52,7 +52,7 @@ And hold the change to these standards:
 
 The essentials:
 
-- Modern Python 3.11+ syntax — `X | None`, lowercase `dict`/`list`/`tuple`,
+- Modern Python 3.12+ syntax — `X | None`, lowercase `dict`/`list`/`tuple`,
   `from __future__ import annotations`.
 - Type hints on every public signature; Google-style docstrings on public APIs.
 - Structured logging via `pf_core.log.get_logger(__name__)` — never a bare

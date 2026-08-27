@@ -1,21 +1,33 @@
 from __future__ import annotations
 
 import os
-import re
 from pathlib import Path
 
 from pf_core.log import get_logger
 
 from ..models._models import IngestResult
+from ..services._image_refs import ImageRef, replace_image_refs
 
 logger = get_logger(__name__)
 
-_IMAGE_REF_RE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
 
 # Tracks the device the marker model cache was first loaded on so we can warn
 # when a later call passes a different device (Marker caches globally per
 # process; the second device value is silently ignored).
 _first_device: str | None = None
+
+
+def _prefix_bare_image_refs(markdown: str, saved_basenames: set[str]) -> str:
+    """Point a bare `![alt](foo.png)` at the extracted `images/foo.png`."""
+
+    def _repl(ref: ImageRef) -> str | None:
+        if "/" in ref.target or "\\" in ref.target:
+            return None
+        if ref.target not in saved_basenames:
+            return None
+        return ref.retargeted(f"images/{ref.target}")
+
+    return replace_image_refs(markdown, _repl)[0]
 
 
 def parse_page_range(spec: str | list[int]) -> list[int]:
@@ -142,15 +154,7 @@ def convert_pdf(
     if saved_images:
         saved_basenames = {p.name for p in saved_images}
 
-        def _prefix_with_images_dir(match: re.Match[str]) -> str:
-            alt, path = match.group(1), match.group(2)
-            if "/" in path or "\\" in path:
-                return match.group(0)
-            if path in saved_basenames:
-                return f"![{alt}](images/{path})"
-            return match.group(0)
-
-        markdown_text = _IMAGE_REF_RE.sub(_prefix_with_images_dir, markdown_text)
+        markdown_text = _prefix_bare_image_refs(markdown_text, saved_basenames)
 
     return IngestResult(
         markdown=markdown_text,

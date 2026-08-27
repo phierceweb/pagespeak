@@ -51,9 +51,6 @@ from ._vision_backends import (
     build_backend as build_backend,
 )
 from ._vision_inject import (
-    _IMAGE_REF as _IMAGE_REF,
-)
-from ._vision_inject import (
     _escape_alt as _escape_alt,
 )
 from ._vision_inject import (

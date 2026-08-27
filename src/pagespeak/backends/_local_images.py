@@ -13,24 +13,19 @@ gated by ``PAGESPEAK_COPY_LOCAL_IMAGES`` (default on).
 
 from __future__ import annotations
 
-import re
 import shutil
 from pathlib import Path
 
 from pf_core.log import get_logger
 from pf_core.utils.env import resolve_bool
 
+from ..services._image_refs import ImageRef, replace_image_refs
+
 logger = get_logger(__name__)
 
 COPY_LOCAL_IMAGES_ENV_VAR = "PAGESPEAK_COPY_LOCAL_IMAGES"
 DEFAULT_COPY_LOCAL_IMAGES = True
 
-# Destination split from the optional CommonMark title: folding the title in
-# yields a path that cannot exist. Mirrors `services/_image_refs._IMG_REF_RE`.
-_LOCAL_IMG_REF_RE = re.compile(
-    r"(!\[[^\]]*\]\(\s*)(<[^>\n]*>|[^\s)]+)"
-    r"((?:\s+(?:\"[^\"\n]*\"|'[^'\n]*'|\([^)\n]*\)))?\s*\))"
-)
 _EXTERNAL_PREFIXES = ("http://", "https://", "/", "data:", "file:")
 
 
@@ -42,14 +37,6 @@ def copy_local_images_enabled() -> bool:
     picks up ``.env`` changes between docs.
     """
     return bool(resolve_bool(None, COPY_LOCAL_IMAGES_ENV_VAR, default=DEFAULT_COPY_LOCAL_IMAGES))
-
-
-def _destination(raw: str) -> str:
-    """The ref's destination, unwrapped from CommonMark angle brackets."""
-    dest = raw.strip()
-    if dest.startswith("<") and dest.endswith(">"):
-        dest = dest[1:-1].strip()
-    return dest
 
 
 def _is_local(dest: str) -> bool:
@@ -128,10 +115,10 @@ def localize_local_images_in_markdown(
     # localize, so a repeat occurrence is not retried.
     resolved: dict[str, tuple[Path, str | None] | None] = {}
 
-    def _repl(match: re.Match[str]) -> str:
-        ref = _destination(match.group(2))
+    def _repl(image: ImageRef) -> str | None:
+        ref = image.target
         if not _is_local(ref):
-            return match.group(0)
+            return None
         if ref not in resolved:
             localized = _localize_one(ref, src_root, images_dir)
             resolved[ref] = localized
@@ -139,11 +126,10 @@ def localize_local_images_in_markdown(
                 present.append(localized[0])
         entry = resolved[ref]
         if entry is None or entry[1] is None:
-            return match.group(0)
-        # Rebuild with the retargeted destination; the title (group 3) survives.
-        return f"{match.group(1)}{entry[1]}{match.group(3)}"
+            return None
+        return image.retargeted(entry[1])
 
-    rewritten = _LOCAL_IMG_REF_RE.sub(_repl, markdown)
+    rewritten, _ = replace_image_refs(markdown, _repl)
 
     seen = {str(p) for p in base}
     for p in present:

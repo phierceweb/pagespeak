@@ -67,6 +67,41 @@ def resolve_workers(explicit: int | None = None) -> int:
     return resolve_positive_int(explicit, WORKERS_ENV_VAR, default=DEFAULT_WORKERS, min_value=1)
 
 
+def resolve_cli_workers(
+    explicit: int | None,
+    source: Path | None = None,
+    *,
+    chunk_unsafe: bool = False,
+) -> int:
+    """Pick the CLI `--workers` value: explicit flag > `PAGESPEAK_WORKERS` > 1.
+
+    Separate from `resolve_workers`, which sizes the pool once chunking is
+    already chosen and so defaults to `DEFAULT_WORKERS`. This decides *whether*
+    to chunk, where the default must stay 1.
+
+    An env-derived value is clamped to 1 for a source the chunked path cannot
+    take (anything but a PDF file) and for a run it cannot serve (`chunk_unsafe`):
+    an ambient setting must never change what a command does. An explicit
+    `--workers` is never clamped — the chunked path's own errors answer that.
+    """
+    if explicit is not None and explicit < 1:
+        # `resolve_positive_int` would name the env var, which the user never set.
+        raise ValueError(f"--workers must be >= 1 (got {explicit})")
+    n = resolve_positive_int(explicit, WORKERS_ENV_VAR, default=1, min_value=1)
+    if explicit is not None or n == 1:
+        return n
+    chunkable = source is not None and source.is_file() and source.suffix.lower() == ".pdf"
+    if chunkable and not chunk_unsafe:
+        return n
+    logger.info(
+        "cli_workers_env_clamped requested=%d chunkable=%s chunk_unsafe=%s",
+        n,
+        chunkable,
+        chunk_unsafe,
+    )
+    return 1
+
+
 def count_pages(pdf_path: Path) -> int:
     """Count pages in a PDF using pypdfium2 (already a Marker dep)."""
     try:

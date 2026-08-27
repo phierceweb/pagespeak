@@ -23,14 +23,13 @@ from ._context import PipelineContext
 from ._dispatch_setup import (
     _apply_preset_and_defaults,
     _now_utc_iso,
-    _resolve_directory_input,
+    prepare_output_dir,
     resolved_flags_from_ctx,
 )
 from ._dispatch_setup import (
     resolve_dir_mode_stem as resolve_dir_mode_stem,
 )
 from ._ingest import PDF_SUFFIXES as _PDF_SUFFIXES
-from ._ingest import assert_ingest_complete
 from ._ingest import ingest as _ingest_orchestrator
 from ._phase import Phase
 from ._phases import build_phases
@@ -204,6 +203,21 @@ def to_markdown(
     if workers > 1 and not src_arg.is_dir() and not _qti_mode:
         if out is None:
             raise ValueError("workers > 1 requires output_dir to be specified")
+        if rerun_from is not None:
+            # The re-entry invalidates in dir-mode, which for `ingest` deletes
+            # the raw.md/images/chunks this branch just spent the backend on.
+            raise ValueError(
+                "rerun_from is not supported on the chunked path (workers > 1). "
+                "Re-run the chunked ingest with `pagespeak ingest --force`, then "
+                "`pagespeak convert <output_dir> --rerun-from <stage>`."
+            )
+        if repair_tables:
+            # The re-entry's source is the concatenated raw.md, not the PDF the
+            # repair reads, so the pass would no-op instead of running.
+            raise ValueError(
+                "repair_tables is not supported on the chunked path (workers > 1). "
+                "Use workers=1, or run `pagespeak repair-tables` on the output dir."
+            )
         _ingest_orchestrator(
             input_path=src,
             output_dir=out,
@@ -213,6 +227,9 @@ def to_markdown(
             heading_hierarchy=heading_hierarchy,
             device=device,
             force_ocr=force_ocr,
+            # Forwarded so ingest's own guard refuses it rather than the flag
+            # being silently ignored.
+            page_range=page_range,
         )
         return to_markdown(
             out,
@@ -232,6 +249,7 @@ def to_markdown(
             split_max_level=split_max_level,
             split_target_kb=split_target_kb,
             min_body_chars=min_body_chars,
+            english_only=english_only,
             regenerate_toc=regenerate_toc,
             decoration_threshold=decoration_threshold,
             decoration_hamming_distance=decoration_hamming_distance,
@@ -250,51 +268,15 @@ def to_markdown(
             allow_partial_ingest=allow_partial_ingest,
         )
 
-    # validate rerun_from before any other checks so a bogus
-    # stage error is reported even when the source path is wrong.
-    if rerun_from is not None:
-        from ..services._rerun import RERUN_STAGES
-
-        if rerun_from not in RERUN_STAGES:
-            raise ValueError(f"unknown rerun_from stage: {rerun_from!r}. Valid: {RERUN_STAGES}")
-
-    # Directory input = an existing output dir: resume from its <stem>.raw.md,
-    # skip the backend. A QTI export is also a dir but is a SOURCE (`_qti_mode`
-    # above), never dir-mode.
-    _dir_mode = src.is_dir() and not _qti_mode
-    _doc_stem: str | None = None  # overrides src.stem in dir-mode
-    if _dir_mode:
-        src, out, _doc_stem = _resolve_directory_input(src, out)
-
-    if not src.exists():
-        raise FileNotFoundError(f"No such file: {src}")
-
-    # auto-upgrade cross_refs to "remap" when a manifest.json is
-    # present (signal: chunked/ingest input). Cross-chunk page anchors only
-    # resolve after concatenation, so "remap" is the correct default for
-    # that input shape. User-supplied values always win.
-    if _cross_refs_was_default and out is not None and (out / "manifest.json").exists():
-        cross_refs = "remap"
-        logger.info("cross_refs_auto_remap reason=manifest_present output_dir=%s", out)
-
-    if out is not None:
-        out.mkdir(parents=True, exist_ok=True)
-        # Cache invalidation. Missing files are silent no-ops.
-        if rerun_from is not None:
-            from ..services._rerun import invalidate_caches
-
-            invalidate_caches(out, rerun_from, _doc_stem if _doc_stem is not None else src.stem)  # type: ignore[arg-type]
-
-        # After invalidation: `--rerun-from ingest` drops manifest.json, so a
-        # re-ingest is not held back by the previous run's failed chunks.
-        assert_ingest_complete(out, allow_partial=allow_partial_ingest)
-
-        # auto-snapshot the previous run when __version__
-        # changed since it ran. Non-fatal — never blocks conversion.
-        from .. import __version__
-        from ..services._baseline import auto_snapshot_on_version_change
-
-        auto_snapshot_on_version_change(out, current_version=__version__)
+    src, out, _doc_stem, cross_refs, _dir_mode = prepare_output_dir(
+        src,
+        out,
+        qti_mode=_qti_mode,
+        rerun_from=rerun_from,
+        cross_refs=cross_refs,
+        cross_refs_was_default=_cross_refs_was_default,
+        allow_partial_ingest=allow_partial_ingest,
+    )
 
     # Resolve preset + defaults. `preset=` (None by default)
     # supplies values for the preset-controlled flags; per-flag kwargs

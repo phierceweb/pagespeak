@@ -62,6 +62,19 @@ def collapse_shattered_emphasis(text: str) -> str:
     )[0]
 
 
+_MAX_UNESCAPE_PASSES = 5
+
+
+def _unescape_to_fixpoint(segment: str) -> str:
+    """`html.unescape` until stable — one pass leaves `&amp;lt;` as `&lt;`."""
+    for _ in range(_MAX_UNESCAPE_PASSES):
+        decoded = html.unescape(segment)
+        if decoded == segment:
+            break
+        segment = decoded
+    return segment
+
+
 def decode_html_entities(text: str) -> str:
     """Decode HTML entities (`&lt;` `&amp;` `&gt;` `&#x20;` …) OUTSIDE fenced code.
 
@@ -76,7 +89,7 @@ def decode_html_entities(text: str) -> str:
     """
     if "&" not in text:
         return text
-    return transform_outside_fences(text, html.unescape)
+    return transform_outside_fences(text, _unescape_to_fixpoint)
 
 
 def strip_marker_pollution(text: str) -> str:

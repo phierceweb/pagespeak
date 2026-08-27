@@ -14,12 +14,12 @@ import os
 import re
 from pathlib import Path
 
+from ._image_refs import ImageRef, replace_image_refs
 from ._split_identity import _section_frontmatter, _strip_embedded_links
 from ._split_parse import _is_page_anchor_line, _Section
 
 IN_DOC_REF_RE = re.compile(r"\[([^\]]+)\]\(#([^)]+)\)")
 
-IMAGE_REF_RE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
 
 _MAX_FILENAME_LEN = 200
 
@@ -154,16 +154,13 @@ def _rewrite_image_paths_relative(
     """
     section_dir = section_file.parent
 
-    def _replace(match: re.Match[str]) -> str:
-        alt, path = match.group(1), match.group(2)
-        if not path.startswith(("images/", "images\\")):
-            return match.group(0)
-        basename = Path(path).name
-        target = images_dir / basename
-        rel = os.path.relpath(target, section_dir).replace(os.sep, "/")
-        return f"![{alt}]({rel})"
+    def _replace(ref: ImageRef) -> str | None:
+        if not ref.target.startswith(("images/", "images\\")):
+            return None
+        target = images_dir / Path(ref.target).name
+        return ref.retargeted(os.path.relpath(target, section_dir).replace(os.sep, "/"))
 
-    return IMAGE_REF_RE.sub(_replace, text)
+    return replace_image_refs(text, _replace)[0]
 
 
 def _nearest_section(candidates: list[_Section], from_section: _Section) -> _Section:

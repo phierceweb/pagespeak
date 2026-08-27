@@ -60,3 +60,16 @@ def test_vision_options_threaded():
     assert "--normalize-headings-mode" in cmd and "llm_full" in cmd
     assert "--normalize-headings-backend" in cmd and "openrouter" in cmd
     assert "--workers" in cmd and "2" in cmd
+
+
+def test_workers_one_is_still_emitted_explicitly():
+    """Omitting --workers at 1 let an ambient PAGESPEAK_WORKERS override the
+    job's own choice — the form has no way to express 'no, single-process'."""
+    inp = ConversionInputs(
+        out_dir="/c/out/doc",
+        source_path="/c/in/Doc.pdf",
+        options=ConversionOptions(workers=1),
+    )
+    cmd = build_command(inp, pagespeak_bin="ps")
+    assert "--workers" in cmd
+    assert cmd[cmd.index("--workers") + 1] == "1"

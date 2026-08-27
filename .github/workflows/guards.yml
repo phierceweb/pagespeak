@@ -7,7 +7,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.11"
+          python-version: "3.12"
       # Light extras (docx/web/tophat) give mypy real types for those code
       # paths; the torch-heavy pdf/docling extras are omitted (too slow per run)
       # and stay Any via ignore_missing_imports. Mirrors the lint gate

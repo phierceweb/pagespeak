@@ -12,6 +12,7 @@ from .. import to_markdown
 from ..backends._docx_dispatch import DocxBackendName
 from ..backends._pdf_dispatch import PdfBackendName
 from ..backends._qti import is_qti_export
+from ..orchestrators._chunk import resolve_cli_workers
 from ..orchestrators._dispatch import resolve_dir_mode_stem
 from ..orchestrators._ingest import PartialIngestError
 from ..services._cleanup import CleanupLevel, CrossRefs
@@ -242,11 +243,11 @@ def register(
             "--stop-after",
             help="Halt after this phase (its checkpoint is written; nothing downstream runs). Same phase names as --from. Lets you validate the pipeline one phase at a time.",
         ),
-        workers: int = typer.Option(
-            1,
+        workers: int | None = typer.Option(
+            None,
             "--workers",
             "-w",
-            help="Number of parallel worker processes for the backend phase. When > 1, routes through ingest (chunked parallel) then Phase 3. Requires --output-dir. Default 1 (single-shot).",
+            help="Number of parallel worker processes for the backend phase. When > 1, routes through ingest (chunked parallel) then Phase 3. Requires --output-dir. Default 1 (single-shot), or PAGESPEAK_WORKERS when set. An env-derived value applies to PDF file input only and is ignored for a run the chunked path cannot serve (--from / --stop-after / --rerun-from / --page-range / --english-only / --repair-tables); a typed -w is always honoured.",
         ),
         answer_key: bool = typer.Option(
             True,
@@ -354,6 +355,11 @@ def register(
 
         cross_refs = validate_cross_refs(_flag("cross_refs", cross_refs))
         pdf_backend = validate_pdf_backend(_flag("pdf_backend", pdf_backend))
+        # Resolved, not raw: these three also arrive by run-record inheritance,
+        # and the chunked path drops whichever way they got here.
+        page_range = _flag("page_range", page_range)
+        english_only = _flag("english_only", english_only)
+        repair_tables = _flag("repair_tables", repair_tables)
 
         cleanup_val = _flag("cleanup", cleanup if "cleanup" in explicit else None)
         cleanup_arg: CleanupLevel | None = None
@@ -383,7 +389,7 @@ def register(
                 preserve_alt=preserve_alt,
                 force_ocr=_flag("force_ocr", force_ocr),
                 device=device,
-                page_range=_flag("page_range", page_range),
+                page_range=page_range,
                 html_base_url=_flag("html_base_url", html_base_url),
                 cleanup=cleanup_arg,
                 cross_refs=cast(CrossRefs, cross_refs),
@@ -399,13 +405,13 @@ def register(
                 split_max_level=_flag("split_max_level", split_max_level),
                 split_target_kb=_flag("split_target_kb", split_target_kb),
                 min_body_chars=_flag("min_body_chars", None),
-                english_only=_flag("english_only", english_only),
+                english_only=english_only,
                 regenerate_toc=_flag("regenerate_toc", True),
                 decoration_threshold=_flag("decoration_threshold", None),
                 decoration_hamming_distance=_flag("decoration_hamming_distance", None),
                 pdf_backend=cast(PdfBackendName, pdf_backend),
                 heading_hierarchy=_flag("heading_hierarchy", heading_hierarchy),
-                repair_tables=_flag("repair_tables", repair_tables),
+                repair_tables=repair_tables,
                 docx_backend=cast(DocxBackendName, _flag("docx_backend", docx_backend)),
                 docx_outline_heading_depth=_flag(
                     "docx_outline_heading_depth", docx_outline_heading_depth
@@ -426,7 +432,19 @@ def register(
                 rerun_from=rerun_from,
                 start=start,
                 stop_after=stop_after,
-                workers=workers,
+                workers=resolve_cli_workers(
+                    workers,
+                    input_path,
+                    # The chunked path re-ingests and drops these; never let an
+                    # ambient PAGESPEAK_WORKERS take a run there behind the user.
+                    chunk_unsafe=bool(
+                        start or stop_after or rerun_from or page_range or english_only
+                    )
+                    or repair_tables
+                    # tophat reads the whole export in one pass and ignores
+                    # page_range, so chunking duplicates every question.
+                    or pdf_backend == "tophat",
+                ),
                 answer_key=answer_key,
                 allow_partial_ingest=allow_partial_ingest,
             )

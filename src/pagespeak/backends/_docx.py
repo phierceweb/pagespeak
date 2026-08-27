@@ -9,6 +9,7 @@ from typing import Any
 from pf_core.log import get_logger
 
 from ..models._models import IngestResult
+from ..services._image_refs import ImageRef, replace_image_refs
 from ..utils._mathml import prepare_mathml_for_markdown, restore_math
 
 logger = get_logger(__name__)
@@ -19,10 +20,6 @@ _OFFICE_MEDIA_PREFIXES = ("word/media/", "ppt/media/", "xl/media/")
 # OEBPS/images/, …) rather than a fixed office `*/media/` prefix, so we
 # extract by image extension instead of by prefix.
 _IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp")
-
-# Captures the three pieces of a markdown image ref so the path (group 2)
-# can be retargeted while alt text and surrounding syntax are preserved.
-_MD_IMAGE_REF_RE = re.compile(r"(!\[[^\]]*\]\()([^)]+)(\))")
 
 # MarkItDown discards DOCX inline-image payloads and emits a dead
 # truncated stub `![](data:image/png;base64...)` that points nowhere.
@@ -235,13 +232,11 @@ def _retarget_image_refs(markdown: str, images: list[Path]) -> str:
     if not names:
         return markdown
 
-    def repl(match: re.Match[str]) -> str:
-        basename = match.group(2).rsplit("/", 1)[-1]
-        if basename in names:
-            return f"{match.group(1)}images/{basename}{match.group(3)}"
-        return match.group(0)
+    def repl(ref: ImageRef) -> str | None:
+        basename = ref.target.rsplit("/", 1)[-1]
+        return ref.retargeted(f"images/{basename}") if basename in names else None
 
-    return _MD_IMAGE_REF_RE.sub(repl, markdown)
+    return replace_image_refs(markdown, repl)[0]
 
 
 def _markdown_has_image_refs(markdown: str) -> bool:

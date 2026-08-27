@@ -468,3 +468,63 @@ def test_cleanup_phase_honours_a_pdf_outline_hierarchy(tmp_path, monkeypatch) ->
     assert seen.get("structure_authoritative") is True, (
         "CleanupPhase demoted headings on an outline-derived hierarchy"
     )
+
+
+def test_chunked_ingest_stamps_the_hierarchy_marker(tmp_path, monkeypatch):
+    """Both ingest entry points must stamp provenance. The chunked path did not,
+    so `--pdf-backend docling --heading-hierarchy --workers N` silently lost the
+    outline trust that the single-process path records."""
+    from pagespeak.orchestrators import _ingest as ing
+
+    out = tmp_path / "out"
+    out.mkdir()
+    raw = out / "doc.raw.md"
+    src = tmp_path / "doc.pdf"
+    src.write_bytes(b"%PDF-1.4\n")
+
+    recorded: dict[str, object] = {}
+    monkeypatch.setattr(
+        "pagespeak.services._hierarchy_trust.record_hierarchy_source",
+        lambda o, s, **kw: recorded.update({"src": s, **kw}),
+    )
+    monkeypatch.setattr(
+        "pagespeak.services._hierarchy_trust.record_structured",
+        lambda o, **kw: recorded.update({"structured": kw.get("authoritative")}),
+    )
+
+    class _Chunk:
+        page_range, status = "0-9", "completed"
+
+    class _Manifest:
+        chunks = [_Chunk()]
+
+        def all_chunk_raw_md(self):
+            p = out / "chunks" / "0-9" / "raw.md"
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text("# chunk\n", encoding="utf-8")
+            return [p]
+
+        def all_chunk_images(self):
+            return []
+
+    monkeypatch.setattr(ing, "chunk_phase", lambda **kw: _Manifest())
+
+    ing._ingest_chunked(
+        src,
+        out,
+        raw_md_path=raw,
+        workers=2,
+        chunk_pages=50,
+        pdf_backend="docling",
+        pdf_backend_kwargs=None,
+        heading_hierarchy=True,
+        device=None,
+        force_ocr=False,
+        force=False,
+        max_pages=None,
+    )
+
+    assert recorded.get("pdf_backend") == "docling"
+    assert recorded.get("heading_hierarchy") is True
+    assert recorded.get("src") == src, "must stamp the real PDF, not the checkpoint"
+    assert recorded.get("structured") is False

@@ -165,3 +165,48 @@ def test_ingest_partial_failure_exits_code_2(tmp_path, monkeypatch):
     # Summary should be printed (to stderr; CliRunner mixes by default).
     combined = (result.output or "") + (result.stderr if result.stderr_bytes else "")
     assert "3 of 4 chunks failed" in combined or "partial" in combined.lower()
+
+
+def test_ingest_chunk_pages_defers_to_the_resolver(tmp_path, monkeypatch):
+    """PAGESPEAK_CHUNK_PAGES was unreachable from `ingest`: the CLI's hardcoded
+    50 always won, so `ingest()`'s `resolve_chunk_pages` never saw the `None`
+    that lets the env value through. Passing no flag must stay `None`."""
+    from pagespeak.cli import _ingest as cli_ingest
+    from pagespeak.orchestrators._chunk import resolve_chunk_pages
+
+    captured: dict[str, object] = {}
+
+    def fake_ingest(input_path, **kwargs):
+        captured.update(kwargs)
+        return tmp_path / "doc.raw.md"
+
+    monkeypatch.setattr(cli_ingest, "ingest", fake_ingest)
+    monkeypatch.setenv("PAGESPEAK_CHUNK_PAGES", "17")
+    pdf = tmp_path / "doc.pdf"
+    pdf.write_bytes(b"%PDF-1.4\n")
+
+    result = runner.invoke(app, ["ingest", str(pdf), "-o", str(tmp_path / "o")])
+    assert result.exit_code == 0, result.output
+    assert captured["chunk_pages"] is None, "a hardcoded default shadows the env var"
+    # …and the value the orchestrator then resolves from that None is the env's.
+    assert resolve_chunk_pages(captured["chunk_pages"]) == 17
+
+    captured.clear()
+    result = runner.invoke(
+        app, ["ingest", str(pdf), "-o", str(tmp_path / "o"), "--chunk-pages", "9"]
+    )
+    assert result.exit_code == 0, result.output
+    assert captured["chunk_pages"] == 9
+    assert resolve_chunk_pages(captured["chunk_pages"]) == 9
+
+
+def test_ingest_workers_zero_is_a_clean_error(tmp_path):
+    """`--workers 0` must name the flag the user typed, not an env var they never
+    set, and must not escape as an unhandled traceback."""
+    pdf = tmp_path / "doc.pdf"
+    pdf.write_bytes(b"%PDF-1.4\n")
+    result = runner.invoke(app, ["ingest", str(pdf), "-o", str(tmp_path / "o"), "-w", "0"])
+    assert result.exit_code != 0
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "--workers" in result.output
+    assert "PAGESPEAK_WORKERS" not in result.output

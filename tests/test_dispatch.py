@@ -1566,3 +1566,87 @@ def test_dir_mode_split_only_rerun_writes_master(tmp_path: Path) -> None:
     text = (out / "doc.md").read_text(encoding="utf-8")
     assert "# Widget Guide" in text
     assert "## Overview" in text
+
+
+# ── the workers > 1 branch must not silently discard Phase-3 options ────────
+
+
+def _chunked_reentry_capture(tmp_path: Path, monkeypatch, **kwargs):
+    """Drive `to_markdown` down the `workers > 1` branch, capturing the kwargs
+    the dir-mode re-entry is called with."""
+    from pagespeak.orchestrators import _dispatch
+
+    src = tmp_path / "doc.pdf"
+    src.write_bytes(b"%PDF-1.4\n")
+    out = tmp_path / "out"
+
+    def fake_ingest(*, input_path, output_dir, **_ignored):
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        (Path(output_dir) / "doc.raw.md").write_text("# doc\n", encoding="utf-8")
+        return Path(output_dir) / "doc.raw.md"
+
+    monkeypatch.setattr(_dispatch, "_ingest_orchestrator", fake_ingest)
+
+    captured: dict[str, object] = {}
+    real = _dispatch.to_markdown
+
+    def spy(path, **kw):
+        if kw.get("workers", 1) == 1:  # the re-entry, not the outer call
+            captured.update(kw)
+            return IngestResult(markdown="# doc\n", source_format="raw")
+        return real(path, **kw)
+
+    monkeypatch.setattr(_dispatch, "to_markdown", spy)
+    real(src, output_dir=out, workers=2, diagrams=False, **kwargs)
+    return captured
+
+
+def test_chunked_route_carries_english_only(tmp_path: Path, monkeypatch) -> None:
+    """A Phase-3 flag the re-entry can honour must not be dropped on the way."""
+    captured = _chunked_reentry_capture(tmp_path, monkeypatch, english_only=True)
+    assert captured.get("english_only") is True
+
+
+def test_chunked_route_rejects_repair_tables(tmp_path: Path) -> None:
+    """Phase 3 re-enters in dir-mode, where the source is the concatenated raw.md
+    and `_maybe_repair_tables`' PDF-suffix guard skips the pass. Forwarding the
+    flag would just move the silent no-op down a level, so refuse instead."""
+    src = tmp_path / "doc.pdf"
+    src.write_bytes(b"%PDF-1.4\n")
+    with pytest.raises(ValueError, match="repair_tables is not supported"):
+        to_markdown(src, output_dir=tmp_path / "out", workers=2, repair_tables=True, diagrams=False)
+
+
+def test_chunked_route_rejects_page_range(tmp_path: Path) -> None:
+    """The chunked path converts the whole document, so a page range cannot be
+    honoured. `_ingest` already refuses it; the refusal must actually reach it."""
+    src = tmp_path / "doc.pdf"
+    src.write_bytes(b"%PDF-1.4\n")
+    with pytest.raises(ValueError, match="page_range"):
+        to_markdown(src, output_dir=tmp_path / "out", workers=2, page_range="0-9", diagrams=False)
+
+
+def test_chunked_route_rejects_rerun_from(tmp_path: Path, monkeypatch) -> None:
+    """`--workers N --rerun-from ingest` used to run the whole chunked ingest,
+    then invalidate exactly the artifacts it had just written and abort on the
+    deleted raw.md — leaving the output dir stripped to the master .md."""
+    from pagespeak.orchestrators import _dispatch
+
+    src = tmp_path / "doc.pdf"
+    src.write_bytes(b"%PDF-1.4\n")
+    out = tmp_path / "out"
+    out.mkdir()
+    for name in ("doc.raw.md", "doc.cleaned.md", "doc.md"):
+        (out / name).write_text("prior", encoding="utf-8")
+    (out / "images").mkdir()
+    (out / "manifest.json").write_text("{}", encoding="utf-8")
+    before = sorted(p.name for p in out.iterdir())
+
+    ran = []
+    monkeypatch.setattr(_dispatch, "_ingest_orchestrator", lambda **kw: ran.append(kw))
+
+    with pytest.raises(ValueError, match="rerun_from is not supported"):
+        to_markdown(src, output_dir=out, workers=2, rerun_from="ingest", diagrams=False)
+
+    assert ran == [], "must refuse before spending a full chunked ingest"
+    assert sorted(p.name for p in out.iterdir()) == before, "nothing may be deleted"

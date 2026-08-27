@@ -73,7 +73,9 @@ def build_command(inp: ConversionInputs, *, pagespeak_bin: str) -> list[str]:
         cmd += ["--pdf-backend", opts.pdf_backend]
     if opts.docx_backend:
         cmd += ["--docx-backend", opts.docx_backend]
-    if opts.workers and opts.workers != 1:
+    if opts.workers:
+        # Always explicit: omitting it lets an ambient PAGESPEAK_WORKERS override
+        # the job's own choice, and the form has no way to say "no, 1".
         cmd += ["--workers", str(opts.workers)]
     if opts.source_type:
         cmd += ["--source-type", opts.source_type]

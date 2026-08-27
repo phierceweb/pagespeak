@@ -39,7 +39,7 @@ htmlcov/
 # Web console background-process state (bin/start writes pid + log here)
 /logs/
 
-# ─── Conversion scratch (source docs in, generated markdown out) ───────────
+# Conversion scratch (source docs in, generated markdown out)
 # conversions/in/ holds source PDFs/DOCX you want to convert.
 # conversions/out/ holds generated markdown + images + sections.
 # conversions/delivery/ holds stripped, delivery-ready copies (`pagespeak deliver`).
@@ -52,7 +52,7 @@ conversions/delivery/*
 !conversions/delivery/.gitkeep
 conversions/backup/
 
-# ─── AI / agent workspace (local-only; not shipped) ────────────────────────
+# AI / agent workspace (local-only; not shipped)
 # The entire .ai/ tree, the AI-tool configs, and CLAUDE.md are build-time
 # scaffolding kept on the maintainer's machine only — pagespeak ships as a
 # consumer library, not its own build harness.
@@ -62,9 +62,9 @@ docs/pf-core
 CLAUDE.md
 /bin/validate
 
-# ─── Editor / AI-tool configs (rule/plan symlinks, skills, local settings) ──
+# Editor / AI-tool configs (rule/plan symlinks, skills, local settings)
 .claude/
 .cursor/
 
-# ─── Playwright MCP artifacts ──────────────────────────────────────────────
+# Playwright MCP artifacts
 .playwright-mcp/

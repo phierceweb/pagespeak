@@ -1383,3 +1383,45 @@ def test_aggressive_toc_normalizes_only_a_real_heading_line() -> None:
     for heading in ("## Table of Contents", "Table of Contents", "# TABLE OF CONTENTS"):
         doc = f"# B\n\n{heading}\n\n| a | 1 |\n"
         assert "## Table of Contents" in cleanup_markdown(doc, "aggressive"), heading
+
+
+def test_already_bold_table_caption_is_not_double_wrapped() -> None:
+    """A caption cell that is already `**bold**` must not become `****bold****`."""
+    from pagespeak.services._cleanup import normalize_table_block
+
+    out = normalize_table_block(
+        [
+            "| **Common Grouping Symbols** | |",
+            "| --- | --- |",
+            "| Parentheses | ( ) |",
+        ]
+    )
+    assert "****" not in "\n".join(out)
+    assert "**Common Grouping Symbols**" in out[0]
+
+
+def test_unemphasised_table_caption_still_gets_bolded() -> None:
+    from pagespeak.services._cleanup import normalize_table_block
+
+    out = normalize_table_block(
+        ["| Grouping Symbols | |", "| --- | --- |", "| Parentheses | ( ) |"]
+    )
+    assert out[0] == "**Grouping Symbols**"
+
+
+def test_partially_bold_table_caption_does_not_shatter() -> None:
+    """`**Table 1** Results` is the common Word/textbook shape; wrapping it whole
+    produces `****Table 1** Results**`, the exact shatter the guard exists to stop."""
+    from pagespeak.services._cleanup import normalize_table_block
+
+    out = normalize_table_block(["| **Table 1** Results | |", "| --- | --- |", "| a | b |"])
+    assert "****" not in "\n".join(out)
+    assert out[0] == "**Table 1 Results**"
+
+
+def test_multiple_bold_runs_in_a_caption_are_not_read_as_already_bold() -> None:
+    from pagespeak.services._cleanup import normalize_table_block
+
+    out = normalize_table_block(["| **Left** and **Right** | |", "| --- | --- |", "| a | b |"])
+    assert "****" not in "\n".join(out)
+    assert out[0] == "**Left and Right**"

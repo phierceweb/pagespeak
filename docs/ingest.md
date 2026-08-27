@@ -61,7 +61,7 @@ pagespeak ingest thick-textbook.pdf -o ./out --workers 4 --device cpu
 |---|---|---|
 | `<input>` | (required) | Path to the source document |
 | `--output-dir`, `-o` | `./out` | Directory for `<stem>.raw.md` and `images/` |
-| `--workers`, `-w` | `1` | Worker count. `1` = single-process; `N > 1` = chunked-parallel (PDF only). Override default via `PAGESPEAK_WORKERS`. |
+| `--workers`, `-w` | `1` | Worker count. `1` = single-process; `N > 1` = chunked-parallel (PDF only). Override the default via `PAGESPEAK_WORKERS` (applied to PDF input only). |
 | `--chunk-pages` | `50` | Pages per chunk (chunked path only). Smaller = finer-grained resume; larger = less Marker model-load overhead per chunk. |
 | `--device` | (auto) | `cpu` / `mps` / `cuda`. `cpu` avoids the surya/MPS crash on Apple Silicon. |
 | `--force-ocr` | off | PDF only — force OCR even on text-bearing PDFs. |

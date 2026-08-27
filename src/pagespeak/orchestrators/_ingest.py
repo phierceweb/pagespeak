@@ -304,6 +304,13 @@ def _ingest_chunked(
         parts.append(p.read_text(encoding="utf-8"))
     consolidated = "\n\n".join(parts)
     raw_md_path.write_text(consolidated, encoding="utf-8")
+    # Stamp provenance from the real PDF, as the single-process path does — a
+    # later phase resolves its source to the checkpoint and cannot ask again.
+    from ..services._hierarchy_trust import record_hierarchy_source, record_structured
+
+    record_hierarchy_source(out, src, pdf_backend=pdf_backend, heading_hierarchy=heading_hierarchy)
+    # Chunked ingest is PDF-only: no backend here reads structure from the format.
+    record_structured(out, authoritative=False)
 
     # Flatten per-chunk images into <out>/images/. Names are already
     # page-range-prefixed by `_chunk._run_one_chunk`, so collisions

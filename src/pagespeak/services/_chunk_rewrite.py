@@ -23,7 +23,8 @@ from __future__ import annotations
 
 import re
 
-_IMAGE_REF_RE = re.compile(r"(!\[[^\]]*\]\()([^)]+)(\))")
+from ._image_refs import ImageRef, replace_image_refs
+
 _PAGE_ID_RE = re.compile(r'(id=")page-(\d+)-(\d+)(")')
 _PAGE_REF_RE = re.compile(r"(\(#)page-(\d+)-(\d+)(\))")
 
@@ -41,16 +42,15 @@ def prefix_image_basenames(markdown: str, *, page_range: str) -> tuple[str, dict
     """
     renames: dict[str, str] = {}
 
-    def repl(match: re.Match[str]) -> str:
-        prefix, path, suffix = match.group(1), match.group(2), match.group(3)
-        if not path.startswith("images/"):
-            return match.group(0)
-        dir_part, _, old_basename = path.rpartition("/")
+    def repl(ref: ImageRef) -> str | None:
+        if not ref.target.startswith("images/"):
+            return None
+        dir_part, _, old_basename = ref.target.rpartition("/")
         new_basename = f"{page_range}-{old_basename}"
         renames[old_basename] = new_basename
-        return f"{prefix}{dir_part}/{new_basename}{suffix}"
+        return ref.retargeted(f"{dir_part}/{new_basename}")
 
-    rewritten = _IMAGE_REF_RE.sub(repl, markdown)
+    rewritten = replace_image_refs(markdown, repl)[0]
     return rewritten, renames
 
 

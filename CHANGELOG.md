@@ -2,6 +2,41 @@
 
 Notable changes to pagespeak, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## 0.14.0
+
+### Changed
+- **Python 3.12 is now the minimum.** 3.11 is dropped; `pf-core` 0.20 requires 3.12.
+- **Image-ref parsing is linear inside a blank-line-free block.** Each ref scanned ahead to the end of its paragraph; in a table with an image per row there is no blank line to stop at, so a 2,000-row table took ~4.3s. Now ~6ms.
+- **Decoration detection hashes each image once**, clustering the same hashes at both radii instead of re-reading and re-decoding every image for the second one.
+- **`anthropic` is capped below 1.0** — that release removed `temperature` / `top_p` / `top_k` from `messages.create()`, which pf-core's client sends by default.
+
+### Fixed
+- **Decoration stripping no longer deletes content figures.** The phash-clustering pass removed every ref in a cluster, so distinct figures that share a fingerprint — schematic line art, equations rendered as text on white — were deleted alongside real page furniture. Removal is now gated on the image being a near-exact duplicate (`EXACT_DUPLICATE_HAMMING_DISTANCE`); a merely-similar ref keeps its description as an italic caption, or is left alone when it has none. `DEFAULT_PHASH_HAMMING_DISTANCE` is unchanged. The pass runs inside cleanup, where PDF refs are still alt-less, so on the PDF path the near-exact gate is what decides removal. To recover figures a previous conversion deleted: `pagespeak convert <outdir> --from cleanup --vision-cache-only` (rebuilds from the untouched `raw.md`, no LLM call). See [docs/pipeline-decorations.md](docs/pipeline-decorations.md).
+
+- **One image-ref parser, shared by every pass that scans them.** Each pass carried its own `![alt](target)` regex that stopped at the first `]` in the alt text, so a figure whose description contains a bracket was invisible to it: the audit reported dead links as clean, ingest never copied the file, the splitter never rewrote its path, and the vision pass never captioned it. Several also folded a CommonMark title into the destination, inventing dangling-ref findings for images that were present. `services/_image_refs.py` now exposes `parse_image_refs` / `replace_image_refs` / `ImageRef.retargeted`; `_audit`, `_decorations`, `_local_images`, `_split_write`, `_vision_inject`, `_chunk_rewrite`, `backends/_pdf` and `backends/_docx` all use it.
+
+- **Cleanup no longer creates emphasis shatter.** Promoting a lone first-row table cell to a bold caption wrapped a cell that already carried emphasis, producing `****text****`. A caption that is one bold run is left as is; one with several (`**Table 1** Results`) is flattened into a single run.
+
+- **Doubly-escaped HTML entities decode fully.** `html.unescape` is single-pass, so a source whose entities were escaped twice shipped visible `&lt;…&gt;` debris. Cleanup now decodes to a bounded fixpoint, still outside fenced code.
+
+- **`--workers N --rerun-from <stage>` no longer strips the output dir.** The chunked ingest ran to completion, then Phase 3 re-entered in directory mode and invalidated the `ingest` stage — deleting the `raw.md`, `images/`, `chunks/` and `manifest.json` it had just written — and aborted on the missing `raw.md`, leaving only the master `.md` behind. The combination is now refused up front, before any backend work.
+
+- **The auto-baseline is taken before cache invalidation, not after.** Every stage is upstream of `split`, so any `--rerun-from` removed `sections/` first, and the snapshot then skipped itself for having no sections — so the destructive re-run that most needs the previous version preserved was the one run that never got a `.baselines/<version>/` copy.
+
+- **The chunked-parallel path no longer discards options it cannot honour.** `workers > 1` routes ingest through the chunked path and re-enters Phase 3 in directory mode, which silently dropped `--page-range`, `--english-only` and `--repair-tables` — exit 0, no warning. `--english-only` is now carried through; `--page-range` and `--repair-tables` raise, because the re-entry's source is the concatenated `raw.md` and neither can be applied to it (use `pagespeak repair-tables` on the output dir instead). An env-derived worker count still clamps to 1 rather than erroring.
+
+- **`--heading-hierarchy` survives a chunked ingest.** Only the single-process path stamped `.pagespeak-hierarchy.json`, so `--pdf-backend docling --heading-hierarchy --workers N` lost the outline-derived signal that stands the later heading passes down, and the levels read from the PDF's bookmarks were re-guessed.
+
+- **`--workers 0` names the flag, not the environment.** The error came from the env-var resolver behind it (`PAGESPEAK_WORKERS arg must be >= 1`) and escaped `pagespeak ingest` as an unhandled traceback; `ingest` now reports `ValueError` the way `convert` does.
+
+- **`PAGESPEAK_CHUNK_PAGES` now reaches `pagespeak ingest`.** Its `--chunk-pages` default was hardcoded to 50, so the orchestrator's resolver never saw the `None` that lets the env value through — `convert` already honoured it.
+
+- **An ambient worker count no longer chunks a Top Hat export.** The backend reads the whole export in one pass and ignores page ranges, so chunking it duplicated every question.
+
+- **The web console's worker count is no longer overridable by the environment.** A job requesting single-process omitted `--workers` entirely, so the subprocess picked up an ambient `PAGESPEAK_WORKERS` and the console had no way to say "no, 1". The flag is now always emitted.
+
+- **`PAGESPEAK_WORKERS` now reaches the CLI.** `convert` and `ingest` both hardcoded a `--workers` default of 1, so the documented env var was never read. An explicit `--workers` still wins and is never clamped. An env-derived value is clamped to 1 for anything the chunked-parallel path cannot serve faithfully — a non-PDF source, a directory, a QTI export, or a run passing `--from` / `--stop-after` / `--rerun-from` / `--page-range` / `--english-only` / `--repair-tables`. That path re-ingests from its own manifest rather than resuming from `<stem>.raw.md`, so without the clamp an ambient setting would turn a cheap phase-slice re-run into a full backend re-ingest and silently drop those options. A clamp logs `cli_workers_env_clamped` at INFO.
+
 ## 0.13.0
 
 ### Added

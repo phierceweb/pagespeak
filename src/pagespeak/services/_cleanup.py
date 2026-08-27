@@ -165,7 +165,11 @@ def normalize_table_block(block_lines: list[str]) -> list[str]:
 
     out: list[str] = []
     if caption:
-        out.append(f"**{caption}**")
+        # Backends often emit the caption cell already emphasised; wrapping it
+        # again makes `****text****`, which no later pass undoes.
+        bare = caption.strip()
+        wrapped = bare.startswith("**") and bare.endswith("**") and len(bare) > 4
+        out.append(bare if wrapped and "**" not in bare[2:-2] else f"**{bare.replace('**', '')}**")
         out.append("")
 
     has_divider = any(TABLE_DIVIDER_RE.match(raw.strip()) for raw in work_lines)

@@ -20,10 +20,7 @@ cd "$PROJECT_ROOT"
 
 PYTHON="${PYTHON:-python3.12}"
 if ! command -v "$PYTHON" >/dev/null 2>&1; then
-  PYTHON="python3.11"
-  if ! command -v "$PYTHON" >/dev/null 2>&1; then
-    PYTHON="python3"
-  fi
+  PYTHON="python3"
 fi
 
 if [ ! -d ".venv" ]; then
