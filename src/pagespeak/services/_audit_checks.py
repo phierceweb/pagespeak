@@ -2,10 +2,11 @@
 
 Each detector is a `text -> list[AuditFinding]` function flagging one
 conversion-defect shape seen in converted markdown (see `docs/audit.md`):
-collapsed wide tables, stray HTML table debris, U+FFFD encoding artifacts,
-undecoded HTML entities, shattered emphasis runs, and duplicated junk
-headings. Detectors only report — fixing belongs to the pipeline (or is a
-known wall, as with duplicate scaffold headings).
+collapsed wide tables, misaligned spec tables, stray HTML table debris,
+U+FFFD encoding artifacts, undecoded HTML entities, shattered emphasis runs,
+duplicated junk headings, and image refs voided by their alt text. Detectors
+only report — fixing belongs to the pipeline (or is a known wall, as with
+duplicate scaffold headings).
 
 File-context checks (need a real path on disk) live in `_audit.py`.
 """
@@ -14,9 +15,12 @@ from __future__ import annotations
 
 import re
 from collections import Counter
-from dataclasses import dataclass
 
+from ._audit_finding import AuditFinding
+from ._audit_image_refs import check_broken_image_ref
 from ._fences import fence_flags
+
+__all__ = ["AuditFinding", "check_broken_image_ref", "run_text_checks"]
 
 # A cell holding this many <br>-joined lines is a collapsed sheet, not a
 # legitimate multi-line cell — the sole collapsed-table signal. Calibrated
@@ -49,16 +53,6 @@ _SHATTER_RE = re.compile(r"\*{4,}")
 _HR_LINE_RE = re.compile(r"\s*\*+\s*$")
 _HEADING_RE = re.compile(r"(#{1,6})\s+(.+?)\s*$")
 _INLINE_CODE_RE = re.compile(r"`[^`\n]+`")  # a documented tag/entity in `code`
-
-
-@dataclass(frozen=True)
-class AuditFinding:
-    """One detected defect: which check fired, where, and why."""
-
-    check: str
-    severity: str  # "error" | "warning"
-    line: int  # 1-based line of the (first) occurrence
-    message: str
 
 
 def _fenced_lines(lines: list[str]) -> set[int]:
@@ -282,6 +276,7 @@ _TEXT_CHECKS = (
     check_html_entity,
     check_shattered_emphasis,
     check_duplicate_heading,
+    check_broken_image_ref,
 )
 
 

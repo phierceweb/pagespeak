@@ -169,3 +169,46 @@ def test_alt_containing_a_closed_inner_marker_still_parses_whole() -> None:
     assert len(refs) == 1
     assert refs[0].target == "images/sign.webp"
     assert refs[0].alt.startswith('A sign reading "Remember')
+
+
+def test_target_with_balanced_parens_is_not_truncated() -> None:
+    """CommonMark allows balanced parens in an unbracketed destination. Stopping
+    at the first `)` yields a corrupt target and leaks the tail into prose —
+    silently wrong rather than unparsed, so no audit check reports it."""
+    refs = parse_image_refs("![Fig](images/fig_(1).png)\n")
+    assert [(r.alt, r.target) for r in refs] == [("Fig", "images/fig_(1).png")]
+
+
+def test_target_with_nested_balanced_parens() -> None:
+    refs = parse_image_refs("![Fig](images/a_(b_(c)_d).png)\n")
+    assert [r.target for r in refs] == ["images/a_(b_(c)_d).png"]
+
+
+def test_unbalanced_paren_still_ends_the_target() -> None:
+    """An unmatched `)` closes the destination, as it always did."""
+    refs = parse_image_refs("![Fig](images/plain.png) trailing) text\n")
+    assert [r.target for r in refs] == ["images/plain.png"]
+
+
+def test_escaped_paren_in_target_is_not_counted() -> None:
+    refs = parse_image_refs(r"![Fig](images/a\(b.png)" + "\n")
+    assert [r.target for r in refs] == [r"images/a\(b.png"]
+
+
+def test_unbalanced_open_paren_still_parses() -> None:
+    """Balancing must be strictly additive. Refusing an unbalanced `(` drops the
+    ref entirely, and a ref that is simply absent is reported by nothing —
+    worse than the truncated target this change set out to fix."""
+    refs = parse_image_refs("![Fig](images/a_(b.png)\n")
+    assert [r.target for r in refs] == ["images/a_(b.png"]
+
+
+def test_backslash_at_end_of_line_does_not_run_into_the_next() -> None:
+    """The escape skip must never step over a newline, or the destination
+    swallows the following line."""
+    assert parse_image_refs("![Fig](images/a\\\n# A Heading\n") == []
+
+
+def test_angle_wrapped_target_with_parens_unaffected() -> None:
+    refs = parse_image_refs("![Fig](<images/fig (1).png>)\n")
+    assert [r.target for r in refs] == ["images/fig (1).png"]

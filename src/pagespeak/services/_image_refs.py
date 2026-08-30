@@ -59,16 +59,57 @@ def _alt_end_candidates(text: str, start: int) -> Iterator[int]:
         i += 1
 
 
-def _scan_destination(text: str, start: int) -> tuple[str, int] | None:
-    """`(target, index past it)` for an angle-wrapped or bare destination."""
+def _scan_destination(text: str, start: int, *, balance_parens: bool) -> tuple[str, int] | None:
+    """`(target, index past it)` for an angle-wrapped or bare destination.
+
+    With `balance_parens`, a bare destination may carry balanced parens
+    (`fig_(1).png`) and only an unmatched `)` ends it; without, the first `)`
+    does. The caller tries both — see `_scan_tail`.
+    """
     n = len(text)
     if start < n and text[start] == "<":
         end = text.find(">", start)
         return (text[start + 1 : end], end + 1) if end >= 0 else None
-    i = start
-    while i < n and text[i] not in " \t)\n":
+    i, depth = start, 0
+    while i < n:
+        char = text[i]
+        if char in " \t\n":
+            break
+        # Never step over a newline: the destination ends at the line.
+        if balance_parens and char == "\\" and i + 1 < n and text[i + 1] != "\n":
+            i += 2
+            continue
+        if char == ")":
+            if not balance_parens or depth == 0:
+                break
+            depth -= 1
+        elif balance_parens and char == "(":
+            depth += 1
         i += 1
     return text[start:i], i
+
+
+def _scan_tail(text: str, k: int, *, balance_parens: bool) -> tuple[str, str | None, int] | None:
+    """`(target, title, index past the closing paren)`, scanning from after `(`."""
+    n = len(text)
+    dest = _scan_destination(text, k, balance_parens=balance_parens)
+    if dest is None:
+        return None
+    target, k = dest
+    while k < n and text[k] in " \t":
+        k += 1
+    title: str | None = None
+    if k < n and text[k] in _TITLE_OPENERS:
+        end = text.find(_TITLE_OPENERS[text[k]], k + 1)
+        if end < 0:
+            return None
+        title = text[k + 1 : end]
+        k = end + 1
+        while k < n and text[k] in " \t":
+            k += 1
+    if k >= n or text[k] != ")":
+        return None
+    return target, title, k + 1
 
 
 def parse_image_refs(text: str) -> list[ImageRef]:
@@ -114,27 +155,18 @@ def _parse_one(text: str, start: int, line: int) -> ImageRef | None:
         k = alt_end + 1
         while k < n and text[k] in " \t":
             k += 1
-        dest = _scan_destination(text, k)
-        if dest is None:
+        # Balanced parens first (`fig_(1).png`), then the plain scan that stops
+        # at the first `)`. An unbalanced `(` must still parse: refusing it
+        # would drop the ref entirely, and no check reports a ref that is
+        # simply absent.
+        tail = _scan_tail(text, k, balance_parens=True) or _scan_tail(text, k, balance_parens=False)
+        if tail is None:
             continue
-        target, k = dest
-        while k < n and text[k] in " \t":
-            k += 1
-        title: str | None = None
-        if k < n and text[k] in _TITLE_OPENERS:
-            end = text.find(_TITLE_OPENERS[text[k]], k + 1)
-            if end < 0:
-                continue
-            title = text[k + 1 : end]
-            k = end + 1
-            while k < n and text[k] in " \t":
-                k += 1
-        if k >= n or text[k] != ")":
-            continue
+        target, title, end_of_ref = tail
         return ImageRef(
             alt=alt,
             target=target.strip(),
-            span=(start, k + 1),
+            span=(start, end_of_ref),
             line=line,
             title=title,
         )

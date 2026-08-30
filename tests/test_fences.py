@@ -202,3 +202,40 @@ def test_no_whole_text_transform_rewrites_fenced_lines() -> None:
             if lost:
                 offenders.append(f"{mod_name}.{fn_name} altered {lost[0]!r}")
     assert not offenders, "fence-blind transforms:\n  " + "\n  ".join(offenders)
+
+
+def test_a_shorter_run_does_not_close_a_longer_fence() -> None:
+    """CommonMark: the closing fence must be at least as long as the opener. A
+    doc that shows fenced markdown wraps it in a longer fence; closing on the
+    inner one leaks the sample out to every fence-aware pass."""
+    lines = ["````markdown", "```", "# not a heading", "```", "````", "# H"]
+    assert fence_flags(lines) == [True, True, True, True, True, False]
+
+
+def test_a_shorter_tilde_run_does_not_close_a_longer_one() -> None:
+    lines = ["~~~~", "~~~", "# not a heading", "~~~", "~~~~", "# H"]
+    assert fence_flags(lines) == [True, True, True, True, True, False]
+
+
+def test_a_longer_run_does_close_a_shorter_fence() -> None:
+    """Only the minimum is specified, so a longer closer is still a closer."""
+    lines = ["```", "code", "`````", "# H"]
+    assert fence_flags(lines) == [True, True, True, False]
+
+
+def test_unclosed_fence_warns_because_the_rest_goes_inert(caplog) -> None:
+    """A closer shorter than its opener no longer closes, so a malformed
+    document can mark everything after the opener fenced. Correct per
+    CommonMark, but silent whole-document inertness needs to be visible."""
+    lines = ["# Real", "````", "code", "```", "# Swallowed", "more"]
+    with caplog.at_level("WARNING"):
+        flags = fence_flags(lines)
+    assert flags == [False, True, True, True, True, True]
+    assert "fence_unclosed_at_eof" in caplog.text
+    assert "line=2" in caplog.text
+
+
+def test_a_closed_fence_does_not_warn(caplog) -> None:
+    with caplog.at_level("WARNING"):
+        fence_flags(["```", "code", "```", "# H"])
+    assert "fence_unclosed_at_eof" not in caplog.text

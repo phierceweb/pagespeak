@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import time
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
@@ -31,6 +32,16 @@ logger = get_logger(__name__)
 
 Backend = Literal["claude_code", "anthropic", "openrouter"]
 _VALID_BACKENDS: tuple[Backend, ...] = ("claude_code", "anthropic", "openrouter")
+
+
+@dataclass(frozen=True)
+class AgentResult:
+    """`usage.finish_reason` is the only signal a reply was cut off."""
+
+    content: str
+    run_id: int | None
+    usage: dict[str, Any] = field(default_factory=dict)
+
 
 # Defensive twin of the YAML's top-level `non_chat_keys` declaration: a
 # custom MODEL_ROUTER_CONFIG that omits the declaration must still not
@@ -129,10 +140,10 @@ def invoke_agent(
     backend_override: Backend | None = None,
     client_override: Any | None = None,
     metadata: dict[str, Any] | None = None,
-) -> tuple[str, int | None]:
+) -> AgentResult:
     """Single LLM-call seam for all pagespeak tasks.
 
-    Returns ``(content, run_id)``. ``run_id`` is the pf-core
+    Returns an :class:`AgentResult`. ``run_id`` is the pf-core
     ``llm_runs.id`` if the DB is initialized; ``None`` otherwise.
     Errors from the underlying client are re-raised after a
     ``status='failed'`` row is written.
@@ -196,11 +207,11 @@ def invoke_agent(
                     "run_id": None,
                 }
             )
-        return content, None
+        return AgentResult(content=content, run_id=None, usage=usage)
 
     from pf_core.llm.tracked import tracked_messages_call
 
-    content, _usage, run_id = tracked_messages_call(
+    content, call_usage, run_id = tracked_messages_call(
         client=client,
         agent_type=slug,
         messages=messages,
@@ -216,10 +227,11 @@ def invoke_agent(
         job_id=_job_id_from_env(),
         on_record_error="warn",
     )
-    return content, run_id
+    return AgentResult(content=content, run_id=run_id, usage=dict(call_usage or {}))
 
 
 __all__ = [
+    "AgentResult",
     "Backend",
     "agent_option",
     "begin_call_recording",

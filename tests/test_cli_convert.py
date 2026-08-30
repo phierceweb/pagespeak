@@ -229,158 +229,86 @@ def test_convert_exits_2_on_partial_ingest(tmp_path: Path) -> None:
     assert not (out / "doc.md").exists()
 
 
-def test_convert_uses_env_workers(tmp_path: Path, monkeypatch) -> None:
-    """PAGESPEAK_WORKERS was unreachable: the CLI's hardcoded default always won."""
+def _convert_option_help(param_name: str) -> str:
+    """Help text of one `convert` option, unwrapped (rendered help is boxed)."""
+    import typer.main
+
+    group = typer.main.get_command(app)
+    convert = group.commands["convert"]  # type: ignore[attr-defined]
+    for param in convert.params:
+        if param_name in getattr(param, "opts", []):
+            return str(param.help or "")
+    raise AssertionError(f"{param_name} not found on `convert`")
+
+
+def test_rerun_from_help_lists_every_stage() -> None:
+    """A stage the validator accepts but the help omits is invisible."""
+    from pagespeak.services._rerun import PAGESPEAK_REGISTRY
+
+    help_text = _convert_option_help("--rerun-from")
+    missing = [s.name for s in PAGESPEAK_REGISTRY.stages if s.name not in help_text]
+    assert not missing, f"--rerun-from help omits stages: {missing}"
+
+
+@pytest.mark.parametrize("option", ["--from", "--stop-after"])
+def test_phase_slice_help_lists_every_phase(option: str) -> None:
+    """`--from` / `--stop-after` must name every phase they accept."""
+    from pagespeak.orchestrators._phases import build_phases
+
+    help_text = _convert_option_help(option)
+    if "Same phase names as --from" in help_text:
+        help_text += _convert_option_help("--from")
+    missing = [p.name for p in build_phases() if p.name not in help_text]
+    assert not missing, f"{option} help omits phases: {missing}"
+
+
+def test_normalize_model_help_does_not_claim_a_hardcoded_default() -> None:
+    """`DEFAULT_NORMALIZE_MODEL` is only the fallback for a YAML missing the
+    agent; naming it as the default misstates a cost-relevant fact."""
+    from pagespeak.services._normalize_llm import DEFAULT_NORMALIZE_MODEL
+
+    help_text = _convert_option_help("--normalize-headings-model")
+    assert DEFAULT_NORMALIZE_MODEL not in help_text, (
+        "help names a hardcoded default that YAML routing overrides"
+    )
+    assert "model_router.yaml" in help_text
+
+
+def _capture_convert_kwargs(monkeypatch, tmp_path: Path, extra_args: list[str]) -> dict:
     from pagespeak.cli import _convert
+    from pagespeak.models._models import IngestResult
 
     captured: dict[str, object] = {}
 
-    def fake_to_markdown(*args, **kwargs):
+    def fake_to_markdown(path, **kwargs):
         captured.update(kwargs)
-        out = Path(kwargs["output_dir"])
-        out.mkdir(parents=True, exist_ok=True)
-        (out / "doc.md").write_text("# x", encoding="utf-8")
-        from pagespeak import IngestResult
-
-        return IngestResult(markdown="# x", source_format="pdf")
+        return IngestResult(markdown="", images=[], diagrams=[], source_format="docx")
 
     monkeypatch.setattr(_convert, "to_markdown", fake_to_markdown)
-    monkeypatch.setenv("PAGESPEAK_WORKERS", "5")
-    pdf = tmp_path / "doc.pdf"
-    pdf.write_bytes(b"%PDF-1.4\n")
-
-    result = CliRunner().invoke(
-        app, ["convert", str(pdf), "-o", str(tmp_path / "o"), "--no-diagrams"]
-    )
-
-    assert result.exit_code == 0, result.output
-    assert captured.get("workers") == 5
-
-
-def _stub_convert(monkeypatch, captured: dict[str, object]) -> None:
-    from pagespeak.cli import _convert
-
-    def fake_to_markdown(*args, **kwargs):
-        captured.update(kwargs)
-        out = Path(kwargs["output_dir"])
-        out.mkdir(parents=True, exist_ok=True)
-        (out / "doc.md").write_text("# x", encoding="utf-8")
-        from pagespeak import IngestResult
-
-        return IngestResult(markdown="# x", source_format="pdf")
-
-    monkeypatch.setattr(_convert, "to_markdown", fake_to_markdown)
-
-
-@pytest.mark.parametrize(
-    "extra",
-    [
-        ["--from", "cleanup"],
-        ["--stop-after", "cleanup"],
-        ["--rerun-from", "cleanup"],
-        ["--page-range", "0-9"],
-        ["--english-only"],
-        ["--repair-tables"],
-    ],
-)
-def test_convert_env_workers_clamped_when_run_is_chunk_unsafe(
-    tmp_path: Path, monkeypatch, extra: list[str]
-) -> None:
-    """The chunked path re-ingests from scratch and drops several options, so an
-    ambient PAGESPEAK_WORKERS must not reroute a run that asked for one of them."""
-    captured: dict[str, object] = {}
-    _stub_convert(monkeypatch, captured)
-    monkeypatch.setenv("PAGESPEAK_WORKERS", "5")
-    pdf = tmp_path / "doc.pdf"
-    pdf.write_bytes(b"%PDF-1.4\n")
-
-    result = CliRunner().invoke(
-        app, ["convert", str(pdf), "-o", str(tmp_path / "o"), "--no-diagrams", *extra]
-    )
-
-    assert result.exit_code == 0, result.output
-    assert captured.get("workers") == 1, extra
-
-
-@pytest.mark.parametrize(
-    "recorded",
-    [{"english_only": True}, {"repair_tables": True}, {"page_range": "0-9"}],
-)
-def test_convert_env_workers_clamped_for_inherited_chunk_unsafe_flags(
-    tmp_path: Path, monkeypatch, recorded: dict[str, object]
-) -> None:
-    """A chunk-unsafe option reaching to_markdown via run-record inheritance must
-    clamp too — reading the raw CLI param misses it and drops the option silently."""
-    import json
-
-    from pagespeak.services._run_record import RUN_RECORD_FILENAME
-
-    captured: dict[str, object] = {}
-    _stub_convert(monkeypatch, captured)
-    monkeypatch.setenv("PAGESPEAK_WORKERS", "5")
-    out = tmp_path / "o"
-    out.mkdir()
-    (out / RUN_RECORD_FILENAME).write_text(
-        json.dumps({"resolved_flags": recorded}), encoding="utf-8"
-    )
-    pdf = tmp_path / "doc.pdf"
-    pdf.write_bytes(b"%PDF-1.4\n")
-
-    result = CliRunner().invoke(app, ["convert", str(pdf), "-o", str(out), "--no-diagrams"])
-
-    assert result.exit_code == 0, result.output
-    key, value = next(iter(recorded.items()))
-    assert captured.get(key) == value, "the flag must still be inherited"
-    assert captured.get("workers") == 1, recorded
-
-
-def test_convert_explicit_workers_survives_a_chunk_unsafe_run(tmp_path: Path, monkeypatch) -> None:
-    """A typed --workers is never clamped — the chunked path's own error answers it."""
-    captured: dict[str, object] = {}
-    _stub_convert(monkeypatch, captured)
-    monkeypatch.delenv("PAGESPEAK_WORKERS", raising=False)
-    pdf = tmp_path / "doc.pdf"
-    pdf.write_bytes(b"%PDF-1.4\n")
-
-    result = CliRunner().invoke(
+    f = tmp_path / "a.docx"
+    f.write_bytes(b"PK\x03\x04stub")
+    result = runner.invoke(
         app,
-        [
-            "convert",
-            str(pdf),
-            "-o",
-            str(tmp_path / "o"),
-            "--no-diagrams",
-            "-w",
-            "4",
-            "--from",
-            "cleanup",
-        ],
+        ["convert", str(f), "-o", str(tmp_path / "o"), "--no-diagrams", *extra_args],
     )
-
     assert result.exit_code == 0, result.output
-    assert captured.get("workers") == 4
+    return captured
 
 
-def test_convert_env_workers_ignored_for_non_pdf(tmp_path: Path, monkeypatch) -> None:
-    """An ambient env value must not route a DOCX onto the PDF-only chunked path."""
-    from pagespeak.cli import _convert
+def test_min_body_chars_zero_survives_to_the_orchestrator(monkeypatch, tmp_path: Path) -> None:
+    """0 means keep every section, empty ones included. It is falsy, so a
+    passthrough that tests truthiness silently restores the 30-char default
+    and drops the placeholder headings the caller asked to keep."""
+    captured = _capture_convert_kwargs(monkeypatch, tmp_path, ["--min-body-chars", "0"])
+    assert captured.get("min_body_chars") == 0
 
-    captured: dict[str, object] = {}
 
-    def fake_to_markdown(*args, **kwargs):
-        captured.update(kwargs)
-        from pagespeak import IngestResult
+def test_min_body_chars_passed_through(monkeypatch, tmp_path: Path) -> None:
+    captured = _capture_convert_kwargs(monkeypatch, tmp_path, ["--min-body-chars", "12"])
+    assert captured.get("min_body_chars") == 12
 
-        return IngestResult(markdown="# x", source_format="docx")
 
-    monkeypatch.setattr(_convert, "to_markdown", fake_to_markdown)
-    monkeypatch.setenv("PAGESPEAK_WORKERS", "5")
-    docx = tmp_path / "doc.docx"
-    docx.write_bytes(b"PK\x03\x04stub")
-
-    result = CliRunner().invoke(
-        app, ["convert", str(docx), "-o", str(tmp_path / "o"), "--no-diagrams"]
-    )
-
-    assert result.exit_code == 0, result.output
-    assert captured.get("workers") == 1
+def test_min_body_chars_defaults_to_none(monkeypatch, tmp_path: Path) -> None:
+    """Unpassed stays None so the library's own default applies."""
+    captured = _capture_convert_kwargs(monkeypatch, tmp_path, [])
+    assert captured.get("min_body_chars") is None

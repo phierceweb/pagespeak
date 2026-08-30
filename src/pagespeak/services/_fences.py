@@ -14,6 +14,10 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 
+from pf_core.log import get_logger
+
+logger = get_logger(__name__)
+
 # 3+ backticks or tildes, optional indent, optional info string.
 _FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})")
 
@@ -22,22 +26,37 @@ def fence_flags(lines: list[str]) -> list[bool]:
     """True for every line inside a fenced block, delimiters included.
 
     A block opened with backticks is closed only by backticks (and likewise for
-    tildes), so a `~~~` inside a ``` block does not end it.
+    tildes), so a `~~~` inside a ``` block does not end it. Per CommonMark the
+    closer must also be at least as long as the opener, which is how a document
+    shows fenced markdown: a longer outer fence wrapping a shorter inner one.
     """
     flags: list[bool] = []
     in_fence = False
     fence_char = ""
+    fence_len = 0
+    opened_at = 0
     for line in lines:
         m = _FENCE_RE.match(line)
         if m:
-            char = m.group(1)[0]
+            run = m.group(1)
             if not in_fence:
-                in_fence, fence_char = True, char
-            elif char == fence_char:
+                in_fence, fence_char, fence_len = True, run[0], len(run)
+                opened_at = len(flags) + 1
+            elif run[0] == fence_char and len(run) >= fence_len:
                 in_fence = False
             flags.append(True)  # the delimiter itself is never a heading
             continue
         flags.append(in_fence)
+    if in_fence:
+        # Everything from the opener is now inert for every caller. Say so:
+        # a malformed document silently disabling a whole pass is the failure
+        # this project keeps re-learning.
+        logger.warning(
+            "fence_unclosed_at_eof line=%d delimiter=%s inert_lines=%d",
+            opened_at,
+            fence_char * fence_len,
+            len(flags) - opened_at + 1,
+        )
     return flags
 
 

@@ -17,6 +17,7 @@ from docx.oxml.ns import qn
 from pf_core.log import get_logger
 
 from ..models._models import IngestResult
+from ..utils._alt import flatten_alt
 from ._docx_quality import (
     demote_nonsection_h1,
     emit_heading,
@@ -153,7 +154,7 @@ def _add_image_ref(
         alt = docpr.get("descr") or docpr.get("title") or ""
         if alt:
             break
-    refs.append(f"![{alt}](images/{target.name})")
+    refs.append(f"![{flatten_alt(alt)}](images/{target.name})")
 
 
 _VML_IMAGEDATA = "{urn:schemas-microsoft-com:vml}imagedata"

@@ -302,6 +302,14 @@ def test_resolve_backend_unknown_slug_raises() -> None:
 # --- invoke_agent ---------------------------------------------------------
 
 
+def _invoke_tuple(*args, **kwargs):
+    """`invoke_agent` as `(content, run_id)`, for cases that assert only those."""
+    from pagespeak._agent_runtime import invoke_agent
+
+    result = invoke_agent(*args, **kwargs)
+    return result.content, result.run_id
+
+
 def _make_fake_client(captured: list[dict], response: str = "response") -> object:
     """Build a fake client whose .chat() captures the call kwargs."""
 
@@ -325,7 +333,6 @@ def test_invoke_agent_dispatches_to_routed_client(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """invoke_agent picks the right client based on resolved backend."""
-    from pagespeak._agent_runtime import invoke_agent
 
     monkeypatch.setenv("PAGESPEAK_VISION_BACKEND", "openrouter")
 
@@ -333,7 +340,7 @@ def test_invoke_agent_dispatches_to_routed_client(
     fake = _make_fake_client(captured)
 
     with patch("pagespeak._agent_runtime._get_client_for_backend", return_value=fake):
-        content, run_id = invoke_agent(
+        content, run_id = _invoke_tuple(
             "vision",
             messages=[{"role": "user", "content": "test"}],
             prompt_version=1,
@@ -395,7 +402,6 @@ def test_invoke_agent_writes_llm_runs_row_when_db_initialized(
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/track.db")
     monkeypatch.setenv("PAGESPEAK_VISION_BACKEND", "openrouter")
 
-    from pagespeak._agent_runtime import invoke_agent
     from pagespeak._db import get_engine, init_db
 
     init_db()
@@ -405,7 +411,7 @@ def test_invoke_agent_writes_llm_runs_row_when_db_initialized(
         "pagespeak._agent_runtime._get_client_for_backend",
         return_value=_make_fake_client(captured),
     ):
-        content, run_id = invoke_agent(
+        content, run_id = _invoke_tuple(
             "vision",
             messages=[{"role": "user", "content": "x"}],
             prompt_version=1,
@@ -450,7 +456,6 @@ def test_invoke_agent_registers_system_prompt_in_llm_prompts(
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/track.db")
     monkeypatch.setenv("PAGESPEAK_VISION_BACKEND", "openrouter")
 
-    from pagespeak._agent_runtime import invoke_agent
     from pagespeak._db import get_engine, init_db
 
     init_db()
@@ -462,13 +467,13 @@ def test_invoke_agent_registers_system_prompt_in_llm_prompts(
     # Two calls with the same (agent, version, content) → llm_prompts
     # stays at one row (idempotent), but two llm_runs both FK to it.
     with patch("pagespeak._agent_runtime._get_client_for_backend", return_value=fake):
-        _, run_id_a = invoke_agent(
+        _, run_id_a = _invoke_tuple(
             "vision",
             messages=[{"role": "user", "content": "x"}],
             prompt_version=3,
             system_prompt_text=prompt_text,
         )
-        _, run_id_b = invoke_agent(
+        _, run_id_b = _invoke_tuple(
             "vision",
             messages=[{"role": "user", "content": "y"}],
             prompt_version=3,
@@ -538,14 +543,13 @@ def test_invoke_agent_metadata_splits_into_tags_and_metrics(
     numeric values → metrics with the value cast to float."""
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/track.db")
 
-    from pagespeak._agent_runtime import invoke_agent
     from pagespeak._db import get_engine, init_db
 
     init_db()
 
     fake = _make_fake_client([])
     with patch("pagespeak._agent_runtime._get_client_for_backend", return_value=fake):
-        _, run_id = invoke_agent(
+        _, run_id = _invoke_tuple(
             "vision",
             messages=[{"role": "user", "content": "x"}],
             prompt_version=1,
@@ -596,7 +600,6 @@ def test_begin_call_recording_session_metadata_attaches_to_every_call(
     from pagespeak._agent_runtime import (
         begin_call_recording,
         end_call_recording,
-        invoke_agent,
     )
     from pagespeak._db import get_engine, init_db
 
@@ -606,13 +609,13 @@ def test_begin_call_recording_session_metadata_attaches_to_every_call(
     begin_call_recording(session_metadata={"source_basename": "textbook.pdf"})
     try:
         with patch("pagespeak._agent_runtime._get_client_for_backend", return_value=fake):
-            _, run_a = invoke_agent(
+            _, run_a = _invoke_tuple(
                 "vision",
                 messages=[{"role": "user", "content": "x"}],
                 prompt_version=1,
                 metadata={"image_basename": "img1.png"},
             )
-            _, run_b = invoke_agent(
+            _, run_b = _invoke_tuple(
                 "vision",
                 messages=[{"role": "user", "content": "y"}],
                 prompt_version=1,
@@ -654,7 +657,6 @@ def test_per_call_metadata_overrides_session_metadata_on_key_collision(
     from pagespeak._agent_runtime import (
         begin_call_recording,
         end_call_recording,
-        invoke_agent,
     )
     from pagespeak._db import get_engine, init_db
 
@@ -664,7 +666,7 @@ def test_per_call_metadata_overrides_session_metadata_on_key_collision(
     begin_call_recording(session_metadata={"role": "session-value"})
     try:
         with patch("pagespeak._agent_runtime._get_client_for_backend", return_value=fake):
-            _, run_id = invoke_agent(
+            _, run_id = _invoke_tuple(
                 "vision",
                 messages=[{"role": "user", "content": "x"}],
                 prompt_version=1,
@@ -694,14 +696,13 @@ def test_invoke_agent_skips_db_write_when_not_initialized(
     """If `init_db` has not been called, invoke_agent returns run_id=None
     and writes no rows. Pagespeak still works as a library without
     tracking; init_db is opt-in."""
-    from pagespeak._agent_runtime import invoke_agent
 
     captured: list[dict] = []
     with patch(
         "pagespeak._agent_runtime._get_client_for_backend",
         return_value=_make_fake_client(captured),
     ):
-        content, run_id = invoke_agent(
+        content, run_id = _invoke_tuple(
             "vision",
             messages=[{"role": "user", "content": "x"}],
             prompt_version=1,
@@ -893,3 +894,37 @@ def test_pf_core_claude_code_client_isolates_by_default() -> None:
     from pf_core.clients.claude_code import ClaudeCodeClient
 
     assert inspect.signature(ClaudeCodeClient.__init__).parameters["isolate"].default is True
+
+
+def test_invoke_agent_returns_usage_so_callers_can_see_truncation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The seam must surface `usage` — `finish_reason` is the only truncation
+    signal any caller can see."""
+    from pagespeak._agent_runtime import invoke_agent
+
+    monkeypatch.setenv("PAGESPEAK_VISION_BACKEND", "openrouter")
+
+    class TruncatedClient:
+        def chat(self, *, messages, model, **kwargs):
+            return (
+                "partial",
+                {
+                    "prompt_tokens": 5,
+                    "completion_tokens": 9,
+                    "cost_usd": 0.0,
+                    "duration_ms": 12,
+                    "finish_reason": "length",
+                },
+            )
+
+    with patch("pagespeak._agent_runtime._get_client_for_backend", return_value=TruncatedClient()):
+        result = invoke_agent(
+            "vision",
+            messages=[{"role": "user", "content": "x"}],
+            prompt_version=1,
+        )
+
+    assert result.content == "partial"
+    assert result.run_id is None
+    assert result.usage["finish_reason"] == "length"

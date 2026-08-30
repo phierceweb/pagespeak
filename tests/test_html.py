@@ -164,3 +164,22 @@ def test_empty_and_whitespace_only_fragments() -> None:
     assert html_fragment_to_markdown("") == ""
     assert html_fragment_to_markdown("   ").strip() == ""
     assert html_fragment_to_markdown("<div></div>").strip() == ""
+
+
+def test_multiline_img_alt_yields_a_parseable_ref() -> None:
+    """markdownify interpolates alt verbatim, and a blank line in it ends the
+    scan for the closing `]` — the ref then parses as nothing and every later
+    pass skips the image. This path is reached from the cleanup phase, so any
+    backend's embedded `<img>` hits it, not just QTI."""
+    from pagespeak.services._image_refs import parse_image_refs
+
+    html = '<img src="images/a.png" alt="A widget&#10;&#10;Description automatically generated">'
+    out = html_fragment_to_markdown(html)
+    refs = parse_image_refs(out)
+    assert [r.target for r in refs] == ["images/a.png"], out
+    assert "\n" not in refs[0].alt
+
+
+def test_single_line_img_alt_is_unchanged() -> None:
+    out = html_fragment_to_markdown('<img src="images/a.png" alt="A widget">')
+    assert "![A widget](images/a.png)" in out

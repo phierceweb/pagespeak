@@ -131,7 +131,7 @@ class OpenRouterVisionBackend:
         # tracking. See AnthropicVisionBackend.analyze for rationale.
         from .._agent_runtime import invoke_agent
 
-        content, _run_id = invoke_agent(
+        result = invoke_agent(
             "vision",
             messages=messages,
             prompt_version=DIAGRAM_PROMPT_VERSION,
@@ -141,4 +141,4 @@ class OpenRouterVisionBackend:
             client_override=self._client,
             metadata={"image_basename": image_path.name, "image_phash": phash},
         )
-        return _build_diagram(image_path, content)
+        return _build_diagram(image_path, result.content, run_id=result.run_id, usage=result.usage)

@@ -13,11 +13,12 @@ from ..backends._docx_dispatch import DocxBackendName
 from ..backends._pdf_dispatch import PdfBackendName
 from ..backends._qti import is_qti_export
 from ..orchestrators._chunk import resolve_cli_workers
-from ..orchestrators._dispatch import resolve_dir_mode_stem
 from ..orchestrators._ingest import PartialIngestError
 from ..services._cleanup import CleanupLevel, CrossRefs
 from ..services._diagrams import VisionBackendName
 from ..services._normalize_decision import NormalizeModeOption
+from ._convert_report import report_result
+from ._help_text import NORMALIZE_MODEL_HELP
 from ._inherit import (
     INHERITABLE_FLAGS,
     _is_commandline_source,
@@ -153,6 +154,11 @@ def register(
             "--split-target-kb",
             help="With --split-sections, pack sections to a size target instead of a fixed depth: a branch fitting N KB becomes one file, an oversized branch splits deeper, and an oversized heading-less section is partitioned into '(part i of k)' files. Adapts per branch — works across mixed book shapes. Mutually exclusive with --split-max-level.",
         ),
+        min_body_chars: int | None = typer.Option(
+            None,
+            "--min-body-chars",
+            help="With --split-sections, drop sections whose body has fewer than N non-whitespace characters. Default 30, which discards heading-only shells. Pass 0 to keep every section, including empty ones — right for a document whose empty headings are placeholders to be filled in later.",
+        ),
         english_only: bool = typer.Option(
             False,
             "--english-only/--no-english-only",
@@ -196,7 +202,7 @@ def register(
         normalize_headings_model: str | None = typer.Option(
             None,
             "--normalize-headings-model",
-            help="LLM-mode only: model passed to `claude --model …`. Defaults to claude-haiku-4-5-20251001.",
+            help=NORMALIZE_MODEL_HELP,
         ),
         normalize_headings_backend: str | None = typer.Option(
             None,
@@ -231,12 +237,12 @@ def register(
         rerun_from: str | None = typer.Option(
             None,
             "--rerun-from",
-            help="Bust caches at this stage and re-run from there. Stages: ingest | cleanup | decorations | normalize | vision | split. Unspecified output-shaping flags come from the run record (see --inherit). See docs/caching.md.",
+            help="Bust caches at this stage and re-run from there. Stages: ingest | cleanup | decorations | normalize | repair | structure | vision | split. Unspecified output-shaping flags come from the run record (see --inherit). See docs/caching.md.",
         ),
         start: str | None = typer.Option(
             None,
             "--from",
-            help="Begin at this phase using the existing upstream checkpoint as input (does NOT bust caches — that's --rerun-from). Phases: ingest | cleanup | normalize | vision | split. --from X --stop-after X runs exactly one phase.",
+            help="Begin at this phase using the existing upstream checkpoint as input (does NOT bust caches — that's --rerun-from). Phases: ingest | cleanup | normalize | repair | structure | vision | split. --from X --stop-after X runs exactly one phase.",
         ),
         stop_after: str | None = typer.Option(
             None,
@@ -284,7 +290,6 @@ def register(
 
             _os.environ["PAGESPEAK_HEADING_NORMALIZE_BACKEND"] = normalize_headings_backend
             _os.environ["PAGESPEAK_HEADING_NORMALIZE_FULL_BACKEND"] = normalize_headings_backend
-
         if rerun_from is not None:
             from ..services._rerun import RERUN_STAGES
 
@@ -404,7 +409,7 @@ def register(
                 ),
                 split_max_level=_flag("split_max_level", split_max_level),
                 split_target_kb=_flag("split_target_kb", split_target_kb),
-                min_body_chars=_flag("min_body_chars", None),
+                min_body_chars=_flag("min_body_chars", min_body_chars),
                 english_only=english_only,
                 regenerate_toc=_flag("regenerate_toc", True),
                 decoration_threshold=_flag("decoration_threshold", None),
@@ -456,45 +461,9 @@ def register(
             typer.echo(f"Error: {exc}", err=True)
             raise typer.Exit(1) from exc
 
-        output_dir.mkdir(parents=True, exist_ok=True)
-        # In directory-input mode, derive the stem from the raw.md inside
-        # the directory rather than from the directory name itself. A QTI
-        # export dir has no raw.md — use its own name as the stem.
-        if input_path.is_dir() and not is_qti_export(input_path):
-            doc_stem = resolve_dir_mode_stem(input_path)
-        else:
-            doc_stem = input_path.stem
-
-        # An early --stop-after leaves result.markdown as an intermediate
-        # checkpoint; the final <stem>.md is only written on completed runs
-        # (the guard lives in to_markdown, which owns the write).
-        if stop_after not in (None, "vision", "split"):
-            typer.echo(
-                f"stopped after '{stop_after}'; wrote the {stop_after} checkpoint "
-                f"(final {doc_stem}.md left intact)"
-            )
-            return
-
-        # QTI: per-quiz files were written flat at the output root (the
-        # one independent document directory per exam — report those instead
-        # of writing a single <stem>.md.
-        if is_qti_export(input_path):
-            exam_dirs = sorted(d for d in output_dir.iterdir() if d.is_dir())
-            typer.echo(f"wrote {len(exam_dirs)} quiz document(s) under {output_dir}/")
-            typer.echo(f"  format       : {result.source_format}")
-            typer.echo(f"  images       : {len(result.images)}")
-            typer.echo(f"  diagrams     : {sum(1 for d in result.diagrams if d.mermaid)}")
-            return
-
-        # to_markdown() wrote the master; report it.
-        md_path = output_dir / f"{doc_stem}.md"
-        typer.echo(f"wrote {md_path}")
-        typer.echo(f"  format       : {result.source_format}")
-        typer.echo(f"  images       : {len(result.images)}")
-        typer.echo(f"  diagrams     : {sum(1 for d in result.diagrams if d.mermaid)}")
-        typer.echo(f"  non-diagrams : {sum(1 for d in result.diagrams if not d.mermaid)}")
-        # The actual `split_sections` choice may have come from a preset
-        # — `(output_dir / 'sections').is_dir()` is the source of truth.
-        sections_dir = output_dir / "sections"
-        if sections_dir.is_dir():
-            typer.echo(f"  sections     : {sections_dir}")
+        report_result(
+            input_path=input_path,
+            output_dir=output_dir,
+            result=result,
+            stop_after=stop_after,
+        )

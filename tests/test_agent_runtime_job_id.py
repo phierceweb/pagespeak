@@ -55,12 +55,13 @@ def test_job_id_from_env_is_recorded(monkeypatch, tmp_path):
 
     from pagespeak._agent_runtime import invoke_agent
 
-    _content, run_id = invoke_agent(
+    _res = invoke_agent(
         "vision",
         messages=[{"role": "user", "content": "hi"}],
         prompt_version=1,
         client_override=_FakeClient(),
     )
+    run_id = _res.run_id
     assert run_id is not None
 
     from pf_core.llm.tracking import LlmRunRepo
@@ -87,12 +88,13 @@ def test_no_job_id_env_is_none(monkeypatch, tmp_path):
 
     from pagespeak._agent_runtime import invoke_agent
 
-    _content, run_id = invoke_agent(
+    _res = invoke_agent(
         "vision",
         messages=[{"role": "user", "content": "hi"}],
         prompt_version=1,
         client_override=_FakeClient(),
     )
+    run_id = _res.run_id
     from pf_core.llm.tracking import LlmRunRepo
 
     row = LlmRunRepo().get(run_id)

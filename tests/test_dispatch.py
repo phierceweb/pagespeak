@@ -1650,3 +1650,13 @@ def test_chunked_route_rejects_rerun_from(tmp_path: Path, monkeypatch) -> None:
 
     assert ran == [], "must refuse before spending a full chunked ingest"
     assert sorted(p.name for p in out.iterdir()) == before, "nothing may be deleted"
+
+
+def test_to_markdown_docstring_lists_every_rerun_stage() -> None:
+    """The public docstring is a library consumer's only stage reference."""
+    from pagespeak.orchestrators._dispatch import to_markdown
+    from pagespeak.services._rerun import PAGESPEAK_REGISTRY
+
+    doc = to_markdown.__doc__ or ""
+    missing = [s.name for s in PAGESPEAK_REGISTRY.stages if f'"{s.name}"' not in doc]
+    assert not missing, f"to_markdown docstring omits stages: {missing}"

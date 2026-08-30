@@ -27,6 +27,8 @@ from ._vision_parse import _build_diagram
 if TYPE_CHECKING:
     from pf_core.clients.claude_code import ClaudeCodeClient
 
+    from .._agent_runtime import AgentResult
+
 logger = get_logger(__name__)
 
 DEFAULT_VISION_MODEL = "claude-haiku-4-5-20251001"
@@ -140,7 +142,7 @@ class AnthropicVisionBackend:
         # preserves test-injected mocks.
         from .._agent_runtime import invoke_agent
 
-        content, _run_id = invoke_agent(
+        result = invoke_agent(
             "vision",
             messages=messages,
             prompt_version=DIAGRAM_PROMPT_VERSION,
@@ -150,7 +152,7 @@ class AnthropicVisionBackend:
             client_override=self._client,
             metadata={"image_basename": image_path.name, "image_phash": phash},
         )
-        return _build_diagram(image_path, content)
+        return _build_diagram(image_path, result.content, run_id=result.run_id, usage=result.usage)
 
 
 # --- Claude Code backend ------------------------------------------
@@ -217,7 +219,7 @@ class ClaudeCodeVisionBackend:
 
     def _run_once(
         self, prompt: str, image_name: str, phash: str | None = None, *, system_text: str
-    ) -> str:
+    ) -> AgentResult:
         """One chat invocation via `invoke_agent` (captures the llm_runs row).
 
         pf-core retries transients internally (`retry=1`); raises RuntimeError
@@ -228,7 +230,7 @@ class ClaudeCodeVisionBackend:
         from .._agent_runtime import invoke_agent
 
         try:
-            content, _run_id = invoke_agent(
+            result = invoke_agent(
                 "vision",
                 messages=[{"role": "user", "content": prompt}],
                 prompt_version=DIAGRAM_PROMPT_VERSION,
@@ -238,8 +240,8 @@ class ClaudeCodeVisionBackend:
                 client_override=self._client,
                 metadata={"image_basename": image_name, "image_phash": phash},
             )
-            assert isinstance(content, str)  # pf-core's chat() contract
-            return content
+            assert isinstance(result.content, str)  # pf-core's chat() contract
+            return result
         except AppError as e:
             # Surface pf-core's stderr_head + returncode inline in the message.
             ctx = getattr(e, "context", {}) or {}
@@ -265,8 +267,8 @@ class ClaudeCodeVisionBackend:
     ) -> Diagram:
         rendered = render_diagram_prompt(original_alt)
         prompt = f"Read the image at {image_path.resolve()}.\n\n{rendered}"
-        content = self._run_once(prompt, image_path.name, phash=phash, system_text=rendered)
-        return _build_diagram(image_path, content)
+        result = self._run_once(prompt, image_path.name, phash=phash, system_text=rendered)
+        return _build_diagram(image_path, result.content, run_id=result.run_id, usage=result.usage)
 
 
 # --- Backend factory ------------------------------------------------------

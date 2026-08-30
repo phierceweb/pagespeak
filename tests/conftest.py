@@ -24,6 +24,7 @@ import pytest
 # Genuinely mixed modules worth preserving (test_docx_dispatch) use a per-test
 # `pytest.importorskip` instead of this map.
 _OPTIONAL_EXTRA_FOR_MODULE = {
+    "test_docx_image_alt": "docx",
     "test_docx_structured": "docx",
     "test_docx_table": "docx",
     "test_docx_walk": "docx",

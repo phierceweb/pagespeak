@@ -2,6 +2,26 @@
 
 Notable changes to pagespeak, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## 0.15.0
+
+### Added
+- **`audit` check `broken_image_ref`** (error). Flags an image ref whose alt breaks it, so `parse_image_refs` reads nothing. Nothing else could report it: an unparsed ref is skipped by every later pass, and `dangling_image_ref` is parser-gated, so it cannot see one either. Fires only where collapsing whitespace would repair the ref, so `!` before a bracket in code and CommonMark shortcut reference images stay clean; fence- and inline-code-aware.
+- **`--min-body-chars` on `convert`.** Sets the split's minimum section body size (default 30, `DEFAULT_MIN_BODY_CHARS`). `0` keeps every section, heading-only ones included — for a document whose empty headings are placeholders to fill in later. The value was already accepted by `to_markdown` and inherited from the run record, but had no flag.
+- **Heading-normalize reports short LLM responses.** The `llm` and `llm_full` modes log `heading_normalize_low_coverage` when a response levels fewer than `PAGESPEAK_NORMALIZE_MIN_COVERAGE_PCT` (default 90) of the headings it was given; un-covered headings keep their extracted level. Not applied to `llm_dehead`, where an absent verdict means KEEP.
+- **Vision responses are validated and recorded.** A registered validator pipeline writes one signal per vision call to `llm_run_validations` (empty caption; `is_diagram` set with no mermaid). Observability only — the emitted markdown is unchanged.
+- `invoke_agent` returns `AgentResult(content, run_id, usage)`, carrying `finish_reason` through to callers.
+
+### Fixed
+- **A shorter fence no longer closes a longer one.** `fence_flags` compared only the delimiter character, so a ``` inside a ```` block ended it and the sample leaked out as prose to every fence-aware pass — `check_html_fragment`, `check_html_entity`, `check_shattered_emphasis`, `check_duplicate_heading`, `broken_image_ref`, and the TOC / `transform_outside_fences` passes. CommonMark's rule (the closer must match the character and be at least as long) is now applied. Affects documents that show fenced markdown by wrapping it in a longer fence. A fence left unclosed at end of file now logs `fence_unclosed_at_eof` with the opener's line and how many lines it renders inert — under the old leniency a shorter delimiter would accidentally have terminated it.
+- **An image target may contain balanced parentheses.** `_scan_destination` stopped at the first `)`, so `![Fig](images/fig_(1).png)` parsed to the target `images/fig_(1` and leaked `).png)` into prose — it still parsed, so no check reported the corruption. Backslash-escaped parens are not counted; angle-wrapped targets are unaffected.
+- **Multi-line image alt no longer voids the ref.** Word writes auto-generated alt as `<subject>` + blank line + `Description automatically generated`. The blank line ends the alt scan in `parse_image_refs`, so the ref parsed as nothing and every later pass skipped the image — including the vision pass, which still made (and paid for) the LLM call, then had no ref to inject its caption and mermaid into. Alt is flattened to one line at both sites that construct a ref: the structure-faithful DOCX backend, and `utils/_html.py` (reached by Canvas QTI stems and by the cleanup phase's embedded-`<img>` conversion, so it affected every backend). New `utils/_alt.flatten_alt`; the parser is unchanged.
+- `--rerun-from`, `--from` / `--stop-after`, and the `to_markdown` docstring all omitted the `repair` and `structure` stages.
+- `--normalize-headings-model` help named a hardcoded default that the model router overrides; the text is now derived from the router, naming each mode's actual model.
+
+### Changed
+- **Heading-normalize `max_input_tokens` on `claude_code` raised 800K → 900K** for `heading_normalize_full` and `heading_normalize_dehead`, matching the openrouter entries for the same Opus model. Documents between the two figures now keep their body anchors instead of falling back to headings-only.
+- Requires `pf-core ~=0.22.0`.
+
 ## 0.14.0
 
 ### Changed

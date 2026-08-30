@@ -50,6 +50,7 @@ Every detector exists because the defect was **observed in real converted output
 | `html_entity` | Undecoded `&lt;` / `&amp;` / `&#8217;` outside code fences — a cleanup regression | error |
 | `shattered_emphasis` | Emphasis-marker pileups (`****word****`) from shattered runs | error |
 | `dangling_image_ref` | `![…](path)` whose relative target doesn't exist on disk | error |
+| `broken_image_ref` | An image ref whose alt breaks it — a blank line in the alt ends the parser's scan for the closing `]`, so the ref reads as nothing. The only check that can see this: an unparsed ref is skipped by every later pass (the figure silently loses its vision caption and mermaid), and `dangling_image_ref` is itself parser-gated, so it cannot report one either. Flags only a ref that collapsing whitespace would repair, so `!` before a bracket in code (`!['a','b'].includes(x)`) and CommonMark shortcut reference images (`![Figure 1]`) are not errors. Fix at the site that built the ref (`utils._alt.flatten_alt`), never by loosening the parser | error |
 | `misaligned_table` | A wide multi-column spec table whose cell boundaries drifted during extraction — two labels merge into one label-column cell, so a value lands under the wrong label. Real RAG noise, but **not auto-fixable** (Marker and Docling reproduce it identically — ambiguous multi-line-cell geometry in the source PDF), so it is report-only like `duplicate_heading`. Gated on a non-empty sibling value cell, so blank fill-in forms / worksheets are not flagged | warning |
 | `empty_section` | A `sections/` file with no body **and** no subsections — a true orphan shell | warning |
 | `duplicate_heading` | The same heading text ≥4 times in one file (recurring scaffold furniture) | warning |
@@ -77,7 +78,7 @@ Detector-shape notes that prevent false positives — preserve these behaviors w
 
 ## Adding a new detector
 
-1. **Provenance first.** A detector is added only for a defect shape observed in real converted output (name the document in the detector's docstring or the changelog). No speculative checks.
+1. **Provenance first.** A detector is added only for a defect shape observed in real converted output. Record that provenance as the *shape* and the source format that produces it ("Word's auto-generated alt text", "a Marker table split at a page break") — never the document's name or any identifying detail, which would ship in the wheel. No speculative checks.
 2. Pure text checks go in `services/_audit_checks.py` (a `text -> list[AuditFinding]` function, registered in `_TEXT_CHECKS`); checks needing the filesystem go in `services/_audit.py` and are wired into `audit_file()`.
 3. Pick the severity by the rule above: content damage = error; needs-human- judgment = warning.
 4. Pair it with tests in the matching `tests/test_audit_checks.py` / `tests/test_audit.py` — a positive case modelled on the real defect, a negative case for the closest legitimate output shape, and a fenced-code immunity case if it's a text check.

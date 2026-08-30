@@ -17,8 +17,9 @@ def register(app: typer.Typer) -> None:
         help=(
             "Scan converted markdown output for known conversion defects "
             "(collapsed tables, HTML debris, encoding damage, undecoded "
-            "entities, shattered emphasis, empty sections, dangling image "
-            "refs, duplicated junk headings). Read-only, $0, no LLM calls. "
+            "entities, shattered emphasis, empty sections, dangling and "
+            "unparseable image refs, duplicated junk headings). "
+            "Read-only, $0, no LLM calls. "
             "Audits final artifacts only (skips stage checkpoints and "
             "caches). Exits 1 if any errors are found; warnings alone "
             "exit 0. The report narrows where to read — it does not "

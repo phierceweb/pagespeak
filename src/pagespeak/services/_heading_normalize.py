@@ -36,6 +36,7 @@ from ..prompts._heading_normalize import (
 from ..prompts._heading_normalize_dehead import HEADING_NORMALIZE_DEHEAD_PROMPT_VERSION
 from ..prompts._heading_normalize_full import HEADING_NORMALIZE_FULL_PROMPT_VERSION
 from ._cleanup import strip_marker_pollution as _strip_marker_pollution
+from ._normalize_coverage import warn_on_low_coverage
 from ._normalize_heuristic import (
     _heuristic_level_for as _heuristic_level_for,
 )
@@ -331,7 +332,7 @@ def gather_normalize_levels(
             else:
                 from .._agent_runtime import invoke_agent
 
-                response, _run_id = invoke_agent(
+                response = invoke_agent(
                     agent_slug,
                     messages=[{"role": "user", "content": prompt}],
                     prompt_version=prompt_version_for_cache,
@@ -342,7 +343,7 @@ def gather_normalize_levels(
                         "heading_count": len(target_headings),
                         "anchors_included": include_anchors,
                     },
-                )
+                ).content
         except Exception as e:  # any backend failure is non-fatal
             logger.warning("heading_normalize_invoke_failed: %s", e)
             return None
@@ -410,6 +411,8 @@ def gather_normalize_levels(
             len(levels),
             len(target_headings),
         )
+    if mode in ("llm", "llm_full"):
+        warn_on_low_coverage(len(levels), len(target_headings), mode=mode)
 
     return NormalizeData(
         gather=GatherResult(

@@ -25,6 +25,8 @@ from bs4 import BeautifulSoup
 from bs4.element import NavigableString, Tag
 from markdownify import markdownify
 
+from ._alt import flatten_alt
+
 _HEADING_TAGS = ["h1", "h2", "h3", "h4", "h5", "h6"]
 _BLANK_RUN_RE = re.compile(r"\n{3,}")
 
@@ -86,6 +88,11 @@ def html_fragment_to_markdown(
             latex = _attr(img, "data-equation-content") or _latex_from_alt(_attr(img, "alt"))
             img.replace_with(NavigableString(f"${latex}$" if latex else ""))
             continue
+        # markdownify interpolates alt verbatim; a blank line in it (Word's
+        # auto-generated alt) yields a ref no consumer can parse.
+        alt = _attr(img, "alt")
+        if alt:
+            img["alt"] = flatten_alt(alt)
         if media_resolver is not None:
             resolved = media_resolver(_attr(img, "src"))
             if resolved:

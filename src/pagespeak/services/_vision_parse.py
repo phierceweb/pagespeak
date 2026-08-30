@@ -45,7 +45,17 @@ def _failure_caption(image_path: Path, original_alt: str) -> str:
     return f"Image at {image_path.name} (extraction failed)."
 
 
-def _build_diagram(image_path: Path, raw_text: str) -> Diagram:
+def _build_diagram(
+    image_path: Path,
+    raw_text: str,
+    *,
+    run_id: int | None = None,
+    usage: dict[str, Any] | None = None,
+) -> Diagram:
+    # Records signals on `llm_run_validations`; never alters what ships.
+    from ._vision_validate import validate_vision_response
+
+    validate_vision_response(raw_text, run_id=run_id, usage=usage)
     parsed = _parse_response(raw_text, image_path)
     if parsed.get("parse_failed"):
         raise VisionParseError(f"unparseable vision response for {image_path.name}")

@@ -153,8 +153,9 @@ def to_markdown(
         source_label: Human source title; auto-derived from the filename when
             omitted and frontmatter is on.
         rerun_from: Bust caches at this stage + downstream and re-run
-            (`"ingest"`/`"cleanup"`/`"decorations"`/`"normalize"`/`"vision"`/
-            `"split"`); None → use existing caches. See `docs/caching.md`.
+            (`"ingest"`/`"cleanup"`/`"decorations"`/`"normalize"`/`"repair"`/
+            `"structure"`/`"vision"`/`"split"`); None → use existing caches.
+            See `docs/caching.md`.
         start: Begin at this phase from the existing upstream checkpoint (does
             NOT bust caches); errors if that checkpoint is absent.
         stop_after: Halt after this phase. `start == stop_after` runs exactly

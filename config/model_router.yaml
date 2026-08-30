@@ -91,7 +91,7 @@ agents:
     backends:
       claude_code:
         model: opus
-        max_input_tokens: 800000
+        max_input_tokens: 900000
       anthropic:
         model: claude-opus-4-8
         max_tokens: 8000
@@ -119,11 +119,11 @@ agents:
         # session has access to. Best reasoning available, $0 under an
         # active Max subscription. Swap to `sonnet` for faster/cheaper.
         model: opus
-        # Opus/Sonnet via the CLI support 1M extended context. 800K
-        # leaves headroom so body anchors go through on textbook-scale
-        # docs (~350K). Drop to 150K if you want forced fallback to
-        # headings-only mode.
-        max_input_tokens: 800000
+        # Opus via the CLI has a 1M context. 900K leaves ~100K for the
+        # one-line-per-heading reply; below this the payload falls back to
+        # headings-only, dropping the body anchors the prompt judges by.
+        # Drop to 150K to force that fallback.
+        max_input_tokens: 900000
       anthropic:
         # Direct Anthropic API. Opus 4.8 is a reasoning model that
         # rejects `temperature` and `top_p` — set both to null to

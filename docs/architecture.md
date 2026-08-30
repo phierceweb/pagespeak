@@ -108,6 +108,7 @@ Versioned LLM-facing prompts: each YAML (`diagram.yaml`, `heading_normalize.yaml
 | `utils/_mathml.py` | Presentation-MathML → LaTeX pre-pass for the HTML ingest path (prevents body-text equation flattening). | — |
 | `utils/_prompts.py` | Re-export shim for `prompts/_diagram.py`'s `DIAGRAM_PROMPT` (stable import path). | — |
 | `utils/_html.py` | `html_fragment_to_markdown()` — sanitize + convert an inline HTML fragment to markdown (drop hidden/editor cruft, equation-image→LaTeX, media-token resolve, heading→bold, sub/sup flatten). Used by the QTI backend; available to any caller with inline HTML. | — |
+| `utils/_alt.py` | `flatten_alt` — image alt text as one line. A blank line inside alt voids the whole `![alt](target)` ref for `parse_image_refs`; applied at every site that constructs a ref. | — |
 
 ### `services/`
 
@@ -120,6 +121,7 @@ Versioned LLM-facing prompts: each YAML (`diagram.yaml`, `heading_normalize.yaml
 | `services/_vision_inject.py` | Markdown-injection half of the vision pass: `inject_diagrams` (caption + Mermaid rewrite of matching image refs) and `alt_text_by_basename` (feeds the alt-aware prompt). Pure text; re-exported by `_diagrams.py`. | — |
 | `services/_vision_media.py` | Image media-type lookup shared by the API vision backends. | — |
 | `services/_vision_parse.py` | Vision response parsing: model output (raw / fenced / preamble-wrapped JSON) → `Diagram`. | — |
+| `services/_vision_validate.py` | Registers the `vision` validator pipeline; records a signal per reply on `llm_run_validations` (empty caption, `is_diagram` with no mermaid). Observability only — never changes what ships. | — |
 | `services/_cleanup.py` | Cleanup pipeline (`off` / `basic` / `aggressive`). Each per-line transform exposed as a named function. | yes — only imported when `cleanup != "off"` |
 | `services/_cleanup_diagnose.py` | Detect→correct dispatch for whole-document heading cleanup: each demotion pass registers a diagnosis; passes fire only when their defect is present. | — |
 | `services/_cleanup_transforms.py` | Per-line cleanup transforms: garbage/HTML/whitespace stripping, numbered-heading promotion + depth-locking, emphasis stripping, list-bullet normalization, cross-ref repair, page-span/ref stripping, Marker-pollution removal. | — |
@@ -135,6 +137,7 @@ Versioned LLM-facing prompts: each YAML (`diagram.yaml`, `heading_normalize.yaml
 | `services/_structure_passes.py` | `apply_structure_passes()` — the structure phase's pass sequence (enumerated-item nesting, then flat-H1 demote + orphan-H1 rebalance unless the hierarchy is trusted). | — |
 | `services/_heading_normalize.py` | `gather_normalize_levels()` / `apply_normalization()` — opt-in LLM pass that fixes flattened chapter+subsection levels via Claude Code. | yes — only imported when `normalize_headings=True` |
 | `services/_normalize_llm.py` | LLM heading-normalize machinery: prompt building, invocation, response parsing, model/token resolution, response cache key. | yes |
+| `services/_normalize_coverage.py` | Warns when an LLM level response covers too few of the headings it was given — a short response leaves the rest at their extracted level. | — |
 | `services/_normalize_heuristic.py` | Deterministic heuristic heading-level assignment + the structural filter (`heuristic` mode). | — |
 | `services/_normalize_decision.py` | `resolve_normalize_mode()` — auto-select the heading-normalize engine per document from a $0 no-LLM heading-shape signal (`auto` mode). | — |
 | `services/_normalize_repair.py` | `repair_headings()` — $0 deterministic post-LLM heading repair (detect→correct, no-op on a clean doc): numbered-depth lock, span-strip, number-only / doubled-text / spaced-divider demotes. | — |
@@ -151,7 +154,9 @@ Versioned LLM-facing prompts: each YAML (`diagram.yaml`, `heading_normalize.yaml
 | `services/_provenance.py` | `build_frontmatter()` (ordered dict → YAML, JSON-encoded values, skips None) + `build_provenance_frontmatter()` (the opt-in base `source_type` / `source_label` / `source_file` triple). The multi-source RAG tag enabler; the split phase builds the rich per-section block on top of these. Distinct from `_frontmatter.py` (which strips *input* frontmatter). | — |
 | `services/_staging.py` | `resolve_staged()` / `staged_sources()` — a `conversions/in` entry is either a file or a *bundle* (a directory holding one deliverable plus its sidecars, so images stay beside the document). Always resolves a bundle to the inner deliverable: a directory input triggers dir-mode, which requires out == in. Used by the web scan and `repair-tables` source lookup. | — |
 | `services/_deliver.py` | `strip_for_delivery()` — mirror a converted output dir into a parallel delivery dir keeping only the master `.md` + `sections/` + `images/`; drops stage checkpoints (suffixes derived from the stage registry), run records, content caches, chunks, manifests. Powers `pagespeak deliver`; handles a single doc or a fan-out export; rebuilds the destination on each run. | — |
-| `services/_audit_checks.py` | Pure text-defect detectors for `pagespeak audit` (`AuditFinding` + one `text -> findings` function per observed defect shape: collapsed tables, HTML debris, U+FFFD, entities, shattered emphasis, duplicate headings). Fence-aware; detectors report, never fix. | — |
+| `services/_audit_finding.py` | `AuditFinding` — the finding every detector returns. Its own module so detector modules share it without importing each other. | — |
+| `services/_audit_checks.py` | Pure text-defect detectors for `pagespeak audit` (one `text -> findings` function per observed defect shape: collapsed and misaligned tables, HTML debris, U+FFFD, entities, shattered emphasis, duplicate headings). Fence-aware; detectors report, never fix. | — |
+| `services/_audit_image_refs.py` | The image-ref integrity detector (`broken_image_ref`): a ref whose alt voids it for `parse_image_refs`, so no later pass can see the figure. Split out because it reasons about the ref parser rather than prose shapes. | — |
 | `services/_audit.py` | `audit_paths()` / `render_report()` — walks final artifacts (skips checkpoints, `chunks/`, dot-dirs), adds file-context checks (orphan-shell sections, dangling image refs), aggregates an `AuditReport`. Powers `pagespeak audit`. See `docs/audit.md`. | — |
 | `services/_image_refs.py` | `parse_image_refs()` / `replace_image_refs()` / `ImageRef` — the shared `![alt](target "title")` parser every ref-scanning pass uses instead of its own regex, so bracketed alt text and CommonMark titles are handled identically everywhere. Also `degrade_missing_image_refs()` — rewrites an image ref whose local target is missing on disk into its alt text (an italic caption); external `http`/`data` refs untouched. The complementary FIX to the audit's `dangling_image_ref` check; runs in the vision phase so a broken `![alt](missing)` link becomes the RAG-usable description. | — |
 | `services/_vision_audit.py` | `audit_vision()` / `check_identity_divergence()` — flags likely-confabulated vision captions by comparing each generated caption (`.vision-cache`) to the author's source alt (`structured.md`): a caption that keeps none of the alt's subject words is a candidate. Domain-agnostic (generic figure/English filter only), $0, no LLM. Powers `pagespeak vision-audit`. See `docs/audit.md`. | — |
@@ -184,7 +189,9 @@ Versioned LLM-facing prompts: each YAML (`diagram.yaml`, `heading_normalize.yaml
 |---|---|---|
 | `cli/__init__.py` | Typer app, validators, `main()` entry point. | — |
 | `cli/_convert.py` | `convert` subcommand — accepts a file path (runs ingest + Phase 3) or an output dir with `<stem>.raw.md` (Phase 3 only). | — |
+| `cli/_convert_report.py` | What `convert` echoes after a run — the master path plus format/image/diagram/section counts, or the per-quiz summary for a QTI export, or the checkpoint notice for an early `--stop-after`. | — |
 | `cli/_inherit.py` | Run-record flag inheritance for `convert` — output-shaping flags not passed explicitly default to the dir's `.pagespeak-run.json` `resolved_flags`; `--no-inherit` disables. Engine/spend flags never inherit. | — |
+| `cli/_help_text.py` | Help strings derived from live config rather than restated — `--normalize-headings-model` names each mode's routed model, so the text cannot drift from `model_router.yaml`. Falls back to a claim-free sentence when the config is unreadable. | — |
 | `cli/_ingest.py` | `ingest` subcommand — backend phase only (`--workers` flag for chunked-parallel PDF). | — |
 | `cli/_invalidate.py` | `invalidate` subcommand — bust caches at a stage (plus downstream structural files) without re-running. | — |
 | `cli/_baseline.py` | `baseline` subcommand (`save` / `list` / `diff`) — snapshot a run's deliverables; compare runs. | — |

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 import pytest
@@ -1220,3 +1221,84 @@ def test_llm_dehead_all_keep_is_a_clean_noop() -> None:
         md, mode="llm_dehead", invoke=lambda _p: "1: KEEP\n2: KEEP\n3: KEEP\n4: KEEP\n"
     )
     assert _heading_lines(apply_normalization(md, data)) == _heading_lines(md)
+
+
+def test_normalize_warns_when_llm_covers_few_headings(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A partial response is applied silently — un-covered headings keep the
+    level the extractor gave them."""
+    md = (
+        "#### Chapter 1 Introduction\n"
+        "intro\n"
+        "#### 1.1 Foo\n"
+        "foo body\n"
+        "#### 1.2 Bar\n"
+        "bar body\n"
+        "#### Chapter 2 Methods\n"
+        "methods body\n"
+    )
+
+    def fake_invoke(prompt: str) -> str:
+        # One level for four headings — the other three go unmentioned.
+        return "1: 3\n"
+
+    with caplog.at_level(logging.WARNING):
+        normalize_heading_levels(md, mode="llm", invoke=fake_invoke)
+
+    assert any("heading_normalize_low_coverage" in r.getMessage() for r in caplog.records), (
+        f"expected a low-coverage warning; got: {[r.getMessage() for r in caplog.records]}"
+    )
+
+
+def test_low_coverage_threshold_reads_env(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """`PAGESPEAK_NORMALIZE_MIN_COVERAGE_PCT` tunes when the warning fires."""
+    md = (
+        "#### Chapter 1 Introduction\n"
+        "intro\n"
+        "#### 1.1 Foo\n"
+        "foo body\n"
+        "#### 1.2 Bar\n"
+        "bar body\n"
+        "#### Chapter 2 Methods\n"
+        "methods body\n"
+    )
+
+    def fake_invoke(prompt: str) -> str:
+        # Three of four headings — 75% coverage.
+        return "1: 3\n2: 4\n3: 4\n"
+
+    monkeypatch.setenv("PAGESPEAK_NORMALIZE_MIN_COVERAGE_PCT", "50")
+    with caplog.at_level(logging.WARNING):
+        normalize_heading_levels(md, mode="llm", invoke=fake_invoke)
+    assert not [r for r in caplog.records if "heading_normalize_low_coverage" in r.getMessage()]
+
+    caplog.clear()
+    monkeypatch.setenv("PAGESPEAK_NORMALIZE_MIN_COVERAGE_PCT", "80")
+    with caplog.at_level(logging.WARNING):
+        normalize_heading_levels(md, mode="llm", invoke=fake_invoke)
+    assert [r for r in caplog.records if "heading_normalize_low_coverage" in r.getMessage()]
+
+
+def test_dehead_mode_exempt_from_coverage_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """DROP-only mode: an absent verdict means KEEP, so coverage is meaningless."""
+    md = (
+        "## Real Section\n"
+        "a real body with several words in it\n"
+        "## Note\n"
+        "an aside\n"
+        "## Another Real Section\n"
+        "another real body with words\n"
+    )
+
+    def fake_invoke(prompt: str) -> str:
+        return "2: DROP\n"
+
+    with caplog.at_level(logging.WARNING):
+        normalize_heading_levels(md, mode="llm_dehead", invoke=fake_invoke)
+
+    assert not [r for r in caplog.records if "heading_normalize_low_coverage" in r.getMessage()]
