@@ -22,7 +22,7 @@ This is distinct from the document pipeline (PDF/DOCX/…). Those formats are ex
 The input is a Canvas **Classic Quizzes** export — the structure Canvas emits for every classic-quiz QTI export, not anything course-specific. Accept either form:
 
 - an **unzipped export directory** containing `imsmanifest.xml`, or
-- the **`.imscc` / `.zip`** archive Canvas downloads (unzipped to a temp dir automatically).
+- the **`.imscc` / `.zip`** archive Canvas downloads (unzipped to a temp dir automatically, up to `PAGESPEAK_MAX_ARCHIVE_BYTES` decompressed; a member path outside that dir stops the conversion).
 
 Everything is **manifest-driven**: the quizzes and the media set are discovered from `imsmanifest.xml`, never hardcoded. The number of quizzes, the hash-named folders, and the figure files vary per export and are all read from the manifest.
 

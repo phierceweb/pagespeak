@@ -18,6 +18,7 @@ into a flat `OUTDIR/images/` for the consolidated markdown to reference.
 
 from __future__ import annotations
 
+import json
 import traceback
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -26,6 +27,7 @@ from typing import Any
 
 from pf_core.log import get_logger
 from pf_core.utils.env import resolve_positive_int
+from pf_core.utils.io import atomic_write_text
 
 from ..backends._pdf_dispatch import DEFAULT_PDF_BACKEND, PdfBackendName
 from ..models._pipeline import ChunkState, Manifest
@@ -138,6 +140,61 @@ def plan_chunks(total_pages: int, chunk_pages: int) -> list[ChunkPlan]:
     return plans
 
 
+_START_OVER = (
+    "Re-run with `pagespeak ingest --force` (discards the chunks), or pick a fresh output dir."
+)
+
+
+def chunk_settings(
+    pdf_backend: str,
+    *,
+    heading_hierarchy: bool,
+    force_ocr: bool,
+    backend_kwargs: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """The options besides the backend that change a chunk's output, as the
+    manifest stores them. `heading_hierarchy` only reaches docling."""
+    settings: dict[str, Any] = {
+        "force_ocr": force_ocr,
+        # JSON-safe, so a library caller's non-JSON kwarg can't break the manifest write.
+        "pdf_backend_kwargs": json.loads(
+            json.dumps(backend_kwargs or {}, sort_keys=True, default=repr)
+        ),
+    }
+    if pdf_backend == "docling":
+        settings["heading_hierarchy"] = heading_hierarchy
+    return settings
+
+
+def _refuse_other_chunk_settings(
+    mf: Manifest, out: Path, *, pdf_backend: str, settings: dict[str, Any]
+) -> None:
+    """Completed chunks read another way would join this run's raw.md while the
+    run record names this run's settings. A chunk from before settings were
+    recorded is not evidence of a mismatch."""
+    completed = [c for c in mf.chunks if c.status == "completed"]
+    other_backends = sorted(
+        {c.pdf_backend for c in completed if c.pdf_backend and c.pdf_backend != pdf_backend}
+    )
+    if other_backends:
+        raise ValueError(
+            f"Output dir {out} has chunks completed with backend(s) {other_backends}; "
+            f"cannot resume with pdf_backend={pdf_backend!r}. {_START_OVER}"
+        )
+    for c in completed:
+        if c.settings is None or c.settings == settings:
+            continue
+        diffs = "; ".join(
+            f"{key}: {c.settings.get(key)!r} → {settings.get(key)!r}"
+            for key in sorted(c.settings.keys() | settings.keys())
+            if c.settings.get(key) != settings.get(key)
+        )
+        raise ValueError(
+            f"Output dir {out} has chunks read with other settings ({diffs}); "
+            f"cannot resume. {_START_OVER}"
+        )
+
+
 # --- Worker (must be importable at module level for pickling) ----
 
 
@@ -220,7 +277,7 @@ def _run_one_chunk(
             renamed_images.append(target)
 
         raw_md = chunk_dir / "raw.md"
-        raw_md.write_text(rewritten_md, encoding="utf-8")
+        atomic_write_text(raw_md, rewritten_md)
 
         raw_md_rel = str(raw_md.relative_to(out_root))
         image_rels = [str(p.relative_to(out_root)) for p in renamed_images]
@@ -290,21 +347,6 @@ def chunk(
 
     mf = Manifest.load_or_create(out, input_path=src)
 
-    # Refuse to resume across mismatched PDF backends. The two produce
-    # subtly different markdown and image-name conventions; mixing them in
-    # one manifest leads to broken anchor maps and orphan image refs at
-    # stitch time.
-    completed_backends = {
-        c.pdf_backend for c in mf.chunks if c.status == "completed" and c.pdf_backend
-    }
-    if completed_backends and pdf_backend not in completed_backends and not force:
-        raise ValueError(
-            f"Output dir {out} has chunks completed with backend(s) "
-            f"{sorted(completed_backends)}; cannot resume with "
-            f"pdf_backend={pdf_backend!r}. Use --force to re-run from scratch, "
-            f"or pick a fresh output dir."
-        )
-
     total = count_pages(src)
     if max_pages is not None:
         if max_pages < 1:
@@ -312,6 +354,19 @@ def chunk(
         total = min(total, max_pages)
     chunk_pages = resolve_chunk_pages(chunk_pages)
     plans = plan_chunks(total, chunk_pages)
+    # Chunks from another plan (other --chunk-pages / --max-pages) overlap this
+    # one's pages; concatenating both would duplicate them in raw.md.
+    moved_out, restored = mf.set_plan({p.page_range for p in plans})
+    if moved_out or restored:
+        logger.warning("chunk_plan_changed shelved=%s restored=%s", moved_out, restored)
+    settings = chunk_settings(
+        pdf_backend,
+        heading_hierarchy=heading_hierarchy,
+        force_ocr=force_ocr,
+        backend_kwargs=pdf_backend_kwargs,
+    )
+    if not force:
+        _refuse_other_chunk_settings(mf, out, pdf_backend=pdf_backend, settings=settings)
     completed = mf.completed_chunk_ranges() if not force else set()
 
     todo = [p for p in plans if p.page_range not in completed]
@@ -386,6 +441,7 @@ def chunk(
                     raw_md=result.raw_md_rel,
                     images=result.image_rels,
                     pdf_backend=pdf_backend,
+                    settings=settings,
                 )
                 logger.info(
                     "chunk_completed page_range=%s images=%d backend=%s",

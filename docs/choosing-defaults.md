@@ -96,14 +96,24 @@ Trigger: Marker's spec table comes out with blank cells, especially for the bott
 
 Mechanism: the source PDF has the spec table laid out beside a second column of text (e.g. a specifications-and-notes prose column); Marker merges the two columns and the spec values fall into the wrong cell or get dropped.
 
-**Do** re-run with `--pdf-backend docling --rerun-from ingest --normalize-headings-mode llm_full`. Docling reads side-by-side tables correctly.
+**Do** re-run with `--pdf-backend docling --heading-hierarchy --rerun-from ingest --normalize-headings-mode llm_full`. Docling reads side-by-side tables correctly; without `--heading-hierarchy` every heading comes back at one level.
 
 **Trade-offs of Docling:**
 - OCR introduces spacing / ligature noise in body text (`fi nish`, `eff ected`, doubled spaces).
 - Docling tends to promote repeating page-band / header decorations (a logo strip or running header on every page) into `##` headings.
 - Marker handles these correctly via the cleanup stage's `demoted_recurring_scaffold`; Docling does not.
 
-**Do not** use Docling as a blanket default. It's a targeted fix for table-data-loss, not a universally-better reader.
+On a PDF with a bookmark outline, Docling with `--heading-hierarchy` also recovers the heading tree more faithfully than Marker — see the next section. It is still the wrong reader for code-bearing, formula-heavy or scanned PDFs.
+
+### Use Docling with `--heading-hierarchy` when the PDF has a bookmark outline
+
+Trigger: the pre-ingest peek finds a bookmark outline at least two levels deep (`pypdfium2`: `PdfDocument.get_toc()`, deepest `bm.level` ≥ 1).
+
+**Do** convert with `--pdf-backend docling --heading-hierarchy`. Docling takes heading levels from the outline instead of guessing them from font sizes; across 38 outline-bearing PDFs its levels matched the bookmarks on 91% of headings, against 62% for Marker. See [backends.md](backends.md).
+
+**Do not** use it for code-bearing, formula-heavy or scanned PDFs (see the backend table), and do not switch an existing Marker conversion that already has image descriptions without counting the cost: Docling's image crops don't match Marker's, so nearly every image is described again.
+
+On section numbering alone (no outline) results were mixed: the two backends came out even on most documents, Docling won clearly on `Section N.` / `N.M` manuals, and bare-integer chapter numbering can invert under Docling. Check the output before adopting either for a document class.
 
 ### Use `--device cpu` (until you set the env var) when Marker hits the surya MPS crash
 
@@ -156,12 +166,6 @@ See [Adding a new vendor profile](#adding-a-new-vendor-profile) for where to rec
 ## Known pagespeak gaps no recipe can fix
 
 These show up in output regardless of which recipe you pick. The classifier can *predict* them but can't *prevent* them — they're pagespeak features waiting to be built.
-
-### `llm_full` can re-level a heading but cannot de-headify it
-
-If Marker (or Docling) captures something as a heading that isn't one — an inline callout (`Important note:` etc.), a page-header strip, a short list item, a figure caption — the cleanup stage's demoters catch most (`demoted_recurring_scaffold`, `demoted_listish_bare_int_headings`, `demoted_empty_shell_headings`), but the long tail survives. The surviving false headings get handed to `llm_full`, which can only assign a level, not strip the `#` prefix entirely.
-
-Effect: a chunk of H3-level navigation noise that pollutes the TOC and section list but doesn't break body content. RAG retrieval is largely unaffected (the noise headings have no topical hook), but document browsing and chapter-list summarisation are uglier.
 
 ### `llm_full` does not infer subsection grouping from topic adjacency alone
 

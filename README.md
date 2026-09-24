@@ -8,7 +8,7 @@ Convert PDF, Word, and other documents into retrieval-ready markdown — one doc
 
 In early April 2026, I started **pagespeak** to convert documents into small, retrievable markdown that stays maximally intelligible to an LLM while using minimal tokens. These small, chunked documents can be used on their own, but also in large collections — or sets of collections — so an LLM can query across a whole corpus and understand how any one chunk relates not just to its own document, but to other documents in the collection, creating a cross-corpus intelligence otherwise unattainable.
 
-For an LLM to understand where a chunk sits, the document structure has to be as clean as possible: each section of text properly nested under its correct heading, related back to the document as a whole, and every chunk labeled with the document it came from. That's the mission of pagespeak. It uses existing converters — currently Marker and Docling for PDFs, plus others for non-PDF formats — and mechanically repairs the known heading corruptions each one produces. It can also blend what each converter does best: Marker produces deeper hierarchy, Docling cleaner tables, so pagespeak can replace mangled Marker tables with clean Docling ones. It can then send the cleaned result to a full LLM (this requires a large-context model) for meaning-based structure repair, followed by a final deterministic pass before splitting.
+For an LLM to understand where a chunk sits, the document structure has to be as clean as possible: each section of text properly nested under its correct heading, related back to the document as a whole, and every chunk labeled with the document it came from. That's the mission of pagespeak. It uses existing converters — currently Marker and Docling for PDFs, plus others for non-PDF formats — and mechanically repairs the known heading corruptions each one produces. It can also blend converters: Docling reads tables more cleanly than Marker, so pagespeak can replace mangled Marker tables with clean Docling ones. It can then send the cleaned result to a full LLM (this requires a large-context model) for meaning-based structure repair, followed by a final deterministic pass before splitting.
 
 pagespeak chunks on **hierarchy** and gives each chunk breadcrumbs *back to its parent sections*. That's what makes cross-document querying possible at minimal token cost.
 
@@ -16,7 +16,7 @@ For some documents, image content can be as important as prose. pagespeak can op
 
 ## Status
 
-As of v0.6.0, my testing has been primarily with [QMD](https://github.com/tobi/qmd), Tobi Lütke's fully local hybrid search engine for markdown (BM25 + semantic vectors + a local reranker), across ~200 documents. My own interests and access shaped the testing docs — education in particular (with a focus on OpenStax textbooks) along with a few niche conversion types (Canvas exam exports, Top Hat quiz-PDF exports, and a custom DOCX outline export that MarkItDown doesn't handle, where the outline *is* the structure) — all merged into cohesive corpora. Likewise for corpora built from 70+ software and hardware manuals, home-equipment manuals, and the like, ranging from 2–3 pages up to ~150.
+As of v0.16.0, my testing has been primarily with [QMD](https://github.com/tobi/qmd), Tobi Lütke's fully local hybrid search engine for markdown (BM25 + semantic vectors + a local reranker), across ~200 documents. My own interests and access shaped the testing docs — education in particular (with a focus on OpenStax textbooks) along with a few niche conversion types (Canvas exam exports, Top Hat quiz-PDF exports, and a custom DOCX outline export that MarkItDown doesn't handle, where the outline *is* the structure) — all merged into cohesive corpora. Likewise for corpora built from 70+ software and hardware manuals, home-equipment manuals, and the like, ranging from a single page to over 1,000, plus software help sites converted from HTML.
 
 Testing and benchmarking against other retrieval stacks and answering LLMs remains a future goal — ideally making pagespeak useful to people running free, local LLMs who need fast, accurate retrieval over large document collections. The structural gains pagespeak provides — clean hierarchy, breadcrumbs, self-locating chunks — aren't tied to any one retriever; they improve chunk quality for any BM25/vector/hybrid system, so while the [worked example](https://github.com/phierceweb/pagespeak/blob/main/docs/worked-examples.md)'s numbers are QMD-measured, the benefit should carry across setups. That worked example was produced when the project's first 60+ versions were squashed into the initial v0.1.0, and it reflects the models and behavior current as of that point. No association with OpenStax or any other company is implied or intended; pagespeak is meant as a generic tool.
 
@@ -30,14 +30,14 @@ Note: I'm developing a companion project [pagespring](https://github.com/phierce
 
 pagespeak is the **ingestion and structuring** stage of a retrieval pipeline, not a whole one. It converts documents to clean, per-section markdown with breadcrumbs and provenance — and stops there. It does **not** do embeddings, vector storage, retrieval, or a query/chat layer; pair it with your own vector DB and retrieval framework (LlamaIndex, LangChain, Haystack, or hand-rolled).
 
-One thing to know going in: the section split is **structural, not size-based**. Sections are cut at heading boundaries — there is no token budget, no max-chunk size, and no overlap. A long section stays one file; a near-empty one is dropped (`min_body_chars`). That makes each file a coherent, self-locating unit — which is what you want feeding an embedder — but if your retrieval needs uniformly-sized chunks, add a token-aware splitter downstream. The structure pagespeak recovers (correct heading levels, in-text breadcrumbs) is exactly what makes that downstream chunking clean.
+One thing to know going in: by default the section split is **structural, not size-based**. Sections are cut at heading boundaries — there is no token budget and no overlap. A long section stays one file; a near-empty one is dropped (`min_body_chars`). `--split-target-kb N` adds a size ceiling: a branch of the heading tree that fits N KB stays one file, a larger one splits a level deeper, and an oversized section with no sub-headings is cut at paragraph boundaries. Either way each file is a coherent, self-locating unit — which is what you want feeding an embedder — but if your retrieval needs uniformly-sized chunks, add a token-aware splitter downstream. The structure pagespeak recovers (correct heading levels, in-text breadcrumbs) is exactly what makes that downstream chunking clean.
 
 ## Install
 
 ```bash
 pip install pagespeak                       # DOCX/PPTX/XLSX/HTML/CSV/JSON/...
 pip install pagespeak[pdf]                  # adds Marker for PDF (default)
-pip install pagespeak[pdf-docling]          # adds Docling for PDF (accuracy-first)
+pip install pagespeak[pdf-docling]          # adds Docling for PDF (pair with --heading-hierarchy)
 pip install pagespeak[pdf,pdf-docling]      # both — pick at call time
 pip install pagespeak[docx-structured]      # adds python-docx for structure-faithful DOCX
 pip install pagespeak[pdf,docx-structured]  # PDF + structure-faithful DOCX
@@ -45,7 +45,7 @@ pip install pagespeak[tophat]               # adds the Top Hat quiz-export backe
 pip install pagespeak[web]                  # localhost web console (FastAPI + uvicorn)
 ```
 
-Pagespeak builds on [`pf-core`](https://github.com/phierceweb/pf-core) ([PyPI](https://pypi.org/project/pf-core/)) for its LLM clients (Anthropic / Claude Code / OpenRouter), structured logging, pipeline manifest helpers, CLI subcommand factories, and atomic-write utilities. `pf-core[image-phash,tracking,llm]` is installed with it as a direct dependency — no separate install step required.
+Pagespeak builds on [`pf-core`](https://github.com/phierceweb/pf-core) ([PyPI](https://pypi.org/project/pf-core/)) for its LLM clients (Anthropic / Claude Code / OpenRouter), structured logging, pipeline manifest helpers, CLI subcommand factories, and atomic-write utilities. `pf-core[tracking,llm]` is installed with it as a direct dependency — no separate install step required.
 
 ## Quickstart
 
@@ -126,7 +126,7 @@ Vision output is best-effort. A diagram's Mermaid is a model's *reading* of the 
 
 | Format | Backend |
 |---|---|
-| `.pdf` | [Marker](https://github.com/VikParuchuri/marker) (default, fast) or [Docling](https://github.com/DS4SD/docling) (accuracy-first). See [docs/backends.md](https://github.com/phierceweb/pagespeak/blob/main/docs/backends.md). |
+| `.pdf` | [Marker](https://github.com/VikParuchuri/marker) (default) or [Docling](https://github.com/DS4SD/docling) (with `--heading-hierarchy`). See [docs/backends.md](https://github.com/phierceweb/pagespeak/blob/main/docs/backends.md). |
 | `.docx`, `.pptx`, `.xlsx`, `.html`, `.htm`, `.csv`, `.json`, `.xml`, `.epub` | [MarkItDown](https://github.com/microsoft/markitdown) |
 | Canvas QTI quiz export (directory or `.imscc`) | Built-in QTI backend → one markdown file per quiz with the answer key. See [docs/canvas-quizzes.md](https://github.com/phierceweb/pagespeak/blob/main/docs/canvas-quizzes.md). |
 | Top Hat quiz-export PDF | `--pdf-backend tophat` → one `## Question N` block per question, correct answer marked when revealed, embedded figures extracted + captioned. See [docs/tophat-quizzes.md](https://github.com/phierceweb/pagespeak/blob/main/docs/tophat-quizzes.md). |
@@ -143,12 +143,12 @@ pagespeak is not a parser — it wraps existing extractors and runs cleanup, str
 
 ### Why a layer at all — heading fidelity
 
-The hardest part of PDF→markdown for RAG is the heading tree, because that's what chunking splits on. PDFs don't store semantic heading levels — only font sizes — so every extractor *guesses*, and each flattens or mis-levels real documents in a different way:
+The hardest part of PDF→markdown for RAG is the heading tree, because that's what chunking splits on. Most PDFs don't store semantic heading levels — some carry a bookmark outline, most only font sizes — so extractors *guess*, and each flattens or mis-levels real documents in a different way:
 
-| | Heading hierarchy | Tables | Figures / formulas |
+| | Heading hierarchy | Tables | Figures / formulas / code |
 |---|---|---|---|
-| **Marker** (default) | 4-level pyramid in single-shot; **flattens in the chunked pipeline** (per-chunk font stats disagree). MPS crash on Apple Silicon → `--device cpu` | occasionally collapses a multi-column table into one cell | — |
-| **Docling** | **capped at 2 levels by design** — its layout model labels every section heading `level=1` | well-formed, TableFormer-grade | ~25% more figures on textbooks; formula → LaTeX |
+| **Marker** (default) | levels guessed from font-size clusters — they shift with the page range and **flatten in the chunked pipeline** (per-chunk font stats disagree). MPS crash on Apple Silicon → `--device cpu` | occasionally collapses a multi-column table into one cell | formulas → LaTeX; multi-line code blocks kept |
+| **Docling** | without `--heading-hierarchy`, **every heading at one level**; with it, levels come from the PDF's bookmarks, then section numbering, then font style | well-formed, TableFormer-grade | ~25% more figures on textbooks; formulas as glyph codes unless `do_formula_enrichment`; **multi-line code blocks collapse to one line** |
 
 So no backend gets structure right on its own — "just use Marker" or "just use Docling" inherits that backend's specific failure. Pick the backend for its strengths and let pagespeak patch its weakness — `repair-tables`, for instance, re-reads *just* a broken table's page through Docling rather than re-converting the whole document. The full trade-off and recipes: [docs/backends.md](https://github.com/phierceweb/pagespeak/blob/main/docs/backends.md) and [docs/choosing-defaults.md](https://github.com/phierceweb/pagespeak/blob/main/docs/choosing-defaults.md).
 
@@ -181,4 +181,4 @@ So no backend gets structure right on its own — "just use Marker" or "just use
 
 ## License
 
-MIT.
+Apache-2.0 — see [LICENSE](https://github.com/phierceweb/pagespeak/blob/main/LICENSE). Releases through 0.15.0 were published under the MIT license and stay MIT.

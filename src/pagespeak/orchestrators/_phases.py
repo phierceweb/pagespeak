@@ -13,6 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from pf_core.log import get_logger
+from pf_core.utils.io import atomic_write_text
 
 from ..models._models import IngestResult
 from ._context import PipelineContext
@@ -22,11 +23,11 @@ from ._resume import _try_resume_from_checkpoint, _try_resume_from_cleaned
 logger = get_logger(__name__)
 
 
-# Suffix tables — imported at module load from the ingest module.
-from ._ingest import MARKDOWN_SUFFIXES as _MARKDOWN_SUFFIXES  # noqa: E402
-from ._ingest import MARKITDOWN_SUFFIXES as _MARKITDOWN_SUFFIXES  # noqa: E402
-from ._ingest import PDF_SUFFIXES as _PDF_SUFFIXES  # noqa: E402
-from ._ingest import unsupported_format_error  # noqa: E402
+from ._convert_source import MARKDOWN_SUFFIXES as _MARKDOWN_SUFFIXES  # noqa: E402
+from ._convert_source import MARKITDOWN_SUFFIXES as _MARKITDOWN_SUFFIXES  # noqa: E402
+from ._convert_source import PDF_SUFFIXES as _PDF_SUFFIXES  # noqa: E402
+from ._convert_source import convert_source  # noqa: E402
+from ._ingest import stamp_ingest_record  # noqa: E402
 
 
 def _require_result(ctx: PipelineContext) -> IngestResult:
@@ -88,9 +89,11 @@ class IngestPhase:
 
     def run(self, ctx: object) -> None:
         from ..services._hierarchy_trust import record_hierarchy_source, record_structured
+        from ..services._run_record import INGEST_FLAG_KEYS
 
         c = _ctx(ctx)
         src, out, raw_md_path = c.src, c.out, c.raw_md_path
+        flags = {**{key: getattr(c, key) for key in INGEST_FLAG_KEYS}, "max_pages": None}
         if c.dir_mode:
             result = _try_resume_from_checkpoint(
                 src, out, raw_md_path, source_format=c.source_format
@@ -105,47 +108,25 @@ class IngestPhase:
                 )
         else:
             result = _try_resume_from_checkpoint(
-                src, out, raw_md_path, source_format=c.source_format
+                src, out, raw_md_path, source_format=c.source_format, current_flags=flags
             )
 
         if result is None:
             suffix = c.suffix
-            if suffix in _PDF_SUFFIXES:
-                from ..backends._pdf_dispatch import convert as _pdf_convert
-
-                result = _pdf_convert(
-                    c.pdf_backend,  # type: ignore[arg-type]
-                    src,
-                    output_dir=out,
-                    force_ocr=c.force_ocr,
-                    device=c.device,
-                    page_range=c.page_range,
-                    heading_hierarchy=c.heading_hierarchy,
-                    backend_kwargs=c.pdf_backend_kwargs,
-                )
-            elif suffix in _MARKITDOWN_SUFFIXES:
-                if suffix == ".docx":
-                    from ..backends._docx_dispatch import convert as _docx_convert
-
-                    result = _docx_convert(
-                        c.docx_backend,  # type: ignore[arg-type]
-                        src,
-                        output_dir=out,
-                        outline_heading_depth=c.docx_outline_heading_depth,
-                    )
-                else:
-                    from ..backends._docx import convert_with_markitdown
-
-                    result = convert_with_markitdown(
-                        src, output_dir=out, html_base_url=c.html_base_url
-                    )
-            elif suffix in _MARKDOWN_SUFFIXES:
-                from ..backends._markdown import convert_markdown
-
-                result = convert_markdown(src)
-            else:
-                raise unsupported_format_error(suffix)
-
+            result = convert_source(
+                src,
+                out,
+                suffix=suffix,
+                pdf_backend=c.pdf_backend,
+                pdf_backend_kwargs=c.pdf_backend_kwargs,
+                heading_hierarchy=c.heading_hierarchy,
+                docx_backend=c.docx_backend,
+                docx_outline_heading_depth=c.docx_outline_heading_depth,
+                device=c.device,
+                force_ocr=c.force_ocr,
+                page_range=c.page_range,
+                html_base_url=c.html_base_url,
+            )
             result.markdown = _maybe_repair_tables(c, result.markdown)
             # Co-locate sibling images so vision's out/images glob sees them.
             if out is not None and (suffix in _MARKITDOWN_SUFFIXES or suffix in _MARKDOWN_SUFFIXES):
@@ -154,8 +135,9 @@ class IngestPhase:
                 result.markdown, result.images = localize_local_images_in_markdown(
                     result.markdown, out, source_path=src, images=result.images
                 )
-            if raw_md_path is not None:
-                raw_md_path.write_text(result.markdown, encoding="utf-8")
+            if raw_md_path is not None and out is not None:
+                atomic_write_text(raw_md_path, result.markdown)
+                stamp_ingest_record(out, src, flags)
             # Only the run that produced raw.md may claim its structure; a
             # resume rehydrates the flag to False and would clear a true one.
             record_structured(out, authoritative=result.structure_authoritative)
@@ -266,7 +248,7 @@ class CleanupPhase:
             record_outline_promoted(c.out, promoted=_cleanup_stats.get("outline_promoted", 0) > 0)
 
         if c.cleaned_md_path is not None:
-            c.cleaned_md_path.write_text(result.markdown, encoding="utf-8")
+            atomic_write_text(c.cleaned_md_path, result.markdown)
 
 
 class NormalizePhase:
@@ -314,7 +296,7 @@ class NormalizePhase:
             result.markdown = apply_normalization(result.markdown, normalize_handoff)
 
         if c.normalized_md_path is not None:
-            c.normalized_md_path.write_text(result.markdown, encoding="utf-8")
+            atomic_write_text(c.normalized_md_path, result.markdown)
 
 
 class RepairPhase:
@@ -345,7 +327,7 @@ class RepairPhase:
         if applied:
             logger.info("repair_headings_applied %s", applied)
         if c.repaired_md_path is not None:
-            c.repaired_md_path.write_text(result.markdown, encoding="utf-8")
+            atomic_write_text(c.repaired_md_path, result.markdown)
 
 
 class StructurePhase:
@@ -380,7 +362,7 @@ class StructurePhase:
         )
 
         if c.structured_md_path is not None:
-            c.structured_md_path.write_text(result.markdown, encoding="utf-8")
+            atomic_write_text(c.structured_md_path, result.markdown)
 
 
 class VisionPhase:
@@ -441,7 +423,7 @@ class VisionPhase:
         # Vision's output checkpoint: post-inject + post-TOC markdown. Written
         # even when both were no-ops, so `--from split` always has an input.
         if c.visioned_md_path is not None:
-            c.visioned_md_path.write_text(result.markdown, encoding="utf-8")
+            atomic_write_text(c.visioned_md_path, result.markdown)
 
 
 class SplitPhase:

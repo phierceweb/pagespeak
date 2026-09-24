@@ -42,6 +42,11 @@ And hold the change to these standards:
 - **Tests travel with code.** New behavior needs tests; a bug fix needs a
   regression test that fails before your change and passes after. One test
   module per source module.
+- **Tests stay offline.** The suite runs with `HF_HUB_OFFLINE=1`, and a test that
+  opens a network connection or launches the `claude` CLI fails. Fake LLM calls
+  at `pagespeak._agent_runtime.invoke_agent`. The Docling end-to-end test reads
+  Docling's models from the local Hugging Face cache and skips without them; one
+  Docling conversion run online fetches them.
 - **Docs travel with code.** A change to the public API, a CLI flag, an env var,
   or a supported format is incomplete without the matching `docs/*.md` +
   `README.md` update.
@@ -66,6 +71,11 @@ The essentials:
 Stability lives in **tags**. `main` may contain unreleased work — pin to a tagged
 release for production use. Pre-1.0: a minor bump (`0.X.0`) may include breaking
 changes (called out in `CHANGELOG.md`); a patch bump (`0.0.X`) is fixes only.
+
+## License
+
+Contributions are accepted under the Apache License 2.0. Opening a pull request
+licenses your work to the project under those terms.
 
 ## Questions
 

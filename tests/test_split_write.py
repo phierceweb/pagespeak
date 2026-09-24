@@ -117,3 +117,20 @@ def test_doc_title_param_fills_when_no_provenance(tmp_path: Path) -> None:
     out = tmp_path / "guide-book" / "sections"
     written = split_into_sections(MD_NUMBERED, out, doc_title="Guide Book")
     assert 'doc_title: "Guide Book"' in _read(written, "1-alpha.md")
+
+
+def test_mermaid_fence_image_path_follows_the_section_file(tmp_path: Path) -> None:
+    """The fence tags its source image with the master's path; from a section
+    file that path dangles unless it is rewritten like the image link above it."""
+    md = (
+        "# 1. Alpha\n\nAlpha body text.\n\n"
+        "## 1.1. Beta\n\nBeta body text.\n\n"
+        "![Flow of the loop](images/fig1.png)\n\n"
+        '```mermaid pagespeak-image="images/fig1.png"\nflowchart TD\n    A --> B\n```\n'
+    )
+    written = split_into_sections(md, tmp_path / "sections", nested=True)
+    beta = next(p for p in written if p.name.startswith("1-1-beta"))
+    text = beta.read_text(encoding="utf-8")
+    rel = text.split("![Flow of the loop](", 1)[1].split(")", 1)[0]
+    assert rel.endswith("images/fig1.png") and rel != "images/fig1.png"
+    assert f'pagespeak-image="{rel}"' in text

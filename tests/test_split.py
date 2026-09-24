@@ -397,6 +397,22 @@ def test_split_min_body_chars_prunes_subsections_listing(tmp_path: Path) -> None
     assert "Empty Child" not in parent_text
 
 
+def test_split_names_each_dropped_empty_section(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A count alone hides which sections vanished — reviewable only by title."""
+    md = (
+        "# Parent\n"
+        "Parent body with enough text to clear the threshold easily.\n"
+        "## Empty Child\n"
+        "## Real Child\n"
+        "Real child has substantial content, well over the cutoff.\n"
+    )
+    with caplog.at_level("INFO"):
+        split_into_sections(md, tmp_path, min_level=1, min_body_chars=30)
+    assert "split_empty_section_dropped title='Empty Child'" in caplog.text
+
+
 def test_split_min_body_chars_zero_preserves_v07_behavior(tmp_path: Path) -> None:
     """Default 0 = no filtering = every split-eligible heading writes a file."""
     md = "# Empty\n# Tiny\nx\n"

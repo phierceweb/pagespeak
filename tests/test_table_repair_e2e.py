@@ -7,8 +7,9 @@ gap that the unit tests (which mock both I/O calls) leave open.
 
 Gated on the `pdf-docling` extra (Docling) and the dev `fpdf2` fixture
 generator; skipped cleanly when either is absent (so a minimal install does not
-error at collection). Slow (~real Docling model load + convert) — a Tier-3
-real-backend smoke, not a fast unit test.
+error at collection), or when Docling's models are not in the local Hugging Face
+cache — the suite runs offline. Slow (~real Docling model load + convert) — a
+Tier-3 real-backend smoke, not a fast unit test.
 """
 
 from __future__ import annotations
@@ -20,10 +21,18 @@ import pytest
 pytest.importorskip("docling")
 pytest.importorskip("fpdf")
 
+from huggingface_hub.errors import LocalEntryNotFoundError  # noqa: E402
+
 from pagespeak.services._table_repair import (  # noqa: E402
     find_collapsed_cells,
     locate_pages_in_pdf,
     repair_tables_in_markdown,
+)
+
+_MODELS_NOT_CACHED = (
+    "Docling's models are not in the local Hugging Face cache and the suite runs offline. "
+    "Fetch them once with the network on: any Docling conversion does, e.g. "
+    "`bin/run convert some.pdf -o /tmp/out --pdf-backend docling --no-diagrams`."
 )
 
 _HEADERS = ["Profile Type", "Database", "Extension"]
@@ -79,7 +88,10 @@ def test_real_docling_splice_repairs_collapsed_table(table_pdf: Path) -> None:
     values present as a clean grid, surrounding prose intact."""
     raw = _collapsed_raw_md()
     assert find_collapsed_cells(raw)  # precondition: it really is collapsed
-    repaired, records = repair_tables_in_markdown(raw, str(table_pdf))
+    try:
+        repaired, records = repair_tables_in_markdown(raw, str(table_pdf))
+    except LocalEntryNotFoundError:
+        pytest.skip(_MODELS_NOT_CACHED)
     assert records and records[0].status == "repaired", records
     assert "<br>" not in repaired
     assert "Data Pump Export Profile" in repaired

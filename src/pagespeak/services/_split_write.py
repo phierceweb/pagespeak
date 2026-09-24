@@ -14,11 +14,14 @@ import os
 import re
 from pathlib import Path
 
+from ._fences import fenced_blocks
 from ._image_refs import ImageRef, replace_image_refs
 from ._split_identity import _section_frontmatter, _strip_embedded_links
 from ._split_parse import _is_page_anchor_line, _Section
 
 IN_DOC_REF_RE = re.compile(r"\[([^\]]+)\]\(#([^)]+)\)")
+# The vision pass tags each Mermaid fence opener with its source image.
+_IMAGE_TAG_RE = re.compile(r'\bpagespeak-image="(images[/\\][^"]+)"')
 
 
 _MAX_FILENAME_LEN = 200
@@ -154,13 +157,21 @@ def _rewrite_image_paths_relative(
     """
     section_dir = section_file.parent
 
+    def _relative(target: str) -> str:
+        return os.path.relpath(images_dir / Path(target).name, section_dir).replace(os.sep, "/")
+
     def _replace(ref: ImageRef) -> str | None:
         if not ref.target.startswith(("images/", "images\\")):
             return None
-        target = images_dir / Path(ref.target).name
-        return ref.retargeted(os.path.relpath(target, section_dir).replace(os.sep, "/"))
+        return ref.retargeted(_relative(ref.target))
 
-    return replace_image_refs(text, _replace)[0]
+    lines = replace_image_refs(text, _replace)[0].split("\n")
+    for block in fenced_blocks(lines):
+        if block.info.lower().startswith("mermaid"):
+            lines[block.start] = _IMAGE_TAG_RE.sub(
+                lambda m: f'pagespeak-image="{_relative(m[1])}"', lines[block.start]
+            )
+    return "\n".join(lines)
 
 
 def _nearest_section(candidates: list[_Section], from_section: _Section) -> _Section:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -808,9 +809,9 @@ def test_to_markdown_does_not_write_pre_normalize_snapshot(fake_docx: Path, tmp_
     with (
         patch("pagespeak.backends._docx.convert_with_markitdown", return_value=fake_result),
         patch(
-            "pagespeak.services._heading_normalize._claude_code_invoke",
+            "pagespeak._agent_runtime.invoke_agent",
             # Promote chapter from 4 to 3.
-            return_value="1: 3\n2: 4\n3: 4\n",
+            return_value=SimpleNamespace(content="1: 3\n2: 4\n3: 4\n"),
         ),
     ):
         result = to_markdown(
@@ -827,14 +828,15 @@ def test_to_markdown_does_not_write_pre_normalize_snapshot(fake_docx: Path, tmp_
     # The diff anchor pair is now cleaned.md vs normalized.md.
     cleaned = (out / f"{fake_docx.stem}.cleaned.md").read_text(encoding="utf-8")
     normalized = (out / f"{fake_docx.stem}.normalized.md").read_text(encoding="utf-8")
+    # Whole lines: `### Chapter` is also a substring of `#### Chapter`.
     # cleaned.md has the pre-normalize headings (still all level 4).
-    assert "#### Chapter 1 Introduction" in cleaned
-    assert "#### 1.1 Foo" in cleaned
+    assert "#### Chapter 1 Introduction" in cleaned.splitlines()
+    assert "#### 1.1 Foo" in cleaned.splitlines()
     # normalized.md has them post-normalize.
-    assert "### Chapter 1 Introduction" in normalized
-    assert "#### 1.1 Foo" in normalized
+    assert "### Chapter 1 Introduction" in normalized.splitlines()
+    assert "#### 1.1 Foo" in normalized.splitlines()
     # Live result is the post-normalize state.
-    assert "### Chapter 1 Introduction" in result.markdown
+    assert "### Chapter 1 Introduction" in result.markdown.splitlines()
 
 
 def test_to_markdown_vision_cache_reused_across_backend_change(
@@ -1421,8 +1423,6 @@ def test_vision_phase_threads_cache_only(monkeypatch, tmp_path):
 
 
 def _repair_ctx(**over: object):
-    from types import SimpleNamespace
-
     base = dict(repair_tables=True, pdf_backend="marker", suffix=".pdf", src=Path("x.pdf"))
     base.update(over)
     return SimpleNamespace(**base)
@@ -1605,6 +1605,39 @@ def test_chunked_route_carries_english_only(tmp_path: Path, monkeypatch) -> None
     """A Phase-3 flag the re-entry can honour must not be dropped on the way."""
     captured = _chunked_reentry_capture(tmp_path, monkeypatch, english_only=True)
     assert captured.get("english_only") is True
+
+
+def test_chunked_route_records_the_backend_it_ran(tmp_path: Path, monkeypatch) -> None:
+    """The dir-mode re-entry writes the run record. If it names the default
+    backend, the next inheriting `--rerun-from ingest` switches engines."""
+    import json
+
+    from pagespeak.orchestrators import _dispatch
+
+    src = tmp_path / "doc.pdf"
+    src.write_bytes(b"%PDF-1.4\n")
+    out = tmp_path / "out"
+
+    def fake_ingest(*, input_path, output_dir, **_ignored):
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        raw = Path(output_dir) / "doc.raw.md"
+        raw.write_text("# Title\n\nBody text.\n\n## Section\n\nMore body.\n", encoding="utf-8")
+        return raw
+
+    monkeypatch.setattr(_dispatch, "_ingest_orchestrator", fake_ingest)
+    to_markdown(
+        src,
+        output_dir=out,
+        workers=2,
+        pdf_backend="docling",
+        heading_hierarchy=True,
+        force_ocr=True,
+        diagrams=False,
+    )
+    flags = json.loads((out / ".pagespeak-run.json").read_text(encoding="utf-8"))["resolved_flags"]
+    assert flags["pdf_backend"] == "docling"
+    assert flags["heading_hierarchy"] is True
+    assert flags["force_ocr"] is True
 
 
 def test_chunked_route_rejects_repair_tables(tmp_path: Path) -> None:

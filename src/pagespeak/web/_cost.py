@@ -88,14 +88,35 @@ class GateDecision:
     backend: str = "claude_code"
 
 
+def rerun_clears_vision_cache(rerun_from: str | None) -> bool:
+    """True when `--rerun-from <stage>` deletes `.vision-cache/` before running."""
+    from pagespeak.services._rerun import PAGESPEAK_REGISTRY
+
+    return any(
+        stage.name == rerun_from and ".vision-cache" in stage.content_keyed_files
+        for stage in PAGESPEAK_REGISTRY.stages
+    )
+
+
 def gate_decision(
-    *, out_dir: Path | None, will_run: bool, backend: str, confirmed: bool
+    *,
+    out_dir: Path | None,
+    will_run: bool,
+    backend: str,
+    confirmed: bool,
+    cache_cleared: bool = False,
 ) -> GateDecision:
-    """Decide whether a submit needs a confirm card, is blocked, or proceeds."""
+    """Decide whether a submit needs a confirm card, is blocked, or proceeds.
+
+    `cache_cleared`: the run deletes the vision cache first, so every image
+    is a live call however many are cached now.
+    """
     if not will_run:
         return GateDecision(needs_confirm=False, blocked=False)
 
     counts = cache_miss_count(out_dir) if out_dir is not None else None
+    if counts is not None and cache_cleared:
+        counts = (counts[0], 0, counts[0])
     is_paid = backend in _PAID_BACKENDS
 
     if counts is None:

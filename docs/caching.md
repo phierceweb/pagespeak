@@ -6,7 +6,7 @@ pagespeak persists every expensive intermediate so a re-run only re-does the wor
 
 | Stage | Cache file(s) | Auto-invalidated by | `--rerun-from <stage>` busts |
 |---|---|---|---|
-| `ingest` | `<stem>.raw.md`, `images/`, `chunks/`, `manifest.json`, `.pagespeak-hierarchy.json` | source mtime > raw.md mtime | own structural |
+| `ingest` | `<stem>.raw.md`, `images/`, `chunks/`, `manifest.json`, `.pagespeak-hierarchy.json` | source mtime > raw.md mtime; a recorded ingest-setting mismatch refuses the resume (see [pipeline-ingest.md](pipeline-ingest.md)) | own structural |
 | `cleanup` | `<stem>.cleaned.md` | content+flags hash | own structural |
 | `decorations` | (in-memory; no persistent file) | always re-runs | — |
 | `normalize` | `.heading-normalize-cache/<hash>.json` (LLM mode), `<stem>.normalized.md` (snapshot) | content+model hash (cache); cascade (snapshot) | own (cache content-keyed, snapshot mtime-gated) |

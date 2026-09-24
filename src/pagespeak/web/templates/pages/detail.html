@@ -147,7 +147,7 @@
      GitHub styling). It fetches checkpoint markdown from the md route. -->
 <script type="module" src="https://cdn.jsdelivr.net/npm/zero-md@3?register"></script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
 (function () {
   var byId = function (id) { return document.getElementById(id); };
   var dir = {{ conv.dir_name | tojson }};

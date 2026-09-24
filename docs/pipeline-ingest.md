@@ -17,6 +17,9 @@ With `workers=1` (default) a single backend call processes the whole document. W
 
 - **Always**, except in directory-mode: when the input is an output dir that already contains `<stem>.raw.md`, ingest is skipped and the pipeline jumps straight to Phase 3. This is how `pagespeak convert <outdir>` and `pagespeak ingest` once → iterate Phase 3 many times works.
 - **Resume:** if `<stem>.raw.md` is newer than the source file, the backend call is skipped and the checkpoint is reused. Editing the source file invalidates it (mtime check).
+- **Resume refuses different ingest settings.** When `.pagespeak-run.json` records the settings that produced `raw.md` and this run asks for different ones — another `--pdf-backend`, `--page-range` or `--force-ocr`; `--heading-hierarchy` under Docling; a raw.md from a `pagespeak ingest --max-pages` trial; `--docx-backend`; `--html-base-url` — the run stops with an error naming each difference instead of returning the old content. Re-ingest with `--rerun-from ingest`, or re-run with the recorded settings. A setting with no record is not treated as a difference.
+- **The run record describes `raw.md`.** The phase stamps its ingest settings into the record's `ingest_flags` block as soon as `raw.md` is written — merged into an existing record, never replacing it — so a run that fails later still leaves a record that matches the checkpoint. Only a run that writes `raw.md` changes the block; any other run keeps it and takes its values over its own ingest flags, so a run over the output dir can't misdescribe the checkpoint.
+- **Older records.** A record without `ingest_flags` that was written by a run over the output dir (its `input` is the `raw.md` checkpoint) holds default ingest settings, not the ones that produced `raw.md`. Its settings are not compared; only what ingest itself left behind is — each chunk's backend in `manifest.json`, and the Docling outline marker in `.pagespeak-hierarchy.json`.
 
 ## Inputs
 

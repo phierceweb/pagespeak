@@ -68,7 +68,7 @@ def register(
         vision_model: str | None = typer.Option(
             None,
             "--vision-model",
-            help="Override the model used for diagram extraction. Ignored under claude_code.",
+            help="Override the model used for diagram extraction (else config/model_router.yaml). Under claude_code it is passed as --model.",
         ),
         vision_concurrency: int | None = typer.Option(
             None,
@@ -167,12 +167,12 @@ def register(
         pdf_backend: str = typer.Option(
             "marker",
             "--pdf-backend",
-            help="PDF backend: 'marker' (default, fast) | 'docling' (accuracy-first, requires pagespeak[pdf-docling]) | 'tophat' (Top Hat quiz-export PDFs → per-question markdown, requires pagespeak[tophat]).",
+            help="PDF backend: 'marker' (default) | 'docling' (requires pagespeak[pdf-docling]; pair with --heading-hierarchy, else every heading lands at one level) | 'tophat' (Top Hat quiz-export PDFs → per-question markdown, requires pagespeak[tophat]).",
         ),
         heading_hierarchy: bool = typer.Option(
             False,
             "--heading-hierarchy/--no-heading-hierarchy",
-            help="Docling PDF only. Infer real heading levels from PDF bookmarks, then section numbering, then font style, instead of Docling's flat single-level default. Helps documents with an embedded outline or 'Section N.'/'N.M' numbering; hurts documents with neither. Off by default. Requires docling>=2.109. See docs/backends.md.",
+            help="Docling PDF only. Infer real heading levels from PDF bookmarks, then section numbering, then font style, instead of Docling's flat single-level default. Helps documents with an embedded outline or 'Section N.'/'N.M' numbering; not a win on documents with neither. Off by default. Requires docling>=2.109. See docs/backends.md.",
         ),
         repair_tables: bool = typer.Option(
             False,
@@ -207,7 +207,7 @@ def register(
         normalize_headings_backend: str | None = typer.Option(
             None,
             "--normalize-headings-backend",
-            help="Per-task backend for heading-normalize LLM calls. claude_code (default) | anthropic | openrouter. Sets both PAGESPEAK_HEADING_NORMALIZE_BACKEND and _FULL_BACKEND env vars for the run.",
+            help="Per-task backend for heading-normalize LLM calls. claude_code (default) | anthropic | openrouter. Sets PAGESPEAK_HEADING_NORMALIZE_BACKEND, _FULL_BACKEND and _DEHEAD_BACKEND for the run, so it applies to every normalize mode.",
         ),
         strip_frontmatter: bool = typer.Option(
             False,
@@ -279,17 +279,15 @@ def register(
             vision_backend = validate_vision_backend(vision_backend)
         preset = validate_preset(preset)
 
-        # --normalize-headings-backend writes to the per-task env
-        # vars before `to_markdown` runs so `_agent_runtime.resolve_backend`
-        # picks them up. Both `heading_normalize` and `heading_normalize_full`
-        # share the flag — users pick one normalize mode per run, and the
-        # backend applies to whichever mode is active.
+        # --normalize-headings-backend writes every normalize mode's per-task
+        # env var before `to_markdown` runs, so `_agent_runtime.resolve_backend`
+        # applies it to whichever mode is active.
         normalize_headings_backend = validate_normalize_headings_backend(normalize_headings_backend)
         if normalize_headings_backend is not None:
             import os as _os
 
-            _os.environ["PAGESPEAK_HEADING_NORMALIZE_BACKEND"] = normalize_headings_backend
-            _os.environ["PAGESPEAK_HEADING_NORMALIZE_FULL_BACKEND"] = normalize_headings_backend
+            for task in ("HEADING_NORMALIZE", "HEADING_NORMALIZE_FULL", "HEADING_NORMALIZE_DEHEAD"):
+                _os.environ[f"PAGESPEAK_{task}_BACKEND"] = normalize_headings_backend
         if rerun_from is not None:
             from ..services._rerun import RERUN_STAGES
 

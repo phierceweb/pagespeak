@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from pagespeak.services._audit import (
     audit_file,
     audit_paths,
     check_dangling_image_refs,
     check_empty_section,
+    is_document_dir,
     render_report,
 )
 
@@ -199,3 +202,76 @@ def test_render_report_summary_only(tmp_path: Path) -> None:
     out = render_report(audit_paths([f]), summary_only=True)
     assert "html_entity" in out
     assert ":1" not in out
+
+
+def test_audit_file_runs_the_extraction_checks(tmp_path: Path) -> None:
+    blocks = "\n\n".join(f"```\ncmd {i}\n```" for i in range(8))
+    md = _write(tmp_path / "doc.md", f"# Guide\n\n{blocks}\n")
+    assert "collapsed_code_blocks" in {f.check for f in audit_file(md)}
+
+
+def _coverage_dir(root: Path, name: str, raw_text: str) -> Path:
+    d = root / name
+    _write(d / f"{name}.raw.md", raw_text)
+    _write(d / f"{name}.md", raw_text + "\n\nImage caption words only here.\n")
+    return d
+
+
+def test_text_coverage_checks_raw_md_against_the_source(tmp_path: Path, monkeypatch) -> None:
+    """raw.md is what the backend produced; the master adds captions that could hide a loss."""
+    import pagespeak.services._audit as audit_mod
+
+    doc = _coverage_dir(tmp_path, "doc", "# Doc\n\nsome words\n")
+    seen: list[str] = []
+
+    def fake_check(md: Path, pdf: Path):
+        seen.append(md.name)
+        return []
+
+    monkeypatch.setattr(audit_mod, "check_text_coverage", fake_check)
+    report = audit_paths([doc], source_for=lambda md: tmp_path / "doc.pdf")
+    assert seen == ["doc.raw.md"]
+    assert report.coverage_checked == 1
+
+
+def test_text_coverage_walks_a_corpus_root_and_names_missing_sources(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import pagespeak.services._audit as audit_mod
+
+    _coverage_dir(tmp_path, "has-pdf", "text\n")
+    _coverage_dir(tmp_path, "no-pdf", "text\n")
+    monkeypatch.setattr(audit_mod, "check_text_coverage", lambda md, pdf: [])
+    report = audit_paths(
+        [tmp_path],
+        source_for=lambda md: tmp_path / "has-pdf.pdf" if "has-pdf" in md.name else None,
+    )
+    assert report.coverage_checked == 1
+    assert report.coverage_no_source == ("no-pdf",)
+    text = render_report(report)
+    assert "text coverage: 1 doc(s) checked" in text
+    assert "no source PDF: no-pdf" in text
+
+
+def test_extraction_checks_judge_the_whole_document_not_a_section(tmp_path: Path) -> None:
+    """A section of one-line shell commands is ordinary; collapse is a whole-document signature."""
+    blocks = "\n\n".join(f"```\ncmd {i}\n```" for i in range(8))
+    section = _write(tmp_path / "sections" / "shell.md", f"# Shell\n\n{blocks}\n")
+    assert "collapsed_code_blocks" not in {f.check for f in audit_file(section)}
+
+
+def test_text_coverage_needs_document_folders(tmp_path: Path) -> None:
+    """A file path used to be skipped by the coverage pass without a word."""
+    md = _write(tmp_path / "doc" / "doc.md", "body\n")
+    with pytest.raises(ValueError, match="rather than"):
+        audit_paths([md], source_for=lambda _md: tmp_path / "doc.pdf")
+    assert audit_paths([md]).files_scanned == 1
+
+
+def test_is_document_dir(tmp_path: Path) -> None:
+    _write(tmp_path / "out" / "doc" / "doc.raw.md", "body\n")
+    _write(tmp_path / "out" / "notes" / "INDEX.md", "index\n")
+    assert is_document_dir(tmp_path / "out" / "doc")
+    assert not is_document_dir(tmp_path / "out")
+    assert not is_document_dir(tmp_path / "out" / "notes")
+    assert not is_document_dir(tmp_path / "out" / "doc" / "doc.raw.md")

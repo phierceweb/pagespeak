@@ -27,6 +27,10 @@ Both `llm_full` and `llm_dehead` can mark a heading as not-a-heading (the level-
 
 | `auto` | Picks `heuristic` or `llm_full` **per document** from a $0 no-LLM heading-shape signal — see [Auto mode](#auto-mode). | Instant decision | $0 decision; the chosen engine's cost applies |
 
+### A response that covers too few headings is not applied
+
+The `llm` and `llm_full` modes ask for one line per heading. When a response levels fewer than `PAGESPEAK_NORMALIZE_MIN_COVERAGE_PCT` (default 90) percent of the headings it was given, it is **not applied**: every heading keeps its extracted level, and `heading_normalize_low_coverage` names the shortfall. Applying it would re-level a few headings and leave the rest where the extractor put them — a tree inconsistent with itself. The usual cause is a very large document whose response was cut off. A drop the guards above refuse still counts as answered. The response stays cached, so a plain re-run skips it again rather than re-send the whole payload; the warning says `source=cache` on such a replay (`source=llm` for a fresh answer) and names `--rerun-from normalize`, which asks again. `llm_dehead` is exempt: an absent verdict there means keep.
+
 Short non-prose margin-code fragments (`EN`, `FR`) that a backend promoted to headings are demoted in cleanup (`services/_fragments.py`) before normalize runs, so normalize sees a cleaner heading set.
 
 Residual heading slips this pass leaves (or introduces) are cleaned up **after** it by the `$0` deterministic **repair** stage (`services/_normalize_repair.py`, writes `<stem>.repaired.md`), which runs immediately after normalize (before the structure and vision stages) — see [pipeline-repair.md](pipeline-repair.md). Repair is the cheap deterministic counterpart to this (sometimes paid) LLM pass: freeze the LLM output, iterate repair for free.

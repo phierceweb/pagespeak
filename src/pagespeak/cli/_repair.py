@@ -9,49 +9,16 @@ whole-doc re-ingest, no re-vision. See `services/_table_repair.py` and
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 import typer
 
-from ..services._staging import staged_sources
+from ..services._staging import find_source_pdf
 from ..services._table_repair import (
     find_collapsed_cells,
     find_split_tables,
     repair_tables_in_markdown,
 )
-
-_SOURCE_MATCH_MIN = 0.6  # fraction of out-dir tokens a PDF must share to auto-match
-
-
-def _tokens(name: str) -> set[str]:
-    return set(re.findall(r"[a-z0-9]+", name.lower()))
-
-
-def _find_source_pdf(stem: str, in_dir: Path = Path("conversions/in")) -> Path | None:
-    """Locate the source PDF for an out-dir stem. Exact `<stem>.pdf` first, else
-    the `conversions/in/**/*.pdf` sharing the most out-dir tokens — robust to
-    naming drift (`device-user-guide` ↔ `Device User Guide v12.2.pdf`,
-    `acme-main-manual-14` ↔ `ACME Main Manual 14.0.pdf`)."""
-    direct = in_dir / f"{stem}.pdf"
-    if direct.exists():
-        return direct
-    if not in_dir.exists():
-        return None
-    want = _tokens(stem)
-    if not want:
-        return None
-    # rglob does not descend a symlinked directory, so a bundle-staged PDF is
-    # invisible to it; staged_sources resolves each bundle to its deliverable.
-    candidates = {p for p in in_dir.rglob("*.pdf")}
-    candidates |= {p for p in staged_sources(in_dir) if p.suffix.lower() == ".pdf"}
-    best: Path | None = None
-    best_score = 0.0
-    for p in sorted(candidates):
-        score = len(want & _tokens(p.stem)) / len(want)
-        if score > best_score:
-            best, best_score = p, score
-    return best if best_score >= _SOURCE_MATCH_MIN else None
 
 
 def register(app: typer.Typer) -> None:
@@ -97,7 +64,7 @@ def register(app: typer.Typer) -> None:
             typer.echo("no repairable tables found — nothing to repair")
             return
 
-        pdf = source or _find_source_pdf(stem)
+        pdf = source or find_source_pdf(stem)
         if pdf is None or not pdf.exists():
             typer.echo(
                 f"found {total} repairable table(s) but no source PDF for '{stem}'. "

@@ -79,7 +79,10 @@ def register(
         ),
         force_ocr: bool = typer.Option(False, "--force-ocr"),
         max_pages: int | None = typer.Option(
-            None, "--max-pages", help="Limit to first N pages (for testing on slices)."
+            None,
+            "--max-pages",
+            help="PDF only: convert just the first N pages, as a trial on a slice. "
+            "Not with --pdf-backend tophat.",
         ),
         force: bool = typer.Option(
             False, "--force", help="Discard manifest + chunks; re-ingest from scratch."

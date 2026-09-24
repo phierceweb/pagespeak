@@ -32,6 +32,11 @@ _STEM_LEN = 5  # match an anchor by its leading N chars in the caption
 _MAX_SHOWN_PER_DOC = 5
 
 _WORD_RE = re.compile(r"[a-z][a-z\-]{2,}")
+# Word appends this to the alt it generates; it names no subject.
+_WORD_ALT_SUFFIX_RE = re.compile(
+    r"\s*description automatically generated(?: with (?:low|medium|high) confidence)?\.?\s*$",
+    re.IGNORECASE,
+)
 
 # Generic figure-caption filler + English function words, ignored when picking
 # an alt's "subject" words. Deliberately generic — NO domain vocabulary.
@@ -165,21 +170,26 @@ class VisionAuditReport:
     findings_by_doc: dict[Path, list[VisionAuditFinding]]
     docs_scanned: int
     figures_assessed: int
+    figures_captioned: int = 0
 
     @property
     def finding_count(self) -> int:
         return sum(len(v) for v in self.findings_by_doc.values())
 
 
+def _clean_alt(alt: str) -> str:
+    return _WORD_ALT_SUFFIX_RE.sub("", alt).strip()
+
+
 def _subject_anchors(alt: str) -> list[str]:
     """The alt's leading subject words: content words in its first
     ``_ANCHOR_WINDOW`` tokens, minus generic figure/English filler."""
-    toks = _WORD_RE.findall(alt.lower())[:_ANCHOR_WINDOW]
+    toks = _WORD_RE.findall(_clean_alt(alt).lower())[:_ANCHOR_WINDOW]
     return [t for t in toks if t not in _GENERIC and len(t) >= _MIN_ANCHOR_CHARS]
 
 
 def _is_assessable(alt: str) -> bool:
-    return len(alt.strip()) >= _MIN_ALT_CHARS and bool(_subject_anchors(alt))
+    return len(_clean_alt(alt)) >= _MIN_ALT_CHARS and bool(_subject_anchors(alt))
 
 
 def check_identity_divergence(
@@ -245,26 +255,32 @@ def audit_vision(paths: list[Path]) -> VisionAuditReport:
     findings_by_doc: dict[Path, list[VisionAuditFinding]] = {}
     docs_scanned = 0
     figures_assessed = 0
+    figures_captioned = 0
     for given in paths:
         for cache_dir in _iter_vision_caches(given):
             doc_dir = cache_dir.parent
             docs_scanned += 1
             captions = _captions_from_cache(cache_dir)
             alts = _source_alts(doc_dir)
+            figures_captioned += len(captions)
             figures_assessed += sum(1 for b in captions if _is_assessable(alts.get(b, "")))
             findings = check_identity_divergence(alts, captions)
             if findings:
                 findings_by_doc[doc_dir] = findings
-    return VisionAuditReport(findings_by_doc, docs_scanned, figures_assessed)
+    return VisionAuditReport(findings_by_doc, docs_scanned, figures_assessed, figures_captioned)
 
 
 def render_report(report: VisionAuditReport, *, summary_only: bool = False) -> str:
     """Human-readable report: totals, then per-doc candidates (capped)."""
+    skipped = report.figures_captioned - report.figures_assessed
     out = [
         f"vision-audit: {report.docs_scanned} doc(s), "
-        f"{report.figures_assessed} figure(s) assessed, "
+        f"{report.figures_assessed} of {report.figures_captioned} captioned figure(s) assessed "
+        f"({skipped} skipped: source alt names no clear subject), "
         f"{report.finding_count} likely-confabulated caption(s) to review"
     ]
+    if report.figures_captioned and not report.figures_assessed:
+        out.append("Nothing could be assessed against source alt text — this is not a pass.")
     if summary_only:
         return "\n".join(out)
     for doc, findings in report.findings_by_doc.items():

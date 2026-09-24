@@ -58,7 +58,7 @@ The figure's existing alt text is read from the markdown *before* this pass (`al
 Then `_inject_diagrams()` does a markdown rewrite: for each `![...](path)` reference whose basename matches a `Diagram`, the function:
 
 - Replaces the image's alt text with the caption (structurally extractable by downstream parsers and read by screen readers).
-- Appends a fenced Mermaid block tagged `pagespeak-image="<path>"` on the info string when `mermaid` is non-null. Renderers ignore the tag; parsers can pair the Mermaid with its source image.
+- Appends a fenced Mermaid block tagged `pagespeak-image="<path>"` on the info string when `mermaid` is non-null. Renderers ignore the tag; parsers can pair the Mermaid with its source image. In split section files the tag's path is rewritten relative to the section file, the same as the image link above it.
 
 The single-shot and phased pipelines both dedupe via perceptual hash: identical or near-identical images across pages (chapter-opener decorations, repeated icons, the same figure rasterized at different resolutions) collapse to one vision call. Typically saves 30–60% of calls on textbooks (observed across real conversions; varies by document).
 

@@ -35,6 +35,7 @@ from urllib.parse import unquote
 from pf_core.log import get_logger
 
 from ..models._models import IngestResult
+from ._archive import extract_zip
 from ._qti_parse import parse_assessment_meta, parse_quiz
 from ._qti_render import render_quiz
 
@@ -73,8 +74,11 @@ def _resolve_root(src: Path) -> tuple[Path, bool]:
     if src.is_dir():
         return src, False
     tmp = Path(tempfile.mkdtemp(prefix="pagespeak_qti_"))
-    with zipfile.ZipFile(src) as zf:
-        zf.extractall(tmp)
+    try:
+        extract_zip(src, tmp)
+    except BaseException:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise
     if (tmp / _MANIFEST_NAME).exists():
         return tmp, True
     for cand in tmp.rglob(_MANIFEST_NAME):

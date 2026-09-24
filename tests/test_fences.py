@@ -239,3 +239,27 @@ def test_a_closed_fence_does_not_warn(caplog) -> None:
     with caplog.at_level("WARNING"):
         fence_flags(["```", "code", "```", "# H"])
     assert "fence_unclosed_at_eof" not in caplog.text
+
+
+def test_fenced_blocks_report_opener_closer_and_info() -> None:
+    """Same open/close rule as `fence_flags`: a nested shorter fence is content."""
+    from pagespeak.services._fences import FencedBlock, fenced_blocks
+
+    lines = [
+        "prose",
+        '```mermaid pagespeak-image="images/a.png"',
+        "flowchart TD",
+        "```",
+        "````markdown",
+        "```js",
+        "x()",
+        "```",
+        "````",
+        "~~~",
+        "never closed",
+    ]
+    assert fenced_blocks(lines) == [
+        FencedBlock(start=1, end=3, info='mermaid pagespeak-image="images/a.png"'),
+        FencedBlock(start=4, end=8, info="markdown"),
+        FencedBlock(start=9, end=None, info=""),
+    ]

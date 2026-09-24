@@ -262,3 +262,36 @@ def test_enumerate_quizzes_rejects_media_href_traversal(tmp_path: Path) -> None:
     (export / "imsmanifest.xml").write_text(manifest, encoding="utf-8")
     with pytest.raises(ValueError, match="escape"):
         enumerate_quizzes(export)
+
+
+def _imscc(path: Path, members: dict[str, bytes]) -> Path:
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for name, data in members.items():
+            zf.writestr(name, data)
+    return path
+
+
+def _export_members(root: Path) -> dict[str, bytes]:
+    _write_export(root)
+    return {f.relative_to(root).as_posix(): f.read_bytes() for f in root.rglob("*") if f.is_file()}
+
+
+def test_an_imscc_archive_enumerates_like_a_directory(tmp_path: Path) -> None:
+    members = _export_members(tmp_path / "src")
+    qx = enumerate_quizzes(_imscc(tmp_path / "course.imscc", members))
+    assert [e.title for e in qx.exams] == ["Quiz Alpha", "Quiz Beta"]
+    assert qx.is_temp is True
+
+
+def test_a_refused_archive_leaves_no_temp_dir(tmp_path: Path, monkeypatch) -> None:
+    import tempfile
+
+    members = _export_members(tmp_path / "src")
+    members["../escaped.txt"] = b"x"
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(scratch))
+    with pytest.raises(ValueError, match="escapes"):
+        enumerate_quizzes(_imscc(tmp_path / "course.imscc", members))
+    assert not (tmp_path / "escaped.txt").exists()
+    assert list(scratch.iterdir()) == []

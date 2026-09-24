@@ -3,8 +3,8 @@
 A thin re-export of `pf_core.utils.phash`, so pagespeak imports resolve
 to the shared implementation.
 
-The `ImageHash` + `Pillow` runtime deps come in via the
-`pf-core[image-phash]` extra (declared in pagespeak's pyproject.toml).
+`ImageHash` + `Pillow` are pagespeak's own dependencies, not pf-core's
+`[image-phash]` extra (see the note in pyproject.toml).
 """
 
 from __future__ import annotations

@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
+from contextlib import contextmanager
+from importlib import metadata
 from pathlib import Path
+from typing import Any
 
 from pf_core.log import get_logger
 
@@ -15,6 +19,76 @@ logger = get_logger(__name__)
 # when a later call passes a different device (Marker caches globally per
 # process; the second device value is silently ignored).
 _first_device: str | None = None
+
+# Pillow's default decompression-bomb limit.
+_PILLOW_MAX_IMAGE_PIXELS = 89_478_485
+
+
+def _installed_marker_version() -> str | None:
+    try:
+        return metadata.version("marker-pdf")
+    except metadata.PackageNotFoundError:
+        return None
+
+
+def _require_marker_below_2() -> None:
+    """Refuse Marker 2.x: 2.0 converted only a document's first pages under pagespeak, exit 0."""
+    version = _installed_marker_version()
+    if version is None:
+        return
+    try:
+        major = int(version.split(".")[0])
+    except ValueError:
+        return
+    if major >= 2:
+        raise ImportError(
+            f"marker-pdf {version} is not supported: Marker 2.0 silently truncated "
+            "documents under pagespeak. Install marker-pdf<2: pip install 'marker-pdf<2'"
+        )
+
+
+@contextmanager
+def _pixel_limit_lifted_for_marker() -> Iterator[None]:
+    """Marker lifts Pillow's bomb limit process-wide when it is imported; keep that to its own call."""
+    from PIL import Image
+
+    before = Image.MAX_IMAGE_PIXELS or _PILLOW_MAX_IMAGE_PIXELS
+    Image.MAX_IMAGE_PIXELS = None
+    try:
+        yield
+    finally:
+        Image.MAX_IMAGE_PIXELS = before
+
+
+def _run_marker(path: Path, config: dict[str, object]) -> tuple[str, dict[str, Any]]:
+    try:
+        from marker.converters.pdf import PdfConverter
+        from marker.models import create_model_dict
+        from marker.output import text_from_rendered
+    except ImportError as e:
+        raise ImportError(
+            "PDF support requires marker-pdf. Install with: pip install pagespeak[pdf]"
+        ) from e
+
+    converter = PdfConverter(
+        artifact_dict=create_model_dict(),
+        config=config or None,
+    )
+    try:
+        rendered = converter(str(path))
+    except PermissionError as e:
+        if "sysconf" in str(e) or "Operation not permitted" in str(e):
+            raise PermissionError(
+                "Marker's internal ProcessPoolExecutor failed to start. "
+                "This usually means the shell is sandboxed and "
+                '`os.sysconf("SC_SEM_NSEMS_MAX")` is denied. '
+                "Re-run with broader permissions (in Cursor: "
+                '`required_permissions=["all"]`). '
+                "See docs/operations.md for details."
+            ) from e
+        raise
+    markdown_text, _, images = text_from_rendered(rendered)
+    return markdown_text, images
 
 
 def _prefix_bare_image_refs(markdown: str, saved_basenames: set[str]) -> str:
@@ -102,15 +176,7 @@ def convert_pdf(
                 _first_device,
             )
 
-    try:
-        from marker.converters.pdf import PdfConverter
-        from marker.models import create_model_dict
-        from marker.output import text_from_rendered
-    except ImportError as e:
-        raise ImportError(
-            "PDF support requires marker-pdf. Install with: pip install pagespeak[pdf]"
-        ) from e
-
+    _require_marker_below_2()
     config: dict[str, object] = {}
     if force_ocr:
         config["force_ocr"] = True
@@ -119,24 +185,8 @@ def convert_pdf(
     if backend_kwargs:
         config.update(backend_kwargs)
 
-    converter = PdfConverter(
-        artifact_dict=create_model_dict(),
-        config=config or None,
-    )
-    try:
-        rendered = converter(str(path))
-    except PermissionError as e:
-        if "sysconf" in str(e) or "Operation not permitted" in str(e):
-            raise PermissionError(
-                "Marker's internal ProcessPoolExecutor failed to start. "
-                "This usually means the shell is sandboxed and "
-                '`os.sysconf("SC_SEM_NSEMS_MAX")` is denied. '
-                "Re-run with broader permissions (in Cursor: "
-                '`required_permissions=["all"]`). '
-                "See docs/operations.md for details."
-            ) from e
-        raise
-    markdown_text, _, images = text_from_rendered(rendered)
+    with _pixel_limit_lifted_for_marker():
+        markdown_text, images = _run_marker(path, config)
 
     saved_images: list[Path] = []
     if output_dir is not None:

@@ -238,3 +238,18 @@ def test_cleanup_image_download_respects_disable_toggle(
     cleaned = (tmp_path / "doc.cleaned.md").read_text(encoding="utf-8")
     assert "](https://cdn.x.com/images/a.png)" in cleaned  # left remote
     assert not (tmp_path / "images").exists()
+
+
+def test_orchestrators_write_documents_atomically() -> None:
+    """A plain write interrupted mid-way leaves a truncated checkpoint that the
+    mtime-based resume accepts as valid, shipping part of the document at exit 0."""
+    import re
+
+    root = Path(__file__).resolve().parents[1] / "src" / "pagespeak" / "orchestrators"
+    offenders = [
+        f"{path.name}:{lineno}"
+        for path in sorted(root.glob("*.py"))
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+        if re.search(r"\.write_text\(", line)
+    ]
+    assert not offenders, f"use pf_core.utils.io.atomic_write_text: {offenders}"

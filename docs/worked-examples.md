@@ -118,7 +118,7 @@ The prose in §1.2 says only: *"This book covers eleven distinct organ systems i
 
 > "The source does **not** enumerate the eleven organ systems, and I cannot list them from it… it defers the actual list to **Figure 1.4** and **Figure 1.5**, which are images (`_page_21_Figure_2.jpeg` and `_page_22_Figure_2.jpeg`). … I cannot honestly provide either the eleven systems or example organs without the figure contents."
 
-**Against raw Docling** (figure = bare image ref — the accuracy-first alternative):
+**Against raw Docling** (figure = bare image ref — the other PDF backend):
 
 > "The source does **not** enumerate the eleven organ systems, and does **not** name any organs within them… the actual list of the eleven systems is shown only in **Figure 1.4** and **Figure 1.5**, which appear as images (`_page_22_Picture_3.png` and `_page_23_Picture_4.png`). … I cannot list the systems or their organs from this source without reading the two figures."
 
@@ -248,6 +248,6 @@ pagespeak convert out/marker --from cleanup --preset rag-default \
 
 > Download for free at <https://openstax.org/details/books/anatomy-and-physiology>.
 
-The OpenStax-derived Markdown in §1–§5 (raw extractions, the repaired output, sections, and breadcrumbs) is a derivative of that CC BY 4.0 work and is therefore also offered under CC BY 4.0 — not the MIT license that covers pagespeak's own source. The vision-written image descriptions and Mermaid blocks were produced by pagespeak.
+The OpenStax-derived Markdown in §1–§5 (raw extractions, the repaired output, sections, and breadcrumbs) is a derivative of that CC BY 4.0 work and is therefore also offered under CC BY 4.0 — not the Apache-2.0 license that covers pagespeak's own source. The vision-written image descriptions and Mermaid blocks were produced by pagespeak.
 
 **§6** draws on a private library of commercial audio-equipment manuals. Those manuals are **not** reproduced here and remain under their respective publishers' copyright — only anonymized structural numbers (corpus size, relevance scores, token counts) and a few short, product-genericized quotations (for commentary/demonstration) appear. No product names are used.

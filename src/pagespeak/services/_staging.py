@@ -13,11 +13,12 @@ tree.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from pathlib import Path
 
 from pagespeak.backends._qti import is_qti_export
-from pagespeak.orchestrators._ingest import (
+from pagespeak.orchestrators._convert_source import (
     MARKDOWN_SUFFIXES,
     MARKITDOWN_SUFFIXES,
     PDF_SUFFIXES,
@@ -82,3 +83,35 @@ def staged_sources(in_dir: Path) -> Iterator[Path]:
         resolved = resolve_staged(entry)
         if resolved is not None:
             yield resolved
+
+
+_SOURCE_MATCH_MIN = 0.6  # fraction of out-dir tokens a PDF must share to auto-match
+
+
+def _name_tokens(name: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9]+", name.lower()))
+
+
+def find_source_pdf(stem: str, in_dir: Path = Path("conversions/in")) -> Path | None:
+    """Locate the source PDF for an out-dir stem. Exact `<stem>.pdf` first, else
+    the `in_dir/**/*.pdf` sharing the most out-dir tokens — robust to naming
+    drift (`device-user-guide` ↔ `Device User Guide v12.2.pdf`)."""
+    direct = in_dir / f"{stem}.pdf"
+    if direct.exists():
+        return direct
+    if not in_dir.exists():
+        return None
+    want = _name_tokens(stem)
+    if not want:
+        return None
+    # rglob does not descend a symlinked directory, so a bundle-staged PDF is
+    # invisible to it; staged_sources resolves each bundle to its deliverable.
+    candidates = set(in_dir.rglob("*.pdf"))
+    candidates |= {p for p in staged_sources(in_dir) if p.suffix.lower() == ".pdf"}
+    best: Path | None = None
+    best_score = 0.0
+    for p in sorted(candidates):
+        score = len(want & _name_tokens(p.stem)) / len(want)
+        if score > best_score:
+            best, best_score = p, score
+    return best if best_score >= _SOURCE_MATCH_MIN else None

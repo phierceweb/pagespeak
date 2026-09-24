@@ -83,6 +83,13 @@ done
 echo "installing pagespeak[$EXTRAS] editable"
 .venv/bin/python -m pip install -e "$INSTALL_TARGET[$EXTRAS]" --quiet
 
+# marker-pdf pins Pillow<11, and every Pillow before 12.3 has published CVEs.
+# Marker runs on 12.3, so a dev venv takes it over the pin (see SECURITY.md).
+if .venv/bin/python -c 'import importlib.metadata as m; m.version("marker-pdf")' 2>/dev/null; then
+  echo "ensuring Pillow>=12.3 over marker-pdf's <11 pin — a pip conflict report about it is expected"
+  .venv/bin/python -m pip install "Pillow>=12.3" --quiet
+fi
+
 # Activate the build-gate hooks (file-size + ruff) so they run on every commit.
 # The .github/workflows/guards.yml CI job is the unskippable backstop. Non-fatal
 # — a fresh clone without git, or pre-commit unavailable, shouldn't break setup.

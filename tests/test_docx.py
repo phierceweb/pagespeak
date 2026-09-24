@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from pagespeak.backends._docx import (
     _append_image_refs,
     _extract_epub_media,
@@ -35,6 +37,20 @@ def test_extract_office_media_returns_empty_for_non_zip(tmp_path: Path) -> None:
     not_a_zip = tmp_path / "fake.docx"
     not_a_zip.write_text("definitely not a zip")
     assert _extract_office_media(not_a_zip, tmp_path / "out") == []
+
+
+def test_extract_office_media_stops_at_the_archive_cap(tmp_path: Path, monkeypatch) -> None:
+    """A DOCX is a zip: a media member that inflates past the cap is refused
+    while it is being copied, not after it has been read into memory."""
+    import zipfile
+
+    bomb = tmp_path / "bomb.docx"
+    with zipfile.ZipFile(bomb, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("word/media/image1.png", b"\0" * 50_000)
+    monkeypatch.setenv("PAGESPEAK_MAX_ARCHIVE_BYTES", "10000")
+    with pytest.raises(ValueError, match="PAGESPEAK_MAX_ARCHIVE_BYTES"):
+        _extract_office_media(bomb, tmp_path / "out")
+    assert not (tmp_path / "out" / "images" / "image1.png").exists()
 
 
 def test_extract_epub_media_pulls_images_by_extension(fake_epub: Path, tmp_path: Path) -> None:

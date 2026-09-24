@@ -91,6 +91,7 @@ def test_apply_skips_prose_pass_on_outline_doc() -> None:
 def test_registry_order_and_events() -> None:
     # Order is load-bearing (each pass runs on the previous output).
     assert [event for event, _ in HEADING_DEMOTE_PASSES] == [
+        "cleanup_demoted_table_row_headings",
         "cleanup_demoted_front_matter_headings",
         "cleanup_demoted_toc_outline_headings",
         "cleanup_demoted_toc_phantom_headings",
@@ -486,3 +487,25 @@ def test_structure_authoritative_defaults_off() -> None:
     assert "## Figure 3. Something" in cleanup_markdown(
         md, level="basic", structure_authoritative=True
     )
+
+
+def test_table_row_headings_are_demoted_to_rows() -> None:
+    """A backend promoting a table row to `## | a | b |` makes it a junk section
+    and a heading the normalize LLM is asked about. The text is a row, not a title."""
+    from pagespeak.services._cleanup_diagnose import demote_table_row_headings
+
+    src = (
+        "## | Parameter | Value |\n### | Input level | +4 dBu\n## Real Section\n```\n# | x |\n```\n"
+    )
+    out, n = demote_table_row_headings(src)
+    assert n == 2
+    assert "| Parameter | Value |" in out.splitlines()
+    assert "| Input level | +4 dBu" in out.splitlines()
+    assert "## Real Section" in out
+    assert "# | x |" in out  # fenced code is never touched
+
+
+def test_table_row_demote_runs_on_outline_docs_too() -> None:
+    """Not a judgement about the backend's levels: no source states a heading as a pipe row."""
+    _, counts = apply_heading_demotions("## | a | b |\nbody\n", is_outline_doc=True)
+    assert counts["cleanup_demoted_table_row_headings"] == 1

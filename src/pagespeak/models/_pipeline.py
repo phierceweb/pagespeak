@@ -36,6 +36,7 @@ __all__ = [
     "ChunkState",
     "Manifest",
     "VisionState",
+    "completed_chunk_backends",
     "read_chunk_statuses",
     "sha256_file",
 ]
@@ -54,6 +55,7 @@ class ChunkState:
     completed_at: str | None = None
     error: str | None = None
     pdf_backend: str | None = None  # "marker" / "docling"
+    settings: dict[str, Any] | None = None  # other backend options it was read with
 
 
 @dataclass
@@ -83,6 +85,9 @@ class Manifest:
     version: int = MANIFEST_VERSION
     chunks: list[ChunkState] = field(default_factory=list)
     vision: VisionState = field(default_factory=VisionState)
+    # Completed chunks from another chunk plan: never concatenated, restored by a
+    # later plan with the same range.
+    shelved: list[ChunkState] = field(default_factory=list)
 
     @classmethod
     def path_for(cls, output_dir: Path) -> Path:
@@ -148,6 +153,7 @@ class Manifest:
             version=data.get("version", MANIFEST_VERSION),
             chunks=chunks,
             vision=vision,
+            shelved=[ChunkState(**c) for c in data.get("shelved", [])],
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -157,6 +163,7 @@ class Manifest:
             "input_sha256": self.input_sha256,
             "chunks": [asdict(c) for c in self.chunks],
             "vision": asdict(self.vision),
+            "shelved": [asdict(c) for c in self.shelved],
         }
 
     def save(self) -> None:
@@ -189,6 +196,7 @@ class Manifest:
         raw_md: str,
         images: list[str],
         pdf_backend: str | None = None,
+        settings: dict[str, Any] | None = None,
     ) -> None:
         chunk = self.chunk_by_range(page_range)
         if chunk is None:
@@ -201,6 +209,8 @@ class Manifest:
         chunk.error = None
         if pdf_backend is not None:
             chunk.pdf_backend = pdf_backend
+        if settings is not None:
+            chunk.settings = settings
         self.save()
 
     def mark_chunk_failed(self, page_range: str, *, error: str) -> None:
@@ -211,6 +221,29 @@ class Manifest:
         chunk.status = "failed"
         chunk.error = error
         self.save()
+
+    def set_plan(self, page_ranges: set[str]) -> tuple[list[str], list[str]]:
+        """Make `page_ranges` the chunks that build raw.md.
+
+        A completed chunk outside them is shelved and any other dropped; a
+        shelved chunk inside them is restored unless a completed one exists.
+        Returns `(moved_out, restored)` page ranges.
+        """
+        moved_out = [c for c in self.chunks if c.page_range not in page_ranges]
+        active = {c.page_range: c for c in self.chunks if c.page_range in page_ranges}
+        shelf = {c.page_range: c for c in self.shelved}
+        shelf.update({c.page_range: c for c in moved_out if c.status == "completed"})
+        in_plan = sorted(page_ranges & shelf.keys())
+        restored = [r for r in in_plan if r not in active or active[r].status != "completed"]
+        for r in restored:
+            active[r] = shelf[r]
+        for r in in_plan:
+            del shelf[r]
+        if moved_out or in_plan:
+            self.chunks = list(active.values())
+            self.shelved = list(shelf.values())
+            self.save()
+        return [c.page_range for c in moved_out], restored
 
     def completed_chunk_ranges(self) -> set[str]:
         return {c.page_range for c in self.chunks if c.status == "completed"}
@@ -263,8 +296,8 @@ class Manifest:
         legacy callers stay valid."""
 
 
-def read_chunk_statuses(output_dir: Path) -> list[tuple[str, str]]:
-    """`(page_range, status)` per chunk in OUTDIR/manifest.json, else `[]`.
+def _read_chunk_dicts(output_dir: Path) -> list[dict[str, Any]]:
+    """The chunk entries of OUTDIR/manifest.json, else `[]`.
 
     Tolerant by design: upstream ingesters write a `manifest.json` of their own,
     so a missing, unreadable, or foreign-shaped file must read as "not chunked"
@@ -277,16 +310,27 @@ def read_chunk_statuses(output_dir: Path) -> list[tuple[str, str]]:
         data = json.loads(mf_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return []
-    if not isinstance(data, dict):
-        return []
-    chunks = data.get("chunks")
+    chunks = data.get("chunks") if isinstance(data, dict) else None
     if not isinstance(chunks, list):
         return []
+    return [c for c in chunks if isinstance(c, dict)]
+
+
+def read_chunk_statuses(output_dir: Path) -> list[tuple[str, str]]:
+    """`(page_range, status)` per chunk in OUTDIR/manifest.json, else `[]`."""
     return [
         (str(c.get("page_range", "?")), str(c.get("status", "unknown")))
-        for c in chunks
-        if isinstance(c, dict)
+        for c in _read_chunk_dicts(output_dir)
     ]
+
+
+def completed_chunk_backends(output_dir: Path) -> set[str]:
+    """The PDF backends that read OUTDIR's completed chunks, else an empty set."""
+    return {
+        str(c["pdf_backend"])
+        for c in _read_chunk_dicts(output_dir)
+        if c.get("status") == "completed" and c.get("pdf_backend")
+    }
 
 
 def _chunk_sort_key(chunk: ChunkState) -> tuple[int, str]:

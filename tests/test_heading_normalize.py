@@ -9,12 +9,10 @@ from pathlib import Path
 import pytest
 
 from pagespeak.services._heading_normalize import (
-    _CLAUDE_CODE_TIMEOUT_S_DEFAULT,
     NormalizeData,
     _apply_normalization,
     _build_prompt,
     _cache_key,
-    _claude_code_timeout_s,
     _extract_headings,
     _HeadingRecord,
     _heuristic_level_for,
@@ -679,8 +677,8 @@ def test_heuristic_returns_none_for_non_matching() -> None:
 
 
 def test_heuristic_does_not_invoke_llm(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Heuristic mode must NEVER fire the Claude Code subprocess. Patches
-    `_claude_code_invoke` and asserts it's never called."""
+    """Heuristic mode must NEVER call the LLM. Patches `invoke_agent` — the
+    call path every LLM mode takes — and asserts it's never called."""
     md = (
         "#### Chapter 1 Introduction\n"
         "intro body\n\n"
@@ -692,14 +690,11 @@ def test_heuristic_does_not_invoke_llm(monkeypatch: pytest.MonkeyPatch) -> None:
 
     invoke_calls: list[str] = []
 
-    def boom(prompt: str, *, model: str | None = None) -> str:
-        invoke_calls.append(prompt)
+    def boom(slug: str, **kwargs: object) -> object:
+        invoke_calls.append(slug)
         raise RuntimeError("LLM should not have been invoked")
 
-    monkeypatch.setattr(
-        "pagespeak.services._heading_normalize._claude_code_invoke",
-        boom,
-    )
+    monkeypatch.setattr("pagespeak._agent_runtime.invoke_agent", boom)
 
     data = gather_normalize_levels(md, mode="heuristic")
     assert data is not None
@@ -733,13 +728,10 @@ def test_heuristic_default_is_heuristic_mode(monkeypatch: pytest.MonkeyPatch) ->
     """Default `gather_normalize_levels(md)` (no `mode=`) MUST be
     heuristic. Cost-protection regression: LLM should be opt-in only."""
 
-    def boom(prompt: str, *, model: str | None = None) -> str:
+    def boom(slug: str, **kwargs: object) -> object:
         raise RuntimeError("default mode must be heuristic, not llm")
 
-    monkeypatch.setattr(
-        "pagespeak.services._heading_normalize._claude_code_invoke",
-        boom,
-    )
+    monkeypatch.setattr("pagespeak._agent_runtime.invoke_agent", boom)
     md = "#### Chapter 1 Foo\nbody\n\n#### 1.1 Bar\nbody\n\n#### 1.2 Baz\nbody\n"
     data = gather_normalize_levels(md)  # no mode= — default applies
     assert data is not None
@@ -761,29 +753,6 @@ def test_heuristic_filter_structural_off_includes_unfiltered_headings() -> None:
     assert "# Chapter 1 Intro" in out
     assert "## 1.1 Foo" in out
     assert "## Just A Heading" in out  # untouched
-
-
-def test_claude_code_invoke_constructs_pf_core_client_with_retry_1() -> None:
-    """Contract test: `_claude_code_invoke` must construct pf-core's
-    `ClaudeCodeClient` with `retry=1` so transient session blips don't
-    cause heading normalization to silently drop. Cross-call parity
-    with the vision backends (which also adopted retry=1)."""
-    from unittest.mock import MagicMock, patch
-
-    from pagespeak.services._heading_normalize import _claude_code_invoke
-
-    with patch("pf_core.clients.claude_code.ClaudeCodeClient") as ctor:
-        instance = MagicMock()
-        instance.chat.return_value = ("response", {})
-        ctor.return_value = instance
-        _claude_code_invoke("prompt", model="haiku")
-
-    assert ctor.call_count == 1
-    kwargs = ctor.call_args.kwargs
-    assert kwargs.get("retry") == 1, (
-        f"`_claude_code_invoke` must construct pf-core's ClaudeCodeClient "
-        f"with retry=1; got kwargs={kwargs}"
-    )
 
 
 # ============================================================================
@@ -921,6 +890,38 @@ def test_resolve_max_input_tokens_falls_back_to_yaml(
     assert _resolve_max_input_tokens() == 7777
 
 
+def test_dehead_gate_reads_its_own_max_input_tokens(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`llm_dehead` has its own router block; the gate must not read `llm_full`'s."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "model_router.yaml").write_text(
+        "agents:\n"
+        "  heading_normalize_full:\n"
+        "    max_input_tokens: 7777\n"
+        "    backends:\n"
+        "      claude_code:\n"
+        "        model: test-model\n"
+        "  heading_normalize_dehead:\n"
+        "    max_input_tokens: 1\n"
+        "    backends:\n"
+        "      claude_code:\n"
+        "        model: test-model\n",
+        encoding="utf-8",
+    )
+    from pagespeak.services._heading_normalize import _extract_headings, _resolve_max_input_tokens
+    from pagespeak.services._normalize_llm import _build_dehead_prompt_with_gate
+
+    assert _resolve_max_input_tokens() == 7777
+    assert _resolve_max_input_tokens(agent="heading_normalize_dehead") == 1
+    md = "# Title\nbody text\n## Note\nan aside\n"
+    _, anchors_included = _build_dehead_prompt_with_gate(
+        md, _extract_headings(md), max_input_tokens=None
+    )
+    assert anchors_included is False
+
+
 def test_resolve_max_input_tokens_default_when_yaml_absent(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -984,11 +985,11 @@ def test_gather_normalize_levels_llm_full_mode_happy_path() -> None:
         captured_prompt.append(prompt)
         # LLM correctly identifies that the front-panel and volume
         # knobs are children of the front-panel section.
-        return "2: 2\n3: 2\n"
+        return "1: 1\n2: 2\n3: 2\n"
 
     data = gather_normalize_levels(md, mode="llm_full", invoke=fake_invoke)
     assert data is not None
-    assert data.levels == {2: 2, 3: 2}
+    assert data.levels == {1: 1, 2: 2, 3: 2}
     # filter_structural is forced False in llm_full mode.
     assert data.filter_structural is False
     # Prompt must include anchors (under-threshold).
@@ -1001,7 +1002,7 @@ def test_gather_normalize_levels_llm_full_forces_filter_structural_false() -> No
     md = "# Unnumbered Title\nbody.\n# Another Unnumbered\nmore.\n"
 
     def fake_invoke(prompt: str) -> str:
-        return "1: 2\n"
+        return "1: 2\n2: 2\n"
 
     data = gather_normalize_levels(
         md,
@@ -1135,29 +1136,6 @@ def test_normalize_legacy_invoke_kwarg_bypasses_invoke_agent() -> None:
         gather_normalize_levels(md, mode="llm", invoke=fake_invoke)
 
 
-def test_claude_code_timeout_returns_default_when_env_unset(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.delenv("PAGESPEAK_CLAUDE_CODE_TIMEOUT_S", raising=False)
-    assert _claude_code_timeout_s() == _CLAUDE_CODE_TIMEOUT_S_DEFAULT
-
-
-def test_claude_code_timeout_reads_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("PAGESPEAK_CLAUDE_CODE_TIMEOUT_S", "300")
-    assert _claude_code_timeout_s() == 300
-
-
-def test_claude_code_timeout_falls_back_on_invalid_env(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Malformed env values fall back to the default rather than crashing.
-    pf-core's `resolve_int` emits its own structured `env_var_malformed`
-    warning (covered by pf-core's tests); we only assert the fall-back
-    value here so this test doesn't couple to pf-core's log format."""
-    monkeypatch.setenv("PAGESPEAK_CLAUDE_CODE_TIMEOUT_S", "not-an-int")
-    assert _claude_code_timeout_s() == _CLAUDE_CODE_TIMEOUT_S_DEFAULT
-
-
 # --- llm_dehead mode ---------------------------------------------------------
 
 
@@ -1223,11 +1201,11 @@ def test_llm_dehead_all_keep_is_a_clean_noop() -> None:
     assert _heading_lines(apply_normalization(md, data)) == _heading_lines(md)
 
 
-def test_normalize_warns_when_llm_covers_few_headings(
+def test_normalize_skips_a_response_that_covers_few_headings(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """A partial response is applied silently — un-covered headings keep the
-    level the extractor gave them."""
+    """Applying a partial response re-levels a few headings and leaves the rest
+    at the extracted level — a tree inconsistent with itself. Skip it instead."""
     md = (
         "#### Chapter 1 Introduction\n"
         "intro\n"
@@ -1244,11 +1222,29 @@ def test_normalize_warns_when_llm_covers_few_headings(
         return "1: 3\n"
 
     with caplog.at_level(logging.WARNING):
-        normalize_heading_levels(md, mode="llm", invoke=fake_invoke)
+        out = normalize_heading_levels(md, mode="llm", invoke=fake_invoke)
 
+    assert out == md
     assert any("heading_normalize_low_coverage" in r.getMessage() for r in caplog.records), (
         f"expected a low-coverage warning; got: {[r.getMessage() for r in caplog.records]}"
     )
+
+
+def test_guard_refused_drops_count_as_answered(caplog: pytest.LogCaptureFixture) -> None:
+    """The body guard removes a refused drop from the verdict map; the model still
+    answered that heading, so the response is complete and is applied."""
+    body = "this section has a real body of prose that runs to well over ten words\n"
+    md = f"# Guide\n{body}## Setup\n{body}## Wiring\n{body}## Safety\n{body}"
+
+    def fake_invoke(prompt: str) -> str:
+        return "1: 1\n2: 2\n3: 0\n4: 3\n"
+
+    with caplog.at_level(logging.WARNING):
+        out = normalize_heading_levels(md, mode="llm_full", invoke=fake_invoke)
+
+    assert "### Safety" in out
+    assert "## Wiring" in out  # the refused drop keeps its heading
+    assert not [r for r in caplog.records if "heading_normalize_low_coverage" in r.getMessage()]
 
 
 def test_low_coverage_threshold_reads_env(
@@ -1280,6 +1276,38 @@ def test_low_coverage_threshold_reads_env(
     with caplog.at_level(logging.WARNING):
         normalize_heading_levels(md, mode="llm", invoke=fake_invoke)
     assert [r for r in caplog.records if "heading_normalize_low_coverage" in r.getMessage()]
+
+
+def test_refused_response_is_replayed_from_cache_and_says_so(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A refused reply is cached like any other: re-asking on every run would
+    re-send the whole payload. The replay must be visible as a replay."""
+    md = (
+        "#### Chapter 1 Introduction\n"
+        "intro\n"
+        "#### 1.1 Foo\n"
+        "foo body\n"
+        "#### 1.2 Bar\n"
+        "bar body\n"
+        "#### Chapter 2 Methods\n"
+        "methods body\n"
+    )
+    cache_dir = tmp_path / ".heading-normalize-cache"
+
+    def must_not_run(prompt: str) -> str:
+        raise AssertionError("a cached response must not be re-asked")
+
+    with caplog.at_level(logging.WARNING):
+        normalize_heading_levels(md, mode="llm", invoke=lambda p: "1: 3\n", cache_dir=cache_dir)
+        out = normalize_heading_levels(md, mode="llm", invoke=must_not_run, cache_dir=cache_dir)
+
+    assert out == md
+    fresh, replayed = [
+        r.getMessage() for r in caplog.records if "heading_normalize_low_coverage" in r.getMessage()
+    ]
+    assert "source=llm" in fresh
+    assert "source=cache" in replayed
 
 
 def test_dehead_mode_exempt_from_coverage_warning(

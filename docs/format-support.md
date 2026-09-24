@@ -4,7 +4,7 @@
 
 | Format | Backend | Image extraction | Notes |
 |---|---|---|---|
-| `.pdf` | Marker (default) or Docling | yes (rasterized to PNG) | Requires `pagespeak[pdf]` / `pagespeak[pdf-docling]`. `force_ocr=True` for scans. |
+| `.pdf` | Marker (default) or Docling | yes (Marker writes JPEG, Docling PNG) | Requires `pagespeak[pdf]` / `pagespeak[pdf-docling]`. `force_ocr=True` for scans. |
 | Top Hat quiz-export `.pdf` | `--pdf-backend tophat` | yes (embedded figures) | Reads the PDF text layer → one `## Question N` block per question; marks the correct answer when revealed (grey-letter signal); extracts embedded figures (incl. image-only questions) for the vision pass. Requires `pagespeak[tophat]`. See [tophat-quizzes.md](tophat-quizzes.md). |
 | `.docx` | MarkItDown | yes (via zipfile from `word/media/`) | Tables, headings, lists, footnotes |
 | `.pptx` | MarkItDown | yes (via zipfile from `ppt/media/`) | Slide-by-slide content |
@@ -26,18 +26,18 @@
 | Scanned image files standalone (.png, .jpg) | Single-image OCR is its own thing | Out of scope; convert to a 1-page PDF first |
 | Email (.eml, .msg) | Different shape — threading, attachments | Out of scope; consumers handle |
 
-The format-suffix tables (`PDF_SUFFIXES` / `MARKITDOWN_SUFFIXES` / `MARKDOWN_SUFFIXES`) in `orchestrators/_ingest.py` are the single place to add a route.
+The format-suffix tables (`PDF_SUFFIXES` / `MARKITDOWN_SUFFIXES` / `MARKDOWN_SUFFIXES`) and the dispatch they drive, in `orchestrators/_convert_source.py`, are the single place to add a route.
 
 ## Per-format quirks
 
 ### PDF (Marker)
 
-- Marker rasterizes every embedded image (vector or raster) to PNG at the page's resolution.
+- Marker rasterizes every embedded image (vector or raster) to JPEG at the page's resolution.
 - Image filenames follow `_page_<N>_Picture_<I>.jpeg` for raster images and `_page_<N>_Figure_<I>.jpeg` for what Marker classifies as figures. Figures are usually diagrams; Pictures are often page-decoration headers.
 - The diagram pass treats both identically — the vision LLM decides whether each is a real diagram regardless of Marker's classification.
 - Marker emits `<span id="page-X-Y"></span>` anchors as cross-ref targets. The cleanup pass strips them on heading lines (basic cleanup) and everywhere (aggressive); see [cleanup.md](cleanup.md). `cross_refs="remap"` rewrites the refs to heading slugs.
 - Tables: Marker's native table extraction works for vector PDFs. Image-of-table tables come through as image references (no Mermaid — caption only).
-- Equations: plain text or LaTeX-ish. For LaTeX-grade math, prefer Docling with `pdf_backend_kwargs={"do_formula_enrichment": True}`.
+- Equations: Marker emits LaTeX. Docling emits glyph codes (`n01`) unless `pdf_backend_kwargs={"do_formula_enrichment": True}` is set, so prefer Marker for formula-heavy PDFs.
 
 ### DOCX (MarkItDown + zipfile)
 

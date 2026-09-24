@@ -62,6 +62,25 @@ def test_vision_options_threaded():
     assert "--workers" in cmd and "2" in cmd
 
 
+def test_docling_choice_runs_with_heading_hierarchy():
+    inp = ConversionInputs(
+        out_dir="/c/out/doc",
+        source_path="/c/in/Doc.pdf",
+        options=ConversionOptions(pdf_backend="docling"),
+    )
+    cmd = build_command(inp, pagespeak_bin="ps")
+    assert cmd[cmd.index("--pdf-backend") + 1] == "docling"
+    assert "--heading-hierarchy" in cmd
+
+
+def test_default_backend_passes_no_backend_flags():
+    """Unset leaves the choice to the folder's run record (or the marker default)."""
+    inp = ConversionInputs(out_dir="/c/out/doc", source_path="/c/in/Doc.pdf")
+    cmd = build_command(inp, pagespeak_bin="ps")
+    assert "--pdf-backend" not in cmd
+    assert "--heading-hierarchy" not in cmd
+
+
 def test_workers_one_is_still_emitted_explicitly():
     """Omitting --workers at 1 let an ambient PAGESPEAK_WORKERS override the
     job's own choice — the form has no way to express 'no, single-process'."""

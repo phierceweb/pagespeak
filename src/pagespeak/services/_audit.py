@@ -15,11 +15,14 @@ from __future__ import annotations
 
 import re
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import unquote
 
 from ._audit_checks import AuditFinding, run_text_checks
+from ._audit_coverage import check_text_coverage
+from ._audit_extraction import run_extraction_checks
 from ._image_refs import parse_image_refs
 
 _CHECKPOINT_SUFFIXES = (
@@ -31,6 +34,7 @@ _CHECKPOINT_SUFFIXES = (
     ".visioned.md",
 )
 _MAX_SHOWN_PER_CHECK = 3  # per file, in the rendered report
+_MAX_NAMED_NO_SOURCE = 10
 
 _PAGE_ANCHOR_RE = re.compile(r'<span id="page-\d+-\d+"></span>\s*')
 _EXTERNAL_SCHEMES = ("http://", "https://", "data:")
@@ -42,6 +46,8 @@ class AuditReport:
 
     findings_by_file: dict[Path, list[AuditFinding]]
     files_scanned: int
+    coverage_checked: int = 0
+    coverage_no_source: tuple[str, ...] = ()
 
     @property
     def error_count(self) -> int:
@@ -132,6 +138,8 @@ def audit_file(path: Path) -> list[AuditFinding]:
     """All detectors over one markdown file."""
     text = path.read_text(encoding="utf-8", errors="replace")
     findings = run_text_checks(text)
+    if "sections" not in path.parts:  # whole-document signatures
+        findings.extend(run_extraction_checks(text))
     findings.extend(check_empty_section(path, text))
     findings.extend(check_dangling_image_refs(path, text))
     return findings
@@ -152,8 +160,48 @@ def _iter_markdown(root: Path) -> list[Path]:
     return files
 
 
-def audit_paths(paths: list[Path]) -> AuditReport:
-    """Audit every final markdown artifact under the given files/dirs."""
+def _coverage_target(doc_dir: Path) -> Path | None:
+    """`<stem>.raw.md` — the backend's output, which the coverage threshold was
+    calibrated on — else the master `.md`."""
+    raws = sorted(doc_dir.glob("*.raw.md"))
+    if raws:
+        return raws[0]
+    masters = [
+        p
+        for p in sorted(doc_dir.glob("*.md"))
+        if p.name != "INDEX.md" and not p.name.endswith(_CHECKPOINT_SUFFIXES)
+    ]
+    return masters[0] if masters else None
+
+
+def is_document_dir(path: Path) -> bool:
+    """True when `path` holds one converted document (`<stem>.raw.md` or a master `.md`)."""
+    return path.is_dir() and _coverage_target(path) is not None
+
+
+def _coverage_doc_dirs(given: Path) -> list[Path]:
+    """The given dir if it holds a converted document, else its child dirs that do."""
+    if is_document_dir(given):
+        return [given]
+    return [d for d in sorted(given.iterdir()) if is_document_dir(d)]
+
+
+def audit_paths(
+    paths: list[Path], *, source_for: Callable[[Path], Path | None] | None = None
+) -> AuditReport:
+    """Audit every final markdown artifact under the given files/dirs.
+
+    With `source_for` (checked file → its source PDF, or None), each converted
+    document dir is also checked for text-layer coverage; every path must then
+    be a dir. Raises ValueError for a file.
+    """
+    if source_for is not None:
+        for given in paths:
+            if not given.is_dir():
+                raise ValueError(
+                    f"text coverage is checked per converted document folder; "
+                    f"pass {given.parent} rather than {given}"
+                )
     findings_by_file: dict[Path, list[AuditFinding]] = {}
     scanned = 0
     for given in paths:
@@ -163,7 +211,19 @@ def audit_paths(paths: list[Path]) -> AuditReport:
             findings = audit_file(target)
             if findings:
                 findings_by_file[target] = findings
-    return AuditReport(findings_by_file=findings_by_file, files_scanned=scanned)
+    checked, no_source = 0, []
+    if source_for is not None:
+        for doc_dir in (d for given in paths for d in _coverage_doc_dirs(given)):
+            checked_md = _coverage_target(doc_dir)
+            pdf = source_for(checked_md) if checked_md is not None else None
+            if checked_md is None or pdf is None or pdf.suffix.lower() != ".pdf":
+                no_source.append(doc_dir.name)
+                continue
+            checked += 1
+            findings = check_text_coverage(checked_md, pdf)
+            if findings:
+                findings_by_file.setdefault(checked_md, []).extend(findings)
+    return AuditReport(findings_by_file, scanned, checked, tuple(no_source))
 
 
 def render_report(report: AuditReport, *, summary_only: bool = False) -> str:
@@ -174,6 +234,13 @@ def render_report(report: AuditReport, *, summary_only: bool = False) -> str:
     ]
     for check, n in sorted(report.counts_by_check.items()):
         out.append(f"  {check}: {n}")
+    if report.coverage_checked or report.coverage_no_source:
+        line = f"text coverage: {report.coverage_checked} doc(s) checked against their source PDF"
+        if report.coverage_no_source:
+            names = ", ".join(report.coverage_no_source[:_MAX_NAMED_NO_SOURCE])
+            extra = len(report.coverage_no_source) - _MAX_NAMED_NO_SOURCE
+            line += f"; no source PDF: {names}" + (f" (+{extra} more)" if extra > 0 else "")
+        out.append(line)
     if summary_only:
         return "\n".join(out)
     for path, findings in report.findings_by_file.items():

@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import contextlib
-from pathlib import Path
+from html import escape
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, Response, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 
 from pagespeak.web._config import WebConfig
-from pagespeak.web._cost import gate_decision, vision_will_run
-from pagespeak.web._jobs import CONVERSION_KIND, ConversionInputs, ConversionOptions
+from pagespeak.web._cost import gate_decision, rerun_clears_vision_cache, vision_will_run
+from pagespeak.web._jobs import CONVERSION_KIND, ConversionInputs, form_str, options_from_form
+from pagespeak.web._reader import ReaderChangeRefused, reread_on_reader_change
 from pagespeak.web._scan import get_conversion
+from pagespeak.web._security import max_upload_bytes
+from pagespeak.web._upload import UploadRefused, save_upload, upload_target
 
 router = APIRouter(prefix="/api")
 
@@ -21,48 +24,18 @@ router = APIRouter(prefix="/api")
 async def upload(request: Request, file: UploadFile) -> Response:
     cfg: WebConfig = request.app.state.cfg
     cfg.in_dir.mkdir(parents=True, exist_ok=True)
-    name = Path(file.filename or "upload").name
-    dest = cfg.in_dir / name
-    dest.write_bytes(await file.read())
+    try:
+        await save_upload(
+            file, upload_target(cfg.in_dir, file.filename), max_bytes=max_upload_bytes()
+        )
+    except UploadRefused as refused:
+        return PlainTextResponse(refused.message, status_code=refused.status)
     return RedirectResponse(url="/", status_code=303)
 
 
-def _str_or_none(v: Any) -> str | None:
-    """Convert a form value (str | UploadFile | None) to str | None."""
-    if v is None or v == "":
-        return None
-    return str(v)
-
-
-def _options_from_form(form: dict[str, Any]) -> ConversionOptions:
-    def b(key: str, default: bool = False) -> bool:
-        return str(form.get(key, str(default))).lower() in ("1", "true", "on", "yes")
-
-    def s(key: str) -> str | None:
-        return _str_or_none(form.get(key))
-
-    diagrams = b("diagrams", True)
-    # vision_cache_only requires diagrams (the converter raises otherwise) — drop
-    # it if images are skipped, so even a hand-crafted POST can't make that combo.
-    cache_only = b("vision_cache_only") and diagrams
-
-    return ConversionOptions(
-        preset=s("preset"),
-        diagrams=diagrams,
-        vision_backend=s("vision_backend"),
-        vision_cache_only=cache_only,
-        cleanup=s("cleanup"),
-        split_sections=b("split_sections"),
-        nested_split=b("nested_split"),
-        normalize_headings=b("normalize_headings"),
-        normalize_headings_mode=s("normalize_headings_mode"),
-        normalize_headings_backend=s("normalize_headings_backend"),
-        pdf_backend=s("pdf_backend"),
-        docx_backend=s("docx_backend"),
-        workers=int(form.get("workers") or 1),
-        source_type=s("source_type"),
-        source_label=s("source_label"),
-        rerun_from=s("rerun_from"),
+def _error_box(message: str) -> HTMLResponse:
+    return HTMLResponse(
+        f'<div class="p-3 rounded bg-red-50 text-red-700 text-sm">{escape(message)}</div>'
     )
 
 
@@ -74,27 +47,34 @@ async def run(request: Request, dir_name: str) -> Response:
     if conv is None:
         raise HTTPException(status_code=404, detail=f"No conversion {dir_name!r}")
 
-    start: str | None = _str_or_none(form.get("start"))
-    stop_after: str | None = _str_or_none(form.get("stop_after"))
+    start: str | None = form_str(form.get("start"))
+    stop_after: str | None = form_str(form.get("stop_after"))
     confirmed = str(form.get("confirmed", "")).lower() in ("1", "true", "on", "yes")
-    opts = _options_from_form(form)
+    opts = options_from_form(form)
 
     if start in (None, "ingest") and conv.source_path is None:
         raise HTTPException(status_code=409, detail="No source file to ingest for this conversion.")
+    try:
+        opts, rereads = reread_on_reader_change(
+            opts, out_dir=conv.out_dir, source=conv.source_path, start=start
+        )
+    except ReaderChangeRefused as refused:
+        return _error_box(str(refused))
 
     will_run = vision_will_run(
         start, stop_after, diagrams=opts.diagrams, cache_only=opts.vision_cache_only
     )
     backend = opts.vision_backend or "claude_code"
     decision = gate_decision(
-        out_dir=conv.out_dir, will_run=will_run, backend=backend, confirmed=confirmed
+        out_dir=None if rereads else conv.out_dir,
+        will_run=will_run,
+        backend=backend,
+        confirmed=confirmed,
+        cache_cleared=rerun_clears_vision_cache(opts.rerun_from),
     )
 
     if decision.blocked:
-        return HTMLResponse(
-            f'<div class="p-3 rounded bg-red-50 text-red-700 text-sm">{decision.message}</div>',
-            status_code=200,
-        )
+        return _error_box(decision.message)
     if decision.needs_confirm:
         templates = request.app.state.templates
         resp: Response = templates.TemplateResponse(
@@ -144,10 +124,7 @@ async def deliver(request: Request, dir_name: str) -> Response:
     try:
         result = strip_for_delivery(conv.out_dir, dest)
     except (OSError, ValueError) as exc:
-        return HTMLResponse(
-            f'<div class="p-3 rounded bg-red-50 text-red-700 text-sm">delivery failed: {exc}</div>',
-            status_code=200,
-        )
+        return _error_box(f"delivery failed: {exc}")
     if result.documents == 0:
         return HTMLResponse(
             '<div class="p-3 rounded bg-amber-50 text-amber-800 text-sm">'
@@ -158,7 +135,7 @@ async def deliver(request: Request, dir_name: str) -> Response:
     return HTMLResponse(
         '<div class="p-3 rounded bg-green-50 text-green-800 text-sm">'
         f"delivered {result.documents} document(s), {result.files} file(s) → "
-        f'<span class="mono">{result.dest}</span>'
+        f'<span class="mono">{escape(str(result.dest))}</span>'
         "</div>",
         status_code=200,
     )

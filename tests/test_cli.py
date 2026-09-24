@@ -195,6 +195,7 @@ def test_convert_normalize_headings_backend_accepts_three_values(tmp_path: Path)
         # Reset env between values.
         os.environ.pop("PAGESPEAK_HEADING_NORMALIZE_BACKEND", None)
         os.environ.pop("PAGESPEAK_HEADING_NORMALIZE_FULL_BACKEND", None)
+        os.environ.pop("PAGESPEAK_HEADING_NORMALIZE_DEHEAD_BACKEND", None)
         with patch("pagespeak.cli._convert.to_markdown", return_value=fake_result):
             result = runner.invoke(
                 app,
@@ -211,10 +212,13 @@ def test_convert_normalize_headings_backend_accepts_three_values(tmp_path: Path)
         assert result.exit_code == 0, result.output
         assert os.environ.get("PAGESPEAK_HEADING_NORMALIZE_BACKEND") == backend
         assert os.environ.get("PAGESPEAK_HEADING_NORMALIZE_FULL_BACKEND") == backend
+        # llm_dehead routes through its own task slug.
+        assert os.environ.get("PAGESPEAK_HEADING_NORMALIZE_DEHEAD_BACKEND") == backend
 
     # Clean up so the env state doesn't leak to other tests.
     os.environ.pop("PAGESPEAK_HEADING_NORMALIZE_BACKEND", None)
     os.environ.pop("PAGESPEAK_HEADING_NORMALIZE_FULL_BACKEND", None)
+    os.environ.pop("PAGESPEAK_HEADING_NORMALIZE_DEHEAD_BACKEND", None)
 
 
 def test_convert_normalize_headings_backend_rejects_invalid(tmp_path: Path) -> None:

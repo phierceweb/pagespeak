@@ -110,47 +110,9 @@ def test_repair_tables_missing_source_errors(tmp_path: Path) -> None:
     assert "no source PDF" in result.output
 
 
-def test_find_source_pdf_token_overlap(tmp_path: Path) -> None:
-    """Auto-locate tolerates naming drift (spaces, version suffixes, casing)."""
-    from pagespeak.cli._repair import _find_source_pdf
-
-    for name in [
-        "Acme Device User Guide v12.2.pdf",
-        "ACME MAIN Manual 14.0.pdf",
-        "Generic zx100 Manual.pdf",
-        "unrelated handbook.pdf",
-    ]:
-        (tmp_path / name).write_bytes(b"%PDF-1.4\n")
-    assert (
-        _find_source_pdf("acme-device-user-guide", tmp_path).name
-        == "Acme Device User Guide v12.2.pdf"
-    )
-    assert _find_source_pdf("acme-main-manual-14", tmp_path).name == "ACME MAIN Manual 14.0.pdf"
-    assert _find_source_pdf("generic-zx100-gadget", tmp_path).name == "Generic zx100 Manual.pdf"
-    assert _find_source_pdf("obscure-database-tool-guide", tmp_path) is None  # no good match
-
-
 def test_repair_tables_no_raw_checkpoint_errors(tmp_path: Path) -> None:
     out = tmp_path / "empty"
     out.mkdir()
     result = runner.invoke(app, ["repair-tables", str(out)])
     assert result.exit_code == 1
     assert "no <stem>.raw.md" in result.output
-
-
-def test_find_source_pdf_reaches_into_a_symlinked_bundle(tmp_path: Path) -> None:
-    """rglob does not descend a symlinked directory, so a bundle-staged PDF was
-    unreachable by the fuzzy branch."""
-    from pagespeak.cli._repair import _find_source_pdf
-
-    upstream = tmp_path / "upstream" / "acme-main-manual-14"
-    upstream.mkdir(parents=True)
-    (upstream / "acme-main-manual-14.pdf").write_bytes(b"%PDF-1.4\n")
-    (upstream / "manifest.json").write_text("{}", encoding="utf-8")
-    staging = tmp_path / "in"
-    staging.mkdir()
-    (staging / "acme-main-manual-14").symlink_to(upstream)
-
-    assert list(staging.rglob("*.pdf")) == [], "precondition: rglob cannot see it"
-    found = _find_source_pdf("acme-main-manual-14-guide", staging)
-    assert found is not None and found.name == "acme-main-manual-14.pdf"

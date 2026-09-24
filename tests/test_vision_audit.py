@@ -15,6 +15,7 @@ from pagespeak.services._vision_audit import (
     _subject_anchors,
     audit_vision,
     check_identity_divergence,
+    render_report,
 )
 
 _SQUIRREL_ALT = "Photograph of a red squirrel clinging to a tree branch in a forest"
@@ -88,3 +89,23 @@ def test_audit_vision_clean_doc_has_no_findings(tmp_path: Path) -> None:
     report = audit_vision([doc])
     assert report.figures_assessed == 1
     assert report.findings_by_doc == {}
+
+
+def test_word_boilerplate_alt_is_not_a_subject() -> None:
+    """Word writes `<subject> Description automatically generated`; the suffix
+    must not stand in for a subject the caption is then judged against."""
+    alt = "A screenshot of a computer Description automatically generated with medium confidence"
+    caps = {"fig1.webp": "Settings dialog with an input gain slider and a meter."}
+    assert check_identity_divergence({"fig1.webp": alt}, caps) == []
+    assert "description" not in _subject_anchors(alt)
+
+
+def test_report_says_when_nothing_could_be_assessed(tmp_path: Path) -> None:
+    """Zero figures assessed is no result, not a clean pass."""
+    doc = _seed_doc(tmp_path, alt="", caption="A red squirrel on a branch.")
+    report = audit_vision([doc])
+    assert report.figures_captioned == 1
+    assert report.figures_assessed == 0
+    text = render_report(report)
+    assert "1 skipped" in text
+    assert "not a pass" in text

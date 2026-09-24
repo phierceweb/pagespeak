@@ -2,11 +2,14 @@
 
 Pagespeak's PDF backends:
 
-- **Marker** (`_pdf.convert_pdf`) — fast, the default. Heading
-  hierarchy and tables flatten on academic PDFs; surya can crash on MPS.
-- **Docling** (`_pdf_docling.convert_pdf_docling`) — accuracy-first
-  alternative. Preserves heading hierarchy, TableFormer-grade
-  tables, formula → LaTeX, MPS-clean. Slower per page.
+- **Marker** (`_pdf.convert_pdf`) — the default. Heading levels come from
+  font-size clusters, so they shift with the page range and flatten across
+  chunks; keeps LaTeX formulas and multi-line code; surya can crash on MPS.
+- **Docling** (`_pdf_docling.convert_pdf_docling`) — levels from PDF
+  bookmarks / numbering / font style with `heading_hierarchy`, one flat level
+  without it. TableFormer-grade tables, MPS-clean, faster on CPU. Collapses
+  multi-line code blocks; formulas become glyph codes unless
+  `do_formula_enrichment`.
 - **Top Hat** (`_tophat.convert_pdf_tophat`) — special-purpose, for Top Hat
   quiz-export PDFs only. Reads the text layer (no layout/ML), promoting each
   `Question N` marker to a `## Question N` heading so the pipeline splits one

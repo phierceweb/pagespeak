@@ -24,6 +24,7 @@ import shutil
 from pathlib import Path
 
 from pf_core.log import get_logger
+from pf_core.utils.io import atomic_write_text
 
 from ..backends._qti import _sanitize_quiz_title, convert_qti_exam, enumerate_quizzes
 from ..backends._qti_split import exam_frontmatter, split_quiz_into_questions
@@ -99,9 +100,7 @@ def run_qti_export(
                 source_type=source_type,
                 source_label=source_label,
             )
-            (exam_dir / f"{stem}.md").write_text(
-                front + result.markdown.lstrip("\n"), encoding="utf-8"
-            )
+            atomic_write_text(exam_dir / f"{stem}.md", front + result.markdown.lstrip("\n"))
 
             # 4. per-question split under the exam's own sections/
             split_quiz_into_questions(

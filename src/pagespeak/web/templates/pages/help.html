@@ -81,7 +81,7 @@
         <tr><td class="p-2 border-b font-medium">which AI looks at images</td><td class="p-2 border-b">The default is <strong>free</strong> — it uses your Claude plan. The other two (openrouter, anthropic) <strong>charge real money</strong> for every image.</td></tr>
         <tr><td class="p-2 border-b font-medium">preset</td><td class="p-2 border-b">Start from a ready-made bundle of settings for a common goal: <span class="mono">rag-default</span> (tuned for feeding an AI/search database), <span class="mono">textbook</span>, <span class="mono">flat</span>, <span class="mono">archival</span>. Anything you change yourself still wins.</td></tr>
         <tr><td class="p-2 border-b font-medium">tidy the text</td><td class="p-2 border-b">How much to clean up the converted text. <span class="mono">off</span> = leave as-is; <span class="mono">basic</span> = light tidy; <span class="mono">aggressive</span> = also remove more leftover clutter from the original file.</td></tr>
-        <tr><td class="p-2 border-b font-medium">PDF reader</td><td class="p-2 border-b">Which engine reads PDF files. <span class="mono">marker</span> is fast; <span class="mono">docling</span> is slower but more accurate. Only matters for PDFs.</td></tr>
+        <tr><td class="p-2 border-b font-medium">PDF reader</td><td class="p-2 border-b">Which engine reads PDF files. <span class="mono">marker</span> is the default and the better choice for code, math and scanned pages. <span class="mono">docling</span> takes heading levels from the PDF's bookmarks and reads tables more cleanly. Left on default, a document converted before keeps the reader it used; choosing another reads the document again. Only matters for PDFs.</td></tr>
         <tr><td class="p-2 border-b font-medium">save each section separately</td><td class="p-2 border-b">Besides the one combined file, also save each section of the document as its own file.</td></tr>
         <tr><td class="p-2 border-b font-medium">group sections in folders</td><td class="p-2 border-b">When saving sections separately, organize them into numbered folders that mirror the document's structure. (Available only when "save each section separately" is on.)</td></tr>
         <tr><td class="p-2 border-b font-medium">rebuild heading structure</td><td class="p-2 border-b">If a document came out with every heading the same size (common with textbook PDFs), restore the real chapter / sub-section nesting so the structure is correct.</td></tr>
@@ -153,7 +153,9 @@
         <tr><td class="p-2 border-b mono">PAGESPEAK_CONVERSIONS_DIR</td><td class="p-2 border-b mono">./conversions</td><td class="p-2 border-b">Root holding <span class="mono">in/</span> + <span class="mono">out/</span>.</td></tr>
         <tr><td class="p-2 border-b mono">PAGESPEAK_WEB_HOST</td><td class="p-2 border-b mono">127.0.0.1</td><td class="p-2 border-b">Bind host.</td></tr>
         <tr><td class="p-2 border-b mono">PAGESPEAK_WEB_PORT</td><td class="p-2 border-b mono">8810</td><td class="p-2 border-b">Bind port.</td></tr>
-        <tr><td class="p-2 mono">PAGESPEAK_WEB_CONCURRENCY</td><td class="p-2 mono">1</td><td class="p-2">Concurrent conversion jobs.</td></tr>
+        <tr><td class="p-2 border-b mono">PAGESPEAK_WEB_CONCURRENCY</td><td class="p-2 border-b mono">1</td><td class="p-2 border-b">Concurrent conversion jobs.</td></tr>
+        <tr><td class="p-2 border-b mono">PAGESPEAK_WEB_ALLOWED_HOSTS</td><td class="p-2 border-b mono">(empty)</td><td class="p-2 border-b">Extra host names accepted besides loopback and the bind host.</td></tr>
+        <tr><td class="p-2 mono">PAGESPEAK_WEB_MAX_UPLOAD_BYTES</td><td class="p-2 mono">536870912</td><td class="p-2">Largest accepted upload (512 MiB).</td></tr>
       </tbody>
     </table>
     <p class="text-sm text-slate-700 mt-3">

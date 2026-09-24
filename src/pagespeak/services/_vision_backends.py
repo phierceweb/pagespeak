@@ -200,10 +200,13 @@ class ClaudeCodeVisionBackend:
             binary_arg = resolved_bin
             # Model goes per-call via chat(model=...) (older pf-core lacks the
             # ctor kwarg); retry=1 = pf-core retries transients internally.
+            # The prompt has the model Read the image, and pf-core 0.23 loads no
+            # tools unless named; --tools in extra_args names it on 0.22 as well.
             client = _ClaudeCodeClient(
                 timeout=_claude_code_timeout_s(),
                 binary=resolved_bin,
                 retry=1,
+                extra_args=["--tools", "Read"],
             )
         else:
             # Injected client (tests): no binary path of our own to log.

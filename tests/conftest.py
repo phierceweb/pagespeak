@@ -2,10 +2,20 @@ from __future__ import annotations
 
 import importlib.util
 import io
+import ipaddress
+import os
+import shutil
+import socket
 import zipfile
+from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
+
+# Docling checks the Hugging Face hub for its models on every load; offline, it
+# reads the local cache. Read once when huggingface_hub is imported, so set here.
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
 
 # --- Optional-extra gating ------------------------------------------------
 #
@@ -19,16 +29,15 @@ import pytest
 #
 # Keyed by test-file stem -> the keystone module of its extra. A module that is
 # only PARTLY dependent (a few backend-touching tests among pure-logic ones,
-# e.g. test_pdf / test_pdf_docling) is gated whole-module: the pure tests are
+# e.g. test_pdf_docling) is gated whole-module: the pure tests are
 # skipped too on a minimal install, but they still run under `bin/setup --all`.
-# Genuinely mixed modules worth preserving (test_docx_dispatch) use a per-test
-# `pytest.importorskip` instead of this map.
+# Genuinely mixed modules worth preserving (test_docx_dispatch, test_pdf) use a
+# per-test `pytest.importorskip` instead of this map.
 _OPTIONAL_EXTRA_FOR_MODULE = {
     "test_docx_image_alt": "docx",
     "test_docx_structured": "docx",
     "test_docx_table": "docx",
     "test_docx_walk": "docx",
-    "test_pdf": "marker",
     "test_pdf_docling": "docling",
     "test_web_actions": "fastapi",
     "test_web_app": "fastapi",
@@ -38,6 +47,7 @@ _OPTIONAL_EXTRA_FOR_MODULE = {
     "test_web_db": "fastapi",
     "test_web_jobs": "fastapi",
     "test_web_llm_summary": "fastapi",
+    "test_web_security": "fastapi",
     "test_web_pages": "fastapi",
     "test_web_scan": "fastapi",
     "test_web_worker": "fastapi",
@@ -98,6 +108,68 @@ def _fresh_model_router_cache():
     else:
         os.environ["MODEL_ROUTER_CONFIG"] = prior
     clear_cache()
+
+
+def _is_local_host(host: object) -> bool:
+    if host in (None, "", "localhost"):
+        return True
+    try:
+        address = ipaddress.ip_address(str(host).split("%", 1)[0])
+    except ValueError:
+        return False
+    return address.is_loopback or address.is_unspecified
+
+
+@pytest.fixture(autouse=True)
+def _no_network(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Tests must not reach external services, the `claude` CLI included: one that
+    does hangs the run when the network stalls, or spends quota. Callers swallow
+    the refusal (the Hugging Face hub falls back to its cache, a failed LLM call
+    skips the pass), so an attempt fails the test at teardown."""
+    attempts: list[str] = []
+    real_getaddrinfo = socket.getaddrinfo
+    real_connect = socket.socket.connect
+    real_connect_ex = socket.socket.connect_ex
+    real_which = shutil.which
+
+    def which(cmd: Any, *args: Any, **kwargs: Any) -> str | None:
+        if Path(str(cmd)).name == "claude":
+            attempts.append("claude CLI")
+            return None
+        found: str | None = real_which(cmd, *args, **kwargs)
+        return found
+
+    def getaddrinfo(host: object, *args: Any, **kwargs: Any) -> Any:
+        if not _is_local_host(host):
+            attempts.append(str(host))
+            raise socket.gaierror(f"network disabled in tests: {host}")
+        return real_getaddrinfo(host, *args, **kwargs)
+
+    def _refuse_remote(sock: socket.socket, address: Any) -> None:
+        if sock.family in (socket.AF_INET, socket.AF_INET6) and not _is_local_host(address[0]):
+            attempts.append(str(address[0]))
+            raise OSError(f"network disabled in tests: {address[0]}")
+
+    def connect(self: socket.socket, address: Any) -> None:
+        _refuse_remote(self, address)
+        real_connect(self, address)
+
+    def connect_ex(self: socket.socket, address: Any) -> int:
+        _refuse_remote(self, address)
+        return real_connect_ex(self, address)
+
+    monkeypatch.setattr(socket, "getaddrinfo", getaddrinfo)
+    monkeypatch.setattr(socket.socket, "connect", connect)
+    monkeypatch.setattr(socket.socket, "connect_ex", connect_ex)
+    monkeypatch.setattr(shutil, "which", which)
+    yield
+    assert not attempts, f"test tried to reach the network: {sorted(set(attempts))}"
+
+
+@pytest.fixture(autouse=True)
+def _web_test_host_allowed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The console refuses unlisted Host headers; TestClient sends `testserver`."""
+    monkeypatch.setenv("PAGESPEAK_WEB_ALLOWED_HOSTS", "testserver")
 
 
 @pytest.fixture

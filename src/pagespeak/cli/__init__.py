@@ -99,9 +99,8 @@ def _validate_normalize_headings_backend(value: str | None) -> str | None:
 
     None (default) means "don't touch env vars — leave whatever the
     user set in .env or shell". When provided, the convert subcommand
-    sets both `PAGESPEAK_HEADING_NORMALIZE_BACKEND` and
-    `PAGESPEAK_HEADING_NORMALIZE_FULL_BACKEND` env vars so both modes
-    use the same backend for the run.
+    sets the per-task backend env var of every normalize mode (`llm`,
+    `llm_full`, `llm_dehead`) so the run uses that backend whichever is active.
     """
     if value is None:
         return None

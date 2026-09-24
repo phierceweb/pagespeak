@@ -7,6 +7,9 @@ command; progress is read from on-disk checkpoints by the scanner.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Any
+
 from pf_core.jobs import register_kind
 from pydantic import BaseModel, Field, field_validator
 
@@ -34,6 +37,47 @@ class ConversionOptions(BaseModel):
     source_type: str | None = None
     source_label: str | None = None
     rerun_from: str | None = None
+
+
+def form_str(v: Any) -> str | None:
+    """Convert a form value (str | UploadFile | None) to str | None."""
+    if v is None or v == "":
+        return None
+    return str(v)
+
+
+def options_from_form(form: Mapping[str, Any]) -> ConversionOptions:
+    """The run form's fields as options; an absent or empty field is the default."""
+
+    def b(key: str, default: bool = False) -> bool:
+        return str(form.get(key, str(default))).lower() in ("1", "true", "on", "yes")
+
+    def s(key: str) -> str | None:
+        return form_str(form.get(key))
+
+    diagrams = b("diagrams", True)
+    # vision_cache_only requires diagrams (the converter raises otherwise) — drop
+    # it if images are skipped, so even a hand-crafted POST can't make that combo.
+    cache_only = b("vision_cache_only") and diagrams
+
+    return ConversionOptions(
+        preset=s("preset"),
+        diagrams=diagrams,
+        vision_backend=s("vision_backend"),
+        vision_cache_only=cache_only,
+        cleanup=s("cleanup"),
+        split_sections=b("split_sections"),
+        nested_split=b("nested_split"),
+        normalize_headings=b("normalize_headings"),
+        normalize_headings_mode=s("normalize_headings_mode"),
+        normalize_headings_backend=s("normalize_headings_backend"),
+        pdf_backend=s("pdf_backend"),
+        docx_backend=s("docx_backend"),
+        workers=int(form.get("workers") or 1),
+        source_type=s("source_type"),
+        source_label=s("source_label"),
+        rerun_from=s("rerun_from"),
+    )
 
 
 class ConversionInputs(BaseModel):

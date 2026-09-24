@@ -10,6 +10,7 @@ from pagespeak.models._pipeline import (
     MANIFEST_VERSION,
     ChunkState,
     Manifest,
+    completed_chunk_backends,
     read_chunk_statuses,
     sha256_file,
 )
@@ -98,6 +99,49 @@ def test_completed_chunk_ranges_excludes_in_progress(tmp_path: Path) -> None:
     mf.add_or_update_chunk(ChunkState(page_range="10-19", status="in_progress"))
     mf.add_or_update_chunk(ChunkState(page_range="20-29", status="failed"))
     assert mf.completed_chunk_ranges() == {"0-9"}
+
+
+def test_set_plan_shelves_completed_chunks_outside_the_plan(tmp_path: Path) -> None:
+    """Off-plan chunks never reach raw.md (overlapping pages would repeat), but a
+    completed one is kept: a `--max-pages` trial must not cost the full run's chunks."""
+    out = tmp_path / "out"
+    mf = Manifest.load_or_create(out)
+    mf.mark_chunk_completed("0-19", raw_md="chunks/0-19/raw.md", images=[])
+    mf.mark_chunk_failed("20-39", error="oom")
+    mf.mark_chunk_completed("0-49", raw_md="chunks/0-49/raw.md", images=[])
+
+    assert mf.set_plan({"0-49", "50-99"}) == (["0-19", "20-39"], [])
+    reloaded = Manifest.load_or_create(out)
+    assert [c.page_range for c in reloaded.chunks] == ["0-49"]
+    assert [c.page_range for c in reloaded.shelved] == ["0-19"]
+    assert read_chunk_statuses(out) == [("0-49", "completed")]
+
+    assert reloaded.set_plan({"0-19"}) == (["0-49"], ["0-19"])
+    assert reloaded.completed_chunk_ranges() == {"0-19"}
+    assert [c.page_range for c in reloaded.shelved] == ["0-49"]
+    assert reloaded.set_plan({"0-19"}) == ([], [])
+
+
+def test_chunk_settings_round_trip(tmp_path: Path) -> None:
+    out = tmp_path / "out"
+    mf = Manifest.load_or_create(out)
+    settings = {"force_ocr": True, "pdf_backend_kwargs": {}}
+    mf.mark_chunk_completed(
+        "0-9", raw_md="chunks/0-9/raw.md", images=[], pdf_backend="marker", settings=settings
+    )
+    assert Manifest.load_or_create(out).chunks[0].settings == settings
+
+
+def test_completed_chunk_backends(tmp_path: Path) -> None:
+    out = tmp_path / "out"
+    out.mkdir()
+    assert completed_chunk_backends(out) == set()
+    (out / MANIFEST_FILENAME).write_text('["an upstream ingester\'s manifest"]')
+    assert completed_chunk_backends(out) == set()
+    mf = Manifest.load_or_create(tmp_path / "chunked")
+    mf.mark_chunk_completed("0-9", raw_md="r", images=[], pdf_backend="docling")
+    mf.mark_chunk_failed("10-19", error="oom")
+    assert completed_chunk_backends(tmp_path / "chunked") == {"docling"}
 
 
 def test_mark_chunk_completed_overwrites_failed(tmp_path: Path) -> None:

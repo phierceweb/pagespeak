@@ -64,6 +64,10 @@ def create_app(*, start_worker: bool = True) -> FastAPI:
     app: FastAPI = _raw
     app.state.cfg = cfg
 
+    from pagespeak.web._security import install_security
+
+    install_security(app, bind_host=cfg.host)
+
     templates = setup_templates(app, _TEMPLATES, extra_globals={"app_version": __version__})
     app.state.templates = templates
 

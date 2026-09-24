@@ -2,6 +2,45 @@
 
 Notable changes to pagespeak, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## 0.16.0
+
+### Added
+- **`pagespeak ingest` writes its settings into `.pagespeak-run.json`**, merged into an existing record. `convert <out_dir>` inherits them and carries the source identity forward. The settings that produced `raw.md` sit in an `ingest_flags` block that only a run writing `raw.md` changes; every other run keeps it and records its values as its ingest settings.
+- **`audit` flags extraction damage a backend leaves at exit 0.** `collapsed_code_blocks` (every fenced code block in the document is one line), `unclosed_code_fence` (a fence never closed, so the rest of the file renders as code) and `formula_glyph_codes` (math emitted as `n01`-style glyph codes) read the master file. `--text-coverage` compares each document with its source PDF's text layer — the share of the PDF's distinct words that reached `raw.md`, flagged below `PAGESPEAK_AUDIT_MIN_TEXT_COVERAGE_PCT` (default 90) with the pages whose words mostly never arrived. It takes document folders; the source is `--source <pdf>` for one document's folder, or auto-located in `--in-dir`. A source that cannot be read as a PDF is reported as a warning.
+- **Web console request guards.** A request whose `Host` is not loopback, the bind host or listed in `PAGESPEAK_WEB_ALLOWED_HOSTS` gets a 403 (DNS rebinding). A write a browser marks as cross-site (`Sec-Fetch-Site`, or an `Origin` other than the host) gets a 403, so a page on another site cannot queue a conversion. A body over `PAGESPEAK_WEB_MAX_UPLOAD_BYTES` (default 512 MiB) gets a 413, counted as it arrives when the request has no `Content-Length`. Host names match case-insensitively. Binding beyond loopback logs `web_console_exposed` at startup.
+- **The web console's preview no longer runs document scripts.** Every page carries a nonce-based Content-Security-Policy: `<script>` tags, inline event handlers, `javascript:` links, frames and remote images in a converted document stay inert. Responses also send `X-Content-Type-Options: nosniff`, and error text echoed into console fragments is HTML-escaped.
+- **Zip-based inputs are read under a decompressed-size cap.** Office and EPUB media and Canvas `.imscc` exports stop with an error past `PAGESPEAK_MAX_ARCHIVE_BYTES` (default 1 GiB), counted as bytes inflate. Media members stream to disk instead of being read whole into memory. A Canvas export is unpacked member by member: a member path outside the extraction folder is refused, symlink members are skipped, and a refused archive leaves no temp folder.
+
+### Changed
+- **Relicensed to Apache-2.0** (was MIT). Releases through 0.15.0 stay under MIT; the change applies from this release forward.
+- A `NOTICE` file names the copyright holder and ships in the package beside `LICENSE`. Building the package needs `setuptools>=77`.
+- **`pagespeak[pdf]` requires `marker-pdf<2`**, and the Marker backend refuses a 2.x install at run time with an `ImportError`. Under pagespeak, Marker 2.0 converted only a document's first pages and exited 0.
+- Publishing a release now waits for the lint, type, structure and test gates, and fails when the tag does not match the package version.
+- Backend guidance corrected across the README, docs, CLI help and web console. Docling without `--heading-hierarchy` puts every heading at one level (not two); with it, levels come from the PDF's bookmarks, numbering and font style. Docling is faster than Marker on CPU, collapses multi-line code blocks to one line, and emits formulas as glyph codes unless `do_formula_enrichment` is set. `llm_full` can remove a false heading, not only re-level it. The README no longer says the split has no size limit (`--split-target-kb`). `choosing-defaults.md` gains a Docling `--heading-hierarchy` recipe for PDFs with a bookmark outline.
+- **A heading-normalize response that covers too few headings is not applied.** In `llm` / `llm_full`, a response levelling fewer than `PAGESPEAK_NORMALIZE_MIN_COVERAGE_PCT` of the headings leaves every heading at its extracted level and logs `heading_normalize_low_coverage`. A drop the guards refuse counts as answered. The refused response stays cached: the warning says `source=cache` when a later run replays it and names `--rerun-from normalize`, which asks again.
+- A heading whose text opens with `|` is demoted back to its table row in cleanup (`cleanup_demoted_table_row_headings`), outline documents included.
+- The splitter logs each section it drops for an empty body by title (`split_empty_section_dropped`).
+- `vision-audit` reports how many captioned figures it skipped and says when nothing could be assessed. Word's `Description automatically generated` alt suffix no longer counts as a subject.
+- Every document the pipeline writes — stage checkpoints, per-chunk `raw.md`, the master `.md` — is written atomically.
+- The `claude_code` vision backend passes `--tools Read`, so the model can open the image under pf-core 0.23, which loads no tools unless named.
+- CI resolves every extra together (`pip install --dry-run`) on each push and before publishing, so a dependency conflict in any extra fails the build.
+- `bin/setup` keeps a venv with marker-pdf on Pillow 12.3, over Marker's `<11` pin.
+
+### Fixed
+- **A `--workers N` conversion recorded the default backend.** The run record said `pdf_backend=marker, heading_hierarchy=false` whatever ran, so the next inheriting `--rerun-from ingest` switched engines.
+- **Resuming from `<stem>.raw.md` ignored the ingest settings.** A run asking for another backend, page range or OCR mode — or the whole document after a `--max-pages` trial — got the earlier run's content at exit 0. When the run record says the checkpoint was ingested differently, the run now stops with an error naming each difference. The ingest phase stamps its settings into the record as soon as `raw.md` is written, so a run that fails later still leaves a matching record. An older record written by a run over the output dir holds default settings, so only what ingest left behind is compared there: each chunk's backend and the Docling outline marker.
+- **A changed chunk plan duplicated pages.** A `--max-pages` trial or another `--chunk-pages` followed by a full chunked ingest into the same directory concatenated the overlapping chunks. Completed chunks outside the current plan are shelved (`chunk_plan_changed`): kept out of `raw.md` and `images/`, and restored when a later plan uses the same pages instead of reading them again.
+- **`pagespeak ingest --max-pages` without `--workers` converted the whole document.** It now converts the first N pages on the single-process path too, and is refused where it cannot apply: a non-PDF source, the `tophat` backend, or alongside `page_range`.
+- **A chunked resume reused chunks read with other settings.** Each chunk records the backend, `force_ocr`, backend kwargs and (under Docling) `heading_hierarchy` it was read with; resuming with different ones stops with an error naming each difference.
+- `--normalize-headings-backend` did not reach `llm_dehead`, and the `llm_dehead` payload gate read `llm_full`'s `max_input_tokens`.
+- Mermaid fences in split section files kept the master's `pagespeak-image="images/…"` path, which dangled from `sections/`. It is rewritten relative to the section file.
+- The web console's cost gate counted cached images as free for a `rerun_from=vision` job, which deletes the cache before it runs.
+- `--vision-model` help said the flag was ignored under `claude_code`; the `qti` preset row showed the generic split as on; `.env.example` lacked the `llm_dehead` backend and the model-router / prompt-override variables.
+- The web console's `docling` PDF-reader choice submitted its label text instead of the backend name, so the job failed on an invalid backend. It now runs Docling with `--heading-hierarchy`, and choosing another reader for a document already read reads it again (`--rerun-from ingest`); with workers above 1 the change is refused with a message.
+- **A console upload could write through a staged symlink** in `conversions/in/`, overwriting the file it pointed to. An upload is now refused when that name is a symlink or folder, refused when it is not a plain file name, and swapped in only once complete.
+- **Marker left Pillow's decompression-bomb limit off for the rest of the process.** It is lifted only while Marker renders pages and restored afterwards, so later image reads in the same run, directory batch or console worker are checked again.
+- **`pagespeak[pdf]` failed to install** (`ResolutionImpossible`): marker-pdf requires Pillow below 11, and pf-core's `image-phash` extra requires 12.3 or later. ImageHash and Pillow are now direct dependencies (`Pillow>=10.4`) instead of that extra, so the `pdf` extra installs Pillow 10.4 — see SECURITY.md for what that means for untrusted documents.
+
 ## 0.15.0
 
 ### Added

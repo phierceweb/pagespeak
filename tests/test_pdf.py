@@ -1,6 +1,9 @@
-"""Tests for pagespeak._pdf — page-range parser and Marker-config propagation.
+"""Tests for pagespeak._pdf — page-range parser, Marker version guard, and
+Marker-config propagation.
 
-Marker is mocked at the module boundary; no real model loading happens.
+Marker is mocked at the module boundary; no real model loading happens. Tests
+that patch Marker's modules skip when marker-pdf isn't installed; the rest run
+everywhere.
 """
 
 from __future__ import annotations
@@ -47,6 +50,12 @@ def test_parse_page_range_list_passthrough() -> None:
 
 
 @pytest.fixture(autouse=True)
+def _pin_marker_1x(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the convert tests independent of the installed Marker version."""
+    monkeypatch.setattr(pdf_mod, "_installed_marker_version", lambda: "1.10.2")
+
+
+@pytest.fixture(autouse=True)
 def _reset_pdf_state() -> Iterator[None]:
     """Reset module-level _first_device and TORCH_DEVICE around each test."""
     pdf_mod._first_device = None
@@ -72,6 +81,7 @@ def _patch_marker() -> tuple[MagicMock, MagicMock, MagicMock]:
 
 
 def _run_convert(pdf_path: Path, **kwargs: object) -> tuple[MagicMock, object]:
+    pytest.importorskip("marker")
     PdfCls, models_fn, text_fn = _patch_marker()
     with (
         patch("marker.converters.pdf.PdfConverter", PdfCls),
@@ -80,6 +90,36 @@ def _run_convert(pdf_path: Path, **kwargs: object) -> tuple[MagicMock, object]:
     ):
         result = convert_pdf(pdf_path, **kwargs)  # type: ignore[arg-type]
     return PdfCls, result
+
+
+@pytest.mark.parametrize("version", ["2.0.0", "2.0.0rc1", "2.0.0.dev0", "3.1"])
+def test_marker_guard_refuses_2x(version: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(pdf_mod, "_installed_marker_version", lambda: version)
+    with pytest.raises(ImportError, match=rf"marker-pdf {version} .*<2"):
+        pdf_mod._require_marker_below_2()
+
+
+@pytest.mark.parametrize("version", ["1.10.2", "1.10.2+local", "1.10.2.post1", "0.2.0", None])
+def test_marker_guard_accepts_below_2(version: str | None, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(pdf_mod, "_installed_marker_version", lambda: version)
+    pdf_mod._require_marker_below_2()
+
+
+def test_convert_pdf_refuses_marker_2(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The guard runs before Marker is imported, so no Marker install is needed."""
+    pdf_path = tmp_path / "doc.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4\n")
+    monkeypatch.setattr(pdf_mod, "_installed_marker_version", lambda: "2.0.0")
+    with pytest.raises(ImportError, match=r"marker-pdf 2\.0\.0.*<2"):
+        convert_pdf(pdf_path)
+
+
+def test_convert_pdf_accepts_marker_1(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    pdf_path = tmp_path / "doc.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4\n")
+    monkeypatch.setattr(pdf_mod, "_installed_marker_version", lambda: "1.10.2")
+    _, result = _run_convert(pdf_path)
+    assert result.markdown == "body"  # type: ignore[attr-defined]
 
 
 def test_convert_pdf_no_extras_passes_none_config(tmp_path: Path) -> None:
@@ -138,6 +178,7 @@ def test_convert_pdf_device_second_call_warns(
 
 
 def test_convert_pdf_prefixes_bare_image_refs_with_images_dir(tmp_path: Path) -> None:
+    pytest.importorskip("marker")
     pdf_path = tmp_path / "doc.pdf"
     pdf_path.write_bytes(b"%PDF-1.4\n")
     fake_image = MagicMock()
@@ -165,6 +206,7 @@ def test_convert_pdf_prefixes_bare_image_refs_with_images_dir(tmp_path: Path) ->
 
 
 def test_convert_pdf_does_not_double_prefix_existing_images_path(tmp_path: Path) -> None:
+    pytest.importorskip("marker")
     pdf_path = tmp_path / "doc.pdf"
     pdf_path.write_bytes(b"%PDF-1.4\n")
     fake_image = MagicMock()
@@ -194,6 +236,7 @@ def test_convert_pdf_does_not_double_prefix_existing_images_path(tmp_path: Path)
 
 def test_convert_pdf_translates_sandbox_permission_error(tmp_path: Path) -> None:
     """sysconf-style PermissionError from Marker → clear re-raise with doc pointer."""
+    pytest.importorskip("marker")
 
     class _FakeConverter:
         def __init__(self, **_kwargs: object) -> None:
@@ -215,6 +258,8 @@ def test_convert_pdf_translates_sandbox_permission_error(tmp_path: Path) -> None
 
 
 def test_convert_pdf_unrelated_permission_error_passes_through(tmp_path: Path) -> None:
+    pytest.importorskip("marker")
+
     class _FakeConverter:
         def __init__(self, **_kwargs: object) -> None:
             pass
@@ -233,3 +278,30 @@ def test_convert_pdf_unrelated_permission_error_passes_through(tmp_path: Path) -
             convert_pdf(pdf_path)
     assert "operations.md" not in str(excinfo.value)
     assert "ProcessPoolExecutor" not in str(excinfo.value)
+
+
+def test_marker_keeps_its_lifted_pixel_limit_only_for_its_own_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Marker sets Pillow's decompression-bomb limit to None when it is imported,
+    which would leave every later image open in the process unguarded."""
+    from PIL import Image
+
+    pdf_path = tmp_path / "doc.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4\n")
+    monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", None)
+    during: list[int | None] = []
+    PdfCls, models_fn, text_fn = _patch_marker()
+    PdfCls.return_value.side_effect = lambda _p: during.append(Image.MAX_IMAGE_PIXELS)
+    pytest.importorskip("marker")
+    with (
+        patch("marker.converters.pdf.PdfConverter", PdfCls),
+        patch("marker.models.create_model_dict", models_fn),
+        patch("marker.output.text_from_rendered", text_fn),
+    ):
+        convert_pdf(pdf_path)
+        assert Image.MAX_IMAGE_PIXELS == 89_478_485
+        monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 200_000_000)
+        convert_pdf(pdf_path)
+    assert during == [None, None]
+    assert Image.MAX_IMAGE_PIXELS == 200_000_000

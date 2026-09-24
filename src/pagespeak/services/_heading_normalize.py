@@ -36,7 +36,7 @@ from ..prompts._heading_normalize import (
 from ..prompts._heading_normalize_dehead import HEADING_NORMALIZE_DEHEAD_PROMPT_VERSION
 from ..prompts._heading_normalize_full import HEADING_NORMALIZE_FULL_PROMPT_VERSION
 from ._cleanup import strip_marker_pollution as _strip_marker_pollution
-from ._normalize_coverage import warn_on_low_coverage
+from ._normalize_coverage import is_low_coverage
 from ._normalize_heuristic import (
     _heuristic_level_for as _heuristic_level_for,
 )
@@ -48,9 +48,6 @@ from ._normalize_heuristic import (
 )
 from ._normalize_heuristic import (
     _select_structural_headings as _select_structural_headings,
-)
-from ._normalize_llm import (
-    _CLAUDE_CODE_TIMEOUT_S_DEFAULT as _CLAUDE_CODE_TIMEOUT_S_DEFAULT,
 )
 from ._normalize_llm import (
     DEFAULT_NORMALIZE_MAX_INPUT_TOKENS as DEFAULT_NORMALIZE_MAX_INPUT_TOKENS,
@@ -68,12 +65,6 @@ from ._normalize_llm import (
 )
 from ._normalize_llm import (
     _build_prompt_full as _build_prompt_full,
-)
-from ._normalize_llm import (
-    _claude_code_invoke as _claude_code_invoke,
-)
-from ._normalize_llm import (
-    _claude_code_timeout_s as _claude_code_timeout_s,
 )
 from ._normalize_llm import (
     _estimate_tokens as _estimate_tokens,
@@ -289,6 +280,7 @@ def gather_normalize_levels(
         except (OSError, ValueError) as e:
             logger.warning("heading_normalize_cache_read_failed: %s", e)
             response = None
+    cached = response is not None
 
     if response is None:
         if mode == "llm_full":
@@ -362,6 +354,7 @@ def gather_normalize_levels(
             )
 
     levels = _parse_dehead_response(response) if mode == "llm_dehead" else _parse_response(response)
+    answered = len(levels) if levels else 0  # before the guards drop refused verdicts
     if levels:
         # Both modes can emit the level-0 sentinel, so both need the guard.
         levels, body_refused = _guard_body_drops(levels, target_headings, md)
@@ -411,8 +404,10 @@ def gather_normalize_levels(
             len(levels),
             len(target_headings),
         )
-    if mode in ("llm", "llm_full"):
-        warn_on_low_coverage(len(levels), len(target_headings), mode=mode)
+    if mode in ("llm", "llm_full") and is_low_coverage(
+        answered, len(target_headings), mode=mode, cached=cached
+    ):
+        return None
 
     return NormalizeData(
         gather=GatherResult(

@@ -6,6 +6,8 @@ Do not confuse the three QA layers: **`bin/lint`** checks the *code* (ruff, mypy
 
 A sibling command, **`pagespeak vision-audit`**, checks a different surface — whether a *vision caption* describes its figure as the wrong thing (a squirrel captioned as a lemur) — by comparing each generated caption to the author's source alt text. Same read-only, $0, no-LLM charter; it is not part of this document's markdown-defect scan. See `docs/usage.md`.
 
+It can only judge a figure whose source alt names a clear subject. The report gives the count assessed out of all captioned figures and how many were skipped, and says outright when nothing could be assessed — zero findings from zero assessed figures is no result, not a pass. Word's auto-generated alt suffix (`Description automatically generated`, with or without a confidence note) is stripped before judging, so it never stands in for a subject.
+
 For AI assistants: the audit narrows *where* to read — it never replaces the read-by-eye validation gate (read the actual rendered output, not just the metric). Treat a clean audit as a gate, not a verdict.
 
 ---
@@ -26,9 +28,13 @@ pagespeak audit conversions/out                 # whole corpus
 pagespeak audit conversions/out/<doc>           # one converted document
 pagespeak audit out/manual.md                   # a single markdown file
 pagespeak audit conversions/out --summary-only  # per-check totals only
+pagespeak audit conversions/out --text-coverage # also check each doc against its source PDF
+pagespeak audit conversions/out/<doc> --text-coverage --source <doc>.pdf
 ```
 
 The report prints per-check totals, then per-file detail capped at a few examples per check per file (`… and N more`). Use `--summary-only` for the totals alone — the right first pass on a large corpus.
+
+`--text-coverage` also compares each converted document with its source PDF's text layer (below). It works on document folders: pass a converted document's folder or a folder of them, not a file (a file path is refused, naming the folder to pass). The source is `--source <pdf>` when the one path given is a single document's folder, or auto-located by name in `--in-dir` (default `conversions/in`); the report says how many documents were checked and names those with no source PDF. A source that can't be read as a PDF is reported as a `text_coverage` warning rather than stopping the audit. It reads the PDF with `pypdfium2` (`pagespeak[tophat]`, also in the PDF extras).
 
 ## What it scans (and skips)
 
@@ -37,6 +43,8 @@ Audit reads **final artifacts only**: the master `<stem>.md`, `sections/`, and `
 - stage checkpoints (`*.raw.md`, `*.cleaned.md`, `*.normalized.md`, `*.repaired.md`, `*.structured.md`, `*.visioned.md`) — intermediates are *expected* to contain pre-cleanup defects;
 - `chunks/` — chunked-parallel ingest intermediates;
 - dot-directories (`.vision-cache/`, `.baselines/`, …).
+
+Two exceptions. The whole-document checks (`collapsed_code_blocks`, `unclosed_code_fence`, `formula_glyph_codes`) read only the master file, never `sections/` — a section of one-line shell commands is ordinary. `text_coverage` reads `<stem>.raw.md`, the backend's own output: the master adds vision captions whose words could hide a loss, and the threshold was set on `raw.md`.
 
 ## The detectors
 
@@ -54,6 +62,10 @@ Every detector exists because the defect was **observed in real converted output
 | `misaligned_table` | A wide multi-column spec table whose cell boundaries drifted during extraction — two labels merge into one label-column cell, so a value lands under the wrong label. Real RAG noise, but **not auto-fixable** (Marker and Docling reproduce it identically — ambiguous multi-line-cell geometry in the source PDF), so it is report-only like `duplicate_heading`. Gated on a non-empty sibling value cell, so blank fill-in forms / worksheets are not flagged | warning |
 | `empty_section` | A `sections/` file with no body **and** no subsections — a true orphan shell | warning |
 | `duplicate_heading` | The same heading text ≥4 times in one file (recurring scaffold furniture) | warning |
+| `collapsed_code_blocks` | Every fenced code block in the document is one line (≥8 blocks, Mermaid excluded) — the signature of a backend flattening multi-line code, which Docling does on PDFs; a copied command is unusable. Also fires when non-code text was fenced line by line | warning |
+| `unclosed_code_fence` | A code fence opened and never closed: every later line renders as code and every fence-aware pass (cleanup, TOC, audit) skips it | warning |
+| `formula_glyph_codes` | Formulas rendered as glyph-code tokens (`n01`, `n2a`) at ≥1 per 1,000 words — what Docling emits for math without `do_formula_enrichment` | warning |
+| `text_coverage` | With `--text-coverage`: under `PAGESPEAK_AUDIT_MIN_TEXT_COVERAGE_PCT` (default 90%) of the source PDF's distinct text-layer words (two or more characters) reached `raw.md`, with the pages whose words mostly never arrived. Catches body text a backend dropped at exit 0 — Docling can absorb prose set inside figure regions. Distinct words, not raw tokens, so vertically-set labels and repeated page furniture don't skew it. Under ~100 distinct words the PDF is scanned or near-empty and is not judged. A screen, not proof: read the named pages | warning |
 
 Detector-shape notes that prevent false positives — preserve these behaviors when editing:
 
@@ -79,7 +91,7 @@ Detector-shape notes that prevent false positives — preserve these behaviors w
 ## Adding a new detector
 
 1. **Provenance first.** A detector is added only for a defect shape observed in real converted output. Record that provenance as the *shape* and the source format that produces it ("Word's auto-generated alt text", "a Marker table split at a page break") — never the document's name or any identifying detail, which would ship in the wheel. No speculative checks.
-2. Pure text checks go in `services/_audit_checks.py` (a `text -> list[AuditFinding]` function, registered in `_TEXT_CHECKS`); checks needing the filesystem go in `services/_audit.py` and are wired into `audit_file()`.
+2. Pure text checks go in `services/_audit_checks.py` (a `text -> list[AuditFinding]` function, registered in `_TEXT_CHECKS`); whole-document extraction signatures go in `services/_audit_extraction.py`; checks needing the filesystem go in `services/_audit.py` and are wired into `audit_file()`; checks against the source PDF go in `services/_audit_coverage.py`.
 3. Pick the severity by the rule above: content damage = error; needs-human- judgment = warning.
 4. Pair it with tests in the matching `tests/test_audit_checks.py` / `tests/test_audit.py` — a positive case modelled on the real defect, a negative case for the closest legitimate output shape, and a fenced-code immunity case if it's a text check.
 5. Run it corpus-wide before shipping and eyeball a sample of hits: a detector that false-positives on legitimate output (nav nodes, angle-wrapped links) is worse than no detector.

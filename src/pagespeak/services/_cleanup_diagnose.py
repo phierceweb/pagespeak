@@ -39,6 +39,18 @@ from ._listish_headings import (
 )
 
 _HEADING_RE = re.compile(r"^(\s*)(#{1,6})\s+(\S.*?)\s*$")
+_TABLE_ROW_HEADING_RE = re.compile(r"^\s*#{1,6}\s+(\|.*?)\s*$")
+
+
+def _demote_table_row_heading(line: str) -> str:
+    m = _TABLE_ROW_HEADING_RE.match(line)
+    return m.group(1) if m else line
+
+
+def demote_table_row_headings(text: str) -> tuple[str, int]:
+    """A heading whose text opens with `|` is a table row the backend promoted;
+    put it back as the row."""
+    return apply_outside_fences(text, _demote_table_row_heading)
 
 
 def demote_empty_shell_headings(text: str) -> tuple[str, int]:
@@ -279,7 +291,10 @@ def demote_prose_headings(text: str) -> tuple[str, int]:
 # ``str -> (rewritten_text, demoted_count)`` and is conservative: it demotes
 # only its detected pattern, returning ``(text, 0)`` when absent.
 HEADING_DEMOTE_PASSES: tuple[tuple[str, Callable[[str], tuple[str, int]]], ...] = (
-    # Front-matter first: it demotes the whole pre-first-chapter region
+    # Table rows first: they are markdown syntax, not titles, and every later
+    # pass would otherwise count them as headings.
+    ("cleanup_demoted_table_row_headings", demote_table_row_headings),
+    # Front-matter next: it demotes the whole pre-first-chapter region
     # (title page, copyright, TOC) in a book, which removes TOC entries the
     # later toc-phantom pass would otherwise re-scan.
     ("cleanup_demoted_front_matter_headings", demote_front_matter_headings),

@@ -24,6 +24,8 @@ Outside a repo checkout (plain `pip install pagespeak[web]`), launch it directly
 | `PAGESPEAK_WEB_HOST` | `127.0.0.1` | Bind host |
 | `PAGESPEAK_WEB_PORT` | `8810` | Bind port |
 | `PAGESPEAK_WEB_CONCURRENCY` | `1` | Concurrent conversion jobs (default 1 avoids parallel vision quota stampedes) |
+| `PAGESPEAK_WEB_ALLOWED_HOSTS` | (empty) | Comma-separated host names accepted in the `Host` header besides loopback and the bind host (case-insensitive). Add the name you reach the console by. |
+| `PAGESPEAK_WEB_MAX_UPLOAD_BYTES` | `536870912` | Largest accepted request body (512 MiB); larger uploads get a 413. A body sent without a `Content-Length` is counted as it arrives. |
 
 ## The `conversions/` store
 
@@ -59,7 +61,6 @@ ingest ✓ · cleanup ✓ · normalize – · repair ✓ · structure ✓ · vis
 Derived from which phase checkpoints exist on disk. Each phase chip offers:
 
 - **Run** — launch a job starting at (and optionally stopping after) this phase.
-- **Re-run from here** — same as `--rerun-from <phase>`; busts the cache at this phase and downstream.
 - **View checkpoint** — open this phase's `.md` file in the checkpoint viewer.
 
 Phase names: `ingest | cleanup | normalize | repair | structure | vision | split` (matching the CLI's `--from` / `--stop-after` vocabulary).
@@ -84,6 +85,8 @@ A dedicated tab rendering `.pagespeak-run.json` in a readable form: a plain-Engl
 ### Options / run form
 
 A three-step flow: (1) **Choose what to run** — a step picker (`Full run` or a single phase: ingest … split); (2) the picker **filters the options to just those that affect the chosen step** (e.g. picking *vision* shows only diagrams / cache-only / which-AI; *repair* shows none); (3) a separate **Run** button (its label reflects the selection) submits. Options map to the `pagespeak convert` flags (preset, PDF backend, cleanup, normalize mode, split / nested-split, diagrams on/off, vision backend, cache-only). Each option has a hover **ⓘ tooltip** explaining it in plain language. A single-phase run sets `--from`/`--stop-after` to that phase and reuses the existing checkpoints.
+
+**Choosing another PDF reader** for a document already read (a full run or the ingest step) reads it again: the job gets `--rerun-from ingest`, because the pipeline refuses to reuse a `raw.md` another reader produced. The console's docling always adds `--heading-hierarchy`, so docling output read without it is also read again. The new reader extracts its own images, so the cost gate treats the image count as unknown until ingest. With workers above 1 the change is refused with a message instead — a multi-worker run reuses the pages already read.
 
 ### Deliver
 
@@ -110,6 +113,8 @@ An explicit confirm is required. The confirm dialog also shows the grounded cost
 **Vision backend defaults to `claude_code` ($0 in dollars; draws from your Claude Max subscription).** Switching to a paid backend (anthropic / openrouter) triggers a louder warning. There is no silent switch to a paid backend — that is a deliberate cost-safety default.
 
 If the cache or image count cannot be determined (e.g. `images/` is absent), the UI says so rather than quoting "cheap".
+
+A job submitted with `rerun_from=vision` deletes `.vision-cache/` before it runs, so the gate counts every image as a live call however many are cached at submit time.
 
 ### Cache-only toggle
 
@@ -157,7 +162,9 @@ Progress is read from on-disk phase checkpoints (the phase strip), not a synthet
 | Module | Responsibility |
 |---|---|
 | `web/__init__.py` | `create_app()` — app factory; mounts `llm_admin` + routers |
-| `web/_config.py` | `PagespeakWebConfig` — conversions dir, host, port, concurrency |
+| `web/_config.py` | `WebConfig` — conversions dir, host, port, concurrency |
+| `web/_security.py` | Request guards and headers: unknown `Host` and cross-site writes get a 403, oversized bodies a 413; nonce-based CSP on every page — see [SECURITY.md](../SECURITY.md) |
+| `web/_upload.py` | Saves an upload into `conversions/in/` as a plain file: streamed under the size cap, never through a staged symlink or folder |
 | `web/_scan.py` | `conversions/in` + `conversions/out` scanner and reconciler → Conversion list/detail |
 | `web/_cost.py` | Cache-miss pre-flight math + grounded cost estimate |
 | `web/_jobs.py` | `pagespeak_convert` job kind registration (inputs/outputs schema) |

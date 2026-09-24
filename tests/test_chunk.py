@@ -244,6 +244,122 @@ def test_chunk_resume_skips_completed(tmp_path: Path, monkeypatch: pytest.Monkey
     assert calls == ["50-99"]
 
 
+def test_chunk_keeps_other_plans_out_of_raw_md_without_losing_them(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A `--max-pages` trial then the full run: the trial's `0-19` chunk overlaps
+    the new `0-49`, and concatenating both duplicated those pages in raw.md. A
+    trial after the full run must not cost the full run's chunks either."""
+    src = tmp_path / "doc.pdf"
+    src.write_bytes(b"%PDF-1.4\n")
+    out = tmp_path / "out"
+    rendered: list[str] = []
+    make = _stub_chunk_result_factory(out)
+
+    def stub(**kwargs: object):
+        rendered.append(str(kwargs["page_range"]))
+        return make(**kwargs)
+
+    _patch_inline(monkeypatch, stub)
+    monkeypatch.setattr("pagespeak.orchestrators._chunk.count_pages", lambda p: 100)
+
+    chunk(src, output_dir=out, chunk_pages=50, workers=1, max_pages=20)
+    with caplog.at_level("WARNING"):
+        mf = chunk(src, output_dir=out, chunk_pages=50, workers=1)
+    assert mf.completed_chunk_ranges() == {"0-49", "50-99"}
+    assert [p.parent.name for p in mf.all_chunk_raw_md()] == ["0-49", "50-99"]
+    assert "chunk_plan_changed" in caplog.text
+    assert Manifest.load_or_create(out).completed_chunk_ranges() == {"0-49", "50-99"}
+
+    chunk(src, output_dir=out, chunk_pages=50, workers=1, max_pages=20)
+    mf = chunk(src, output_dir=out, chunk_pages=50, workers=1)
+    assert rendered == ["0-19", "0-49", "50-99"]
+    assert [p.parent.name for p in mf.all_chunk_raw_md()] == ["0-49", "50-99"]
+
+
+def test_chunk_refuses_resume_with_other_settings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Reusing chunks read with other settings keeps their output while the run
+    record claims the new settings."""
+    src = tmp_path / "doc.pdf"
+    src.write_bytes(b"%PDF-1.4\n")
+    out = tmp_path / "out"
+    _patch_inline(monkeypatch, _stub_chunk_result_factory(out))
+    monkeypatch.setattr("pagespeak.orchestrators._chunk.count_pages", lambda p: 100)
+    chunk(src, output_dir=out, chunk_pages=50, workers=1, pdf_backend="docling")
+
+    with pytest.raises(ValueError, match="heading_hierarchy: False → True"):
+        chunk(
+            src,
+            output_dir=out,
+            chunk_pages=50,
+            workers=1,
+            pdf_backend="docling",
+            heading_hierarchy=True,
+        )
+    with pytest.raises(ValueError, match="force_ocr"):
+        chunk(src, output_dir=out, chunk_pages=50, workers=1, pdf_backend="docling", force_ocr=True)
+    with pytest.raises(ValueError, match="pdf_backend_kwargs"):
+        chunk(
+            src,
+            output_dir=out,
+            chunk_pages=50,
+            workers=1,
+            pdf_backend="docling",
+            pdf_backend_kwargs={"do_formula_enrichment": True},
+        )
+    chunk(src, output_dir=out, chunk_pages=50, workers=1, pdf_backend="docling")
+
+
+def test_chunk_settings_compare_only_what_the_backend_reads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Marker ignores `heading_hierarchy`; chunks from before settings were
+    recorded are not evidence of a mismatch."""
+    src = tmp_path / "doc.pdf"
+    src.write_bytes(b"%PDF-1.4\n")
+    out = tmp_path / "out"
+    _patch_inline(monkeypatch, _stub_chunk_result_factory(out))
+    monkeypatch.setattr("pagespeak.orchestrators._chunk.count_pages", lambda p: 100)
+    chunk(src, output_dir=out, chunk_pages=50, workers=1)
+    chunk(src, output_dir=out, chunk_pages=50, workers=1, heading_hierarchy=True)
+
+    legacy = tmp_path / "legacy"
+    mf = Manifest.load_or_create(legacy, input_path=src)
+    for page_range in ("0-49", "50-99"):
+        mf.mark_chunk_completed(
+            page_range, raw_md=f"chunks/{page_range}/raw.md", images=[], pdf_backend="marker"
+        )
+    chunk(src, output_dir=legacy, chunk_pages=50, workers=1, force_ocr=True)
+
+
+def test_chunk_records_settings_on_completion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    src = tmp_path / "doc.pdf"
+    src.write_bytes(b"%PDF-1.4\n")
+    out = tmp_path / "out"
+    _patch_inline(monkeypatch, _stub_chunk_result_factory(out))
+    monkeypatch.setattr("pagespeak.orchestrators._chunk.count_pages", lambda p: 50)
+
+    mf = chunk(
+        src,
+        output_dir=out,
+        chunk_pages=50,
+        workers=1,
+        pdf_backend="docling",
+        heading_hierarchy=True,
+        pdf_backend_kwargs={"do_formula_enrichment": True},
+    )
+
+    assert mf.chunks[0].settings == {
+        "force_ocr": False,
+        "heading_hierarchy": True,
+        "pdf_backend_kwargs": {"do_formula_enrichment": True},
+    }
+
+
 def test_chunk_force_reruns_all(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     src = tmp_path / "doc.pdf"
     src.write_bytes(b"%PDF-1.4\n")

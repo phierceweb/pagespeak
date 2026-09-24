@@ -19,20 +19,41 @@ preserves the public API.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 from pf_core.pipeline.run_record import file_sha256
 from pf_core.pipeline.run_record import read_run_record as _read_run_record
 from pf_core.pipeline.run_record import write_run_record as _write_run_record
+from pf_core.utils.io import atomic_write_text
 
 __all__ = [
+    "INGEST_FLAGS_FIELD",
+    "INGEST_FLAG_KEYS",
     "RUN_RECORD_FILENAME",
     "file_sha256",
     "read_run_record",
+    "record_ingest",
     "summarize_llm_calls",
     "write_run_record",
 ]
+
+# The `resolved_flags` that decide what `<stem>.raw.md` contains.
+INGEST_FLAG_KEYS: tuple[str, ...] = (
+    "pdf_backend",
+    "heading_hierarchy",
+    "force_ocr",
+    "device",
+    "page_range",
+    "html_base_url",
+    "docx_backend",
+    "docx_outline_heading_depth",
+)
+
+# Record block naming the settings that produced raw.md (INGEST_FLAG_KEYS plus
+# the chunked path's `max_pages`). Only `record_ingest` changes it.
+INGEST_FLAGS_FIELD = "ingest_flags"
 
 RUN_RECORD_FILENAME = ".pagespeak-run.json"
 
@@ -131,6 +152,7 @@ def write_run_record(
     image_count: int,
     llm_calls: dict[str, Any] | None = None,
     source_identity: dict[str, Any] | None = None,
+    ingest_flags: Mapping[str, Any] | None = None,
 ) -> Path:
     """Write `<output_dir>/.pagespeak-run.json`. Returns the written path.
 
@@ -139,12 +161,25 @@ def write_run_record(
     original-source block from `_provenance.persistable_source_identity`
     (dir-mode re-runs carry it forward). Pass ``None`` (default) to omit
     either field entirely.
+
+    Without `ingest_flags`, the existing record's `ingest_flags` block is kept
+    and its values replace the ingest keys in `resolved_flags`: raw.md is
+    unchanged by any write but the one that produced it.
     """
+    if ingest_flags is None:
+        prior = read_run_record(output_dir)
+        block = prior.get(INGEST_FLAGS_FIELD) if prior else None
+        if isinstance(block, dict):
+            ingest_flags = block
+            carried = {k: block[k] for k in INGEST_FLAG_KEYS if k in block}
+            resolved_flags = {**resolved_flags, **carried}
     fields: dict[str, Any] = {}
     if llm_calls is not None:
         fields["llm_calls"] = llm_calls
     if source_identity is not None:
         fields["source_identity"] = source_identity
+    if ingest_flags is not None:
+        fields[INGEST_FLAGS_FIELD] = dict(ingest_flags)
     extra: dict[str, Any] | None = fields or None
     written: Path = _write_run_record(
         output_dir,
@@ -160,3 +195,46 @@ def write_run_record(
         filename=RUN_RECORD_FILENAME,
     )
     return written
+
+
+def record_ingest(
+    output_dir: Path,
+    *,
+    version: str,
+    input_path: Path,
+    flags: Mapping[str, Any],
+    started_at: str,
+    finished_at: str,
+    image_count: int,
+    source_identity: dict[str, Any] | None,
+) -> None:
+    """Stamp an ingest's flags into the run record, keeping everything else.
+
+    An existing record keeps its split shape, LLM-call summary and counts —
+    `convert --rerun-from` inherits the split flags from it. With no record,
+    a fresh one is written so `convert <output_dir>` has something to inherit.
+    """
+    record = read_run_record(output_dir)
+    if record is None:
+        write_run_record(
+            output_dir,
+            version=version,
+            preset=None,
+            resolved_flags=dict(flags),
+            input_path=input_path,
+            started_at=started_at,
+            finished_at=finished_at,
+            section_count=None,
+            image_count=image_count,
+            source_identity=source_identity,
+            ingest_flags=flags,
+        )
+        return
+    resolved = record.get("resolved_flags")
+    record["resolved_flags"] = {**(resolved if isinstance(resolved, dict) else {}), **flags}
+    record[INGEST_FLAGS_FIELD] = dict(flags)
+    record["input"] = input_path.name
+    record["input_sha256"] = file_sha256(input_path)
+    if source_identity is not None:
+        record["source_identity"] = source_identity
+    atomic_write_text(output_dir / RUN_RECORD_FILENAME, json.dumps(record, indent=2) + "\n")

@@ -497,6 +497,7 @@ def test_chunked_ingest_stamps_the_hierarchy_marker(tmp_path, monkeypatch):
 
     class _Manifest:
         chunks = [_Chunk()]
+        shelved: list[object] = []
 
         def all_chunk_raw_md(self):
             p = out / "chunks" / "0-9" / "raw.md"

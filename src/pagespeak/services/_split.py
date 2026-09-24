@@ -268,6 +268,9 @@ def split_into_sections(
         dropped_count = len(writable_sections) - len(kept)
         if dropped_count:
             logger.info("split_dropped_empty_sections count=%d", dropped_count)
+            for s in writable_sections:
+                if id(s) not in kept_ids:
+                    logger.info("split_empty_section_dropped title=%r", s.display_name)
         _filter_children_to_kept(kept, kept_ids)
         writable_sections = kept
     elif ancestor_only_ids:

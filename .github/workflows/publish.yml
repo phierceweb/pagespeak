@@ -1,25 +1,55 @@
-# Builds the package on a release tag (v*), runs `twine check`, and publishes to
-# PyPI via Trusted Publishing (OIDC — no API token in the repo). Tags are the
-# public consumption surface; main carries no stability promise.
+# On a release tag (v*): run the lint/type/structure gates and the test suite,
+# check the tag matches the package version, build + `twine check`, then publish
+# to PyPI via Trusted Publishing (OIDC — no API token in the repo). Nothing
+# uploads unless every earlier job passed; a PyPI upload can't be replaced.
 #
-# The publish job uploads on every v* tag. It REQUIRES a GitHub Trusted Publisher
-# registered on pypi.org matching EXACTLY: project "pagespeak", owner phierceweb,
-# repo pagespeak, workflow publish.yml, environment pypi. If that registration is
-# missing or mismatched the upload step fails (the build step still succeeds, so
-# the dist is preserved as a CI artifact).
-# (the pinned pf-core release resolves from PyPI — no pf-core-first step needed.)
+# The publish job REQUIRES a GitHub Trusted Publisher registered on pypi.org
+# matching EXACTLY: project "pagespeak", owner phierceweb, repo pagespeak,
+# workflow publish.yml, environment pypi.
 name: publish
 on:
   push:
     tags: ["v*"]
 jobs:
-  build:
+  # Same gates as guards.yml + test.yml, run on the tagged sha. The marker /
+  # docling extras are omitted there too; conftest skips their modules.
+  gates:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+      - run: pip install -e ".[docx-structured,tophat,web,dev]"
+      - run: ruff check src tests
+      - run: ruff format --check src tests
+      - run: mypy src
+      - run: python -m pf_core.guards
+      - name: every extra resolves together
+        timeout-minutes: 15
+        run: |
+          EXTRAS="$(python -c 'import tomllib; print(",".join(tomllib.load(open("pyproject.toml","rb"))["project"]["optional-dependencies"]))')"
+          pip install --dry-run --ignore-installed ".[$EXTRAS]"
+      - run: python -m pytest tests/ -q --maxfail=0
+
+  build:
+    needs: gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      # pyproject / __version__ / CHANGELOG agreement is tested in the gates;
+      # this ties the tag to them.
+      - name: Tag matches package version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::tag v$TAG_VERSION != pyproject version $PKG_VERSION"
+            exit 1
+          fi
       - run: pip install build twine
       - run: python -m build
       - run: twine check dist/*
@@ -29,7 +59,7 @@ jobs:
           path: dist/
 
   publish:
-    needs: build
+    needs: [gates, build]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:

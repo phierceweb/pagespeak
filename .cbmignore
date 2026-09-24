@@ -1,0 +1,6 @@
+# Conversion working dirs and superseded baselines: generated output, no source.
+# Already in .gitignore, but the indexer's gitignore layer does not exclude them.
+conversions/
+# Prose lives in qmd. Section nodes are not filtered from search_graph BM25,
+# so indexing docs here only dilutes symbol search.
+docs/

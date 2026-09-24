@@ -21,51 +21,28 @@ the same downstream regardless of which path produced the raw.md.
 from __future__ import annotations
 
 import shutil
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from pf_core.log import get_logger
+from pf_core.utils.io import atomic_write_text
 
 from ..backends._docx_dispatch import DEFAULT_DOCX_BACKEND, DocxBackendName
 from ..backends._pdf_dispatch import DEFAULT_PDF_BACKEND, PdfBackendName
 from ..backends._qti import is_qti_export
 from ..models._pipeline import Manifest, read_chunk_statuses
 from ._chunk import chunk as chunk_phase
-from ._chunk import resolve_chunk_pages
+from ._chunk import count_pages, resolve_chunk_pages
+from ._convert_source import (
+    MARKDOWN_SUFFIXES,
+    MARKITDOWN_SUFFIXES,
+    PDF_SUFFIXES,
+    convert_source,
+    unsupported_format_error,
+)
 
 logger = get_logger(__name__)
-
-PDF_SUFFIXES: frozenset[str] = frozenset({".pdf"})
-MARKITDOWN_SUFFIXES: frozenset[str] = frozenset(
-    {
-        ".docx",
-        ".pptx",
-        ".xlsx",
-        ".html",
-        ".htm",
-        ".csv",
-        ".json",
-        ".xml",
-        ".epub",
-    }
-)
-# Legacy binary Office (.doc / .ppt / .xls) is deliberately excluded: MarkItDown
-# does not reliably handle the pre-OOXML binary formats, so they fall through to
-# a clear "Unsupported format" error rather than a silent lossy conversion.
-# Convert to .docx / .pptx / .xlsx first. See docs/format-support.md.
-# Markdown deliverables are already the pipeline's target format — read them
-# straight into raw.md rather than round-tripping through MarkItDown (lossy on
-# lists / headings / emphasis). Lets an upstream ingester hand off clean
-# markdown for the cleanup → split passes.
-MARKDOWN_SUFFIXES: frozenset[str] = frozenset({".md", ".markdown"})
-
-
-def unsupported_format_error(suffix: str) -> ValueError:
-    """The dispatch fallthrough, shared by both ingest entry points."""
-    return ValueError(
-        f"Unsupported format: {suffix!r}. Supported: "
-        f"{sorted(PDF_SUFFIXES | MARKITDOWN_SUFFIXES | MARKDOWN_SUFFIXES)}"
-    )
 
 
 def ingest(
@@ -106,13 +83,15 @@ def ingest(
         html_base_url: HTML-only — base URL to resolve relative `<img>` refs
             against so a web-help export's images download (single-process).
         force: Discard manifest + chunks; re-run from scratch.
-        max_pages: Limit ingest to first N pages of the PDF.
+        max_pages: Limit ingest to first N pages of the PDF (not with
+            `page_range` or the tophat backend).
 
     Returns:
         The absolute path to `<output_dir>/<stem>.raw.md`.
 
     Raises:
-        ValueError: workers < 1, or chunked path requested for non-PDF.
+        ValueError: workers < 1, chunked path requested for non-PDF, or a
+            `max_pages` that cannot apply.
         FileNotFoundError: input doesn't exist.
     """
     if workers < 1:
@@ -136,8 +115,24 @@ def ingest(
             "(each quiz becomes its own full-pipeline document)."
         )
 
+    started_at = _now_utc_iso()
+    flags: dict[str, Any] = {
+        "pdf_backend": pdf_backend,
+        "heading_hierarchy": heading_hierarchy,
+        "force_ocr": force_ocr,
+        "device": device,
+        "page_range": page_range,
+        "html_base_url": html_base_url,
+        "docx_backend": docx_backend,
+        "docx_outline_heading_depth": docx_outline_heading_depth,
+        "max_pages": max_pages,
+    }
     if workers == 1:
-        return _ingest_single_process(
+        if max_pages is not None:
+            page_range = _first_pages(
+                src, suffix=suffix, pdf_backend=pdf_backend, page_range=page_range, n=max_pages
+            )
+        raw = _ingest_single_process(
             src,
             out,
             raw_md_path=raw_md_path,
@@ -152,6 +147,8 @@ def ingest(
             page_range=page_range,
             html_base_url=html_base_url,
         )
+        stamp_ingest_record(out, src, flags, started_at=started_at)
+        return raw
 
     if page_range is not None:
         raise ValueError(
@@ -164,20 +161,73 @@ def ingest(
             f"Chunked ingest (workers>1) is PDF-only; got {suffix!r}. "
             "Use workers=1 for non-PDF formats."
         )
-    return _ingest_chunked(
-        src,
-        out,
-        raw_md_path=raw_md_path,
-        workers=workers,
-        chunk_pages=resolve_chunk_pages(chunk_pages),
-        pdf_backend=pdf_backend,
-        pdf_backend_kwargs=pdf_backend_kwargs,
-        heading_hierarchy=heading_hierarchy,
-        device=device,
-        force_ocr=force_ocr,
-        force=force,
-        max_pages=max_pages,
-    )
+    try:
+        raw = _ingest_chunked(
+            src,
+            out,
+            raw_md_path=raw_md_path,
+            workers=workers,
+            chunk_pages=resolve_chunk_pages(chunk_pages),
+            pdf_backend=pdf_backend,
+            pdf_backend_kwargs=pdf_backend_kwargs,
+            heading_hierarchy=heading_hierarchy,
+            device=device,
+            force_ocr=force_ocr,
+            force=force,
+            max_pages=max_pages,
+        )
+    except PartialIngestError:
+        stamp_ingest_record(out, src, flags, started_at=started_at)
+        raise
+    stamp_ingest_record(out, src, flags, started_at=started_at)
+    return raw
+
+
+def _now_utc_iso() -> str:
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _first_pages(
+    src: Path, *, suffix: str, pdf_backend: str, page_range: str | list[int] | None, n: int
+) -> str:
+    """The 0-based page range for `max_pages=n` on the single-process path."""
+    if n < 1:
+        raise ValueError(f"max_pages must be >= 1, got {n!r}")
+    if suffix not in PDF_SUFFIXES:
+        raise ValueError(f"max_pages applies to PDFs only; got {suffix!r}")
+    if pdf_backend == "tophat":
+        raise ValueError(
+            "max_pages does not apply to the tophat backend, which reads the whole export"
+        )
+    if page_range is not None:
+        raise ValueError("pass page_range or max_pages, not both")
+    return f"0-{min(n, count_pages(src)) - 1}"
+
+
+def stamp_ingest_record(
+    out: Path, src: Path, flags: dict[str, Any], *, started_at: str | None = None
+) -> None:
+    """Stamp the ingest flags into `.pagespeak-run.json` as soon as raw.md exists, so
+    a run that dies later still leaves a record that describes the raw.md. A write
+    failure is non-fatal."""
+    from .. import __version__
+    from ..services._provenance import persistable_source_identity
+    from ..services._run_record import record_ingest
+
+    images_dir = out / "images"
+    try:
+        record_ingest(
+            out,
+            version=__version__,
+            input_path=src,
+            flags=flags,
+            started_at=started_at or _now_utc_iso(),
+            finished_at=_now_utc_iso(),
+            image_count=sum(1 for _ in images_dir.iterdir()) if images_dir.is_dir() else 0,
+            source_identity=persistable_source_identity(src, out, dir_mode=False),
+        )
+    except OSError as e:
+        logger.warning("run_record_write_failed path=%s error=%s", out, e)
 
 
 def _ingest_single_process(
@@ -197,41 +247,21 @@ def _ingest_single_process(
     html_base_url: str | None = None,
 ) -> Path:
     """Run the backend in-process and write raw.md + images/."""
-    if suffix in PDF_SUFFIXES:
-        from ..backends._pdf_dispatch import convert as _pdf_convert
-
-        result = _pdf_convert(
-            pdf_backend,
-            src,
-            output_dir=out,
-            force_ocr=force_ocr,
-            device=device,
-            page_range=page_range,
-            backend_kwargs=pdf_backend_kwargs,
-            heading_hierarchy=heading_hierarchy,
-        )
-    elif suffix in MARKITDOWN_SUFFIXES:
-        if suffix == ".docx":
-            from ..backends._docx_dispatch import convert as _docx_convert
-
-            result = _docx_convert(
-                docx_backend,
-                src,
-                output_dir=out,
-                outline_heading_depth=docx_outline_heading_depth,
-            )
-        else:
-            from ..backends._docx import convert_with_markitdown
-
-            result = convert_with_markitdown(src, output_dir=out, html_base_url=html_base_url)
-    elif suffix in MARKDOWN_SUFFIXES:
-        from ..backends._markdown import convert_markdown
-
-        result = convert_markdown(src)
-    else:
-        raise unsupported_format_error(suffix)
-
-    raw_md_path.write_text(result.markdown, encoding="utf-8")
+    result = convert_source(
+        src,
+        out,
+        suffix=suffix,
+        pdf_backend=pdf_backend,
+        pdf_backend_kwargs=pdf_backend_kwargs,
+        heading_hierarchy=heading_hierarchy,
+        docx_backend=docx_backend,
+        docx_outline_heading_depth=docx_outline_heading_depth,
+        device=device,
+        force_ocr=force_ocr,
+        page_range=page_range,
+        html_base_url=html_base_url,
+    )
+    atomic_write_text(raw_md_path, result.markdown)
     # Stamp provenance now: a resume run resolves src to a checkpoint.
     from ..services._hierarchy_trust import record_hierarchy_source, record_structured
 
@@ -303,7 +333,7 @@ def _ingest_chunked(
             continue
         parts.append(p.read_text(encoding="utf-8"))
     consolidated = "\n\n".join(parts)
-    raw_md_path.write_text(consolidated, encoding="utf-8")
+    atomic_write_text(raw_md_path, consolidated)
     # Stamp provenance from the real PDF, as the single-process path does — a
     # later phase resolves its source to the checkpoint and cannot ask again.
     from ..services._hierarchy_trust import record_hierarchy_source, record_structured
@@ -317,6 +347,12 @@ def _ingest_chunked(
     # only happen for byte-identical duplicates — keep the first.
     flat_dir = out / "images"
     flat_dir.mkdir(parents=True, exist_ok=True)
+    # A shelved chunk keeps its images under chunks/; a flat copy would reach vision.
+    current = {img.name for img in mf.all_chunk_images()}
+    for shelved in mf.shelved:
+        for rel in shelved.images:
+            if Path(rel).name not in current:
+                (flat_dir / Path(rel).name).unlink(missing_ok=True)
     # Copy (not move) per-chunk images into the flat dir. Keeping the
     # `chunks/<range>/images/` originals lets a partial-flatten failure
     # resume cleanly — `mf.all_chunk_images()` still resolves on re-run.
@@ -425,9 +461,13 @@ def assert_ingest_complete(output_dir: Path | None, *, allow_partial: bool = Fal
 
 
 __all__ = [
+    "MARKDOWN_SUFFIXES",
     "MARKITDOWN_SUFFIXES",
     "PDF_SUFFIXES",
     "PartialIngestError",
     "assert_ingest_complete",
+    "convert_source",
     "ingest",
+    "stamp_ingest_record",
+    "unsupported_format_error",
 ]

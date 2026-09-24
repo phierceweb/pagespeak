@@ -122,6 +122,21 @@ def test_actions_partial_has_options_form(monkeypatch, tmp_path):
     assert "/help" in r.text
 
 
+def test_actions_pdf_backend_options_submit_backend_names(monkeypatch, tmp_path):
+    # A bare <option>label</option> submits its label, which the CLI rejects.
+    from bs4 import BeautifulSoup
+
+    from pagespeak.backends._pdf_dispatch import PdfBackendName
+
+    client, conv = _client(monkeypatch, tmp_path)
+    (conv / "in" / "Doc.pdf").write_text("x", encoding="utf-8")
+    r = client.get("/partials/actions/doc")
+    select = BeautifulSoup(r.text, "html.parser").find("select", attrs={"name": "pdf_backend"})
+    submitted = [opt.get("value", opt.get_text()) for opt in select.find_all("option")]
+    assert "docling" in submitted
+    assert set(submitted) <= {"", *PdfBackendName.__args__}
+
+
 def test_detail_run_record_tab(monkeypatch, tmp_path):
     import json
 

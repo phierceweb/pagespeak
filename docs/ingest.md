@@ -53,19 +53,21 @@ pagespeak ingest thick-textbook.pdf -o ./out --workers 4 --device cpu
 - After all chunks complete, concatenates them into `<stem>.raw.md` and flattens images into `images/` with page-range-prefixed basenames (e.g. `0-49-_page_0_Figure_1.jpeg`) to prevent collisions across chunks.
 - Page-anchor IDs (`<span id="page-X-Y"></span>`) are absolutized during concatenation so chunk-local page numbers don't collide.
 - Writes `manifest.json` and `chunks/<page_range>/` per chunk.
-- **Heading quality trade-off:** chunking flattens Marker's heading hierarchy because Marker computes depth from local font statistics that don't agree across chunk boundaries. Use `--normalize-headings` (or `--preset textbook`) in the subsequent `convert` phase to compensate; or use `--pdf-backend docling` (always 2 levels, but stable).
+- **Heading quality trade-off:** chunking flattens Marker's heading hierarchy because Marker computes depth from local font statistics that don't agree across chunk boundaries. Use `--normalize-headings` (or `--preset textbook`) in the subsequent `convert` phase to compensate; or use `--pdf-backend docling --heading-hierarchy`, which reads levels from the PDF's bookmarks and numbering and is fast enough on CPU to run a large document without `--workers` (see [backends.md](backends.md#speed)).
 
 ## Flags
 
 | Flag | Default | Purpose |
 |---|---|---|
 | `<input>` | (required) | Path to the source document |
-| `--output-dir`, `-o` | `./out` | Directory for `<stem>.raw.md` and `images/` |
+| `--output-dir`, `-o` | (required) | Directory for `<stem>.raw.md` and `images/` |
 | `--workers`, `-w` | `1` | Worker count. `1` = single-process; `N > 1` = chunked-parallel (PDF only). Override the default via `PAGESPEAK_WORKERS` (applied to PDF input only). |
 | `--chunk-pages` | `50` | Pages per chunk (chunked path only). Smaller = finer-grained resume; larger = less Marker model-load overhead per chunk. |
+| `--max-pages` | (all) | PDF only — convert just the first N pages, as a trial on a slice, with any `--workers`. Not with `--pdf-backend tophat`, which reads the whole export. A later `convert` of the whole source into the same dir refuses the trial's `raw.md`. |
 | `--device` | (auto) | `cpu` / `mps` / `cuda`. `cpu` avoids the surya/MPS crash on Apple Silicon. |
 | `--force-ocr` | off | PDF only — force OCR even on text-bearing PDFs. |
-| `--pdf-backend` | `marker` | `marker` (default) or `docling`. See [docs/backends.md](backends.md). |
+| `--pdf-backend` | `marker` | `marker` (default), `docling` (pair with `--heading-hierarchy`, else every heading lands at one level), or `tophat`. See [docs/backends.md](backends.md). |
+| `--heading-hierarchy` | off | Docling PDF only. Heading levels from PDF bookmarks → section numbering → font style. Requires `docling>=2.109`. |
 | `--docx-backend` | `markitdown` | `markitdown` (default) or `python-docx`. `.docx`-only, single-process. See [docs/docx-backends.md](docx-backends.md). |
 | `--force` | off | Re-run chunks already marked completed in the manifest (chunked path only). |
 
@@ -85,7 +87,11 @@ pagespeak ingest thick.pdf -o ./out --workers 4
 
 On the single-process path there is no manifest; resume means the same thing as on `pagespeak convert` — `<stem>.raw.md` exists and is fresher than the source file, so the backend step is skipped entirely.
 
-**Backend mismatch:** if the manifest records `pdf_backend: marker` but you invoke with `--pdf-backend docling`, the command refuses with a clear message. Pass `--force` to override and re-run all chunks from scratch.
+**Changed chunk plan:** a different `--chunk-pages` or `--max-pages` produces different page ranges. Completed chunks from another plan are shelved in the manifest (logged as `chunk_plan_changed` with the ranges): they never reach `raw.md`, so a `--max-pages` trial followed by the full run cannot concatenate overlapping pages, and their flattened copies leave `images/`. A later plan with the same ranges restores them instead of reading those pages again, so a trial after a full run costs only the trial.
+
+**Run record:** `pagespeak ingest` stamps the settings it ran with (`pdf_backend`, `heading_hierarchy`, `force_ocr`, `page_range`, `docx_backend`, `max_pages`, …) into the `ingest_flags` block of `<outdir>/.pagespeak-run.json`, merging into an existing record. A following `pagespeak convert <outdir>` inherits them and carries the source identity forward; a `convert` of the source into the same dir refuses a `--max-pages` trial's `raw.md` instead of building the whole document from its first pages.
+
+**Setting mismatch:** each chunk in the manifest records the backend and the settings that read it (`force_ocr`, the backend kwargs, and `heading_hierarchy` under Docling). Resuming with another backend or other settings refuses with a message naming each difference, instead of mixing chunks read two ways. Pass `--force` to re-run all chunks from scratch.
 
 ### Partial ingest
 

@@ -71,6 +71,9 @@ def build_command(inp: ConversionInputs, *, pagespeak_bin: str) -> list[str]:
             cmd += ["--normalize-headings-backend", opts.normalize_headings_backend]
     if opts.pdf_backend:
         cmd += ["--pdf-backend", opts.pdf_backend]
+        if opts.pdf_backend == "docling":
+            # Plain docling puts every heading at one level.
+            cmd += ["--heading-hierarchy"]
     if opts.docx_backend:
         cmd += ["--docx-backend", opts.docx_backend]
     if opts.workers:

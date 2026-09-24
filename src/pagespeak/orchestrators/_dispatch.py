@@ -11,6 +11,7 @@ from typing import Any
 from pf_core.log import get_logger
 from pf_core.pipeline.sequencer import Phase as SequencedPhase
 from pf_core.pipeline.sequencer import run_pipeline
+from pf_core.utils.io import atomic_write_text
 
 from ..backends._docx_dispatch import DEFAULT_DOCX_BACKEND, DocxBackendName
 from ..backends._pdf_dispatch import DEFAULT_PDF_BACKEND, PdfBackendName
@@ -103,7 +104,7 @@ def to_markdown(
             backend + embed Mermaid where applicable.
         vision_backend: `"anthropic"` (API) / `"claude_code"` ($0 local CLI) /
             `"openrouter"`; None → env/default.
-        vision_model: Model override (else env, else haiku). `claude_code` → `--model`.
+        vision_model: Model override (else `config/model_router.yaml`). `claude_code` → `--model`.
         vision_concurrency: Per-image worker-pool size (None → env, else 6).
         vision_cache_only: Use ONLY the on-disk `.vision-cache/` — zero backend
             calls; uncached images are skipped (caption-only) with a WARNING.
@@ -132,18 +133,21 @@ def to_markdown(
         regenerate_toc: Rebuild `## Table of Contents` from real headings (default True).
         decoration_threshold: Page-header/footer decoration cutoff (5; `0` off).
         decoration_hamming_distance: Phash grouping distance (default 12).
-        pdf_backend: `"marker"` (default, fast) or `"docling"` (accuracy-first,
-            needs `pagespeak[pdf-docling]`). See `docs/backends.md`.
+        pdf_backend: `"marker"` (default) or `"docling"` (needs
+            `pagespeak[pdf-docling]`; pair with `heading_hierarchy`). See
+            `docs/backends.md`.
         pdf_backend_kwargs: Backend-specific pipeline options.
         docx_backend: DOCX backend selection.
         docx_outline_heading_depth: Outline depth promoted to headings (0=off).
         normalize_headings: If True, fix flattened chapter/subsection levels
             after cleanup (textbooks Marker flattens). Opt-in.
         normalize_headings_mode: `"heuristic"` (default; free/deterministic) /
-            `"llm"` / `"llm_full"` (body-anchored) / `"auto"` (classify per-doc).
+            `"llm"` / `"llm_full"` (body-anchored) / `"llm_dehead"` (drops junk
+            headings, never re-levels) / `"auto"` (classify per-doc).
             LLM modes cache under `.heading-normalize-cache/`.
-        normalize_headings_model: Model override for the LLM modes (else env,
-            else haiku); always fires (cost protection as `vision_model`).
+        normalize_headings_model: Model override for the LLM modes (else each
+            mode's `config/model_router.yaml` entry); always fires (cost
+            protection as `vision_model`).
         strip_frontmatter: DOCX-only. Drop everything before the first `# H1`
             when the lead matches ≥2 enterprise-template patterns. Opt-in.
         provenance: Emit provenance frontmatter (source tags + `doc_title` +
@@ -267,6 +271,12 @@ def to_markdown(
             start=start,
             stop_after=stop_after,
             allow_partial_ingest=allow_partial_ingest,
+            # Not used in dir-mode; forwarded so the run record names what ran.
+            pdf_backend=pdf_backend,
+            pdf_backend_kwargs=pdf_backend_kwargs,
+            heading_hierarchy=heading_hierarchy,
+            force_ocr=force_ocr,
+            device=device,
         )
 
     src, out, _doc_stem, cross_refs, _dir_mode = prepare_output_dir(
@@ -446,7 +456,7 @@ def to_markdown(
         # result.markdown as an intermediate checkpoint — writing that would
         # clobber the real final document.
         if stop_after in (None, "vision", "split"):
-            (out / f"{effective_stem}.md").write_text(result.markdown, encoding="utf-8")
+            atomic_write_text(out / f"{effective_stem}.md", result.markdown)
 
         finished_at = _now_utc_iso()
         resolved_flags = resolved_flags_from_ctx(ctx)

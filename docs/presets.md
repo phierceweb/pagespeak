@@ -14,9 +14,9 @@ Two ergonomic features:
 | `flat` | Reference manuals, FAQ | `basic` | on | off | 2 | off | — | off |
 | `textbook` | Heavy-hierarchy academic | `aggressive` | on | on | 3 | on | heuristic | off |
 | `archival` | Light touch, preserve all | `off` | on | on | 1 | off | — | off |
-| `qti` | Canvas quiz exports (one file per quiz) | `off` | on | off | 1 | off | — | own¹ |
+| `qti` | Canvas quiz exports (one file per quiz) | `off` | own¹ | off | 1 | off | — | own¹ |
 
-¹ `qti` emits its own rich provenance (source_type `exam` + quiz/question fields) via the QTI split path, so the generic `provenance` flag is off for it. The **`provenance`** column controls the generic output frontmatter (source tags + auto-derived `source_label` + per-section breadcrumb locators) — the multi-source RAG enabler. On for `rag-default`; turn it on elsewhere with `--provenance`. See [usage.md](usage.md#tag-a-source-for-a-multi-source-rag-db).
+¹ `qti` splits and tags through its own QTI path — one file per question, with rich provenance (source_type `exam` + quiz/question fields) — so the generic `split_sections` and `provenance` flags are off for it. The **`provenance`** column controls the generic output frontmatter (source tags + auto-derived `source_label` + per-section breadcrumb locators) — the multi-source RAG enabler. On for `rag-default`; turn it on elsewhere with `--provenance`. See [usage.md](usage.md#tag-a-source-for-a-multi-source-rag-db).
 
 ## Usage
 
@@ -72,6 +72,7 @@ After every successful run, pagespeak writes `<output_dir>/.pagespeak-run.json`:
   "version": "<pagespeak version>",
   "preset": "rag-default",
   "resolved_flags": { /* every flag that influenced the run */ },
+  "ingest_flags": { /* the settings that produced <stem>.raw.md */ },
   "input": "manual.pdf",
   "input_sha256": "<64 hex chars>",
   "started_at": "<ISO8601>",
@@ -82,6 +83,8 @@ After every successful run, pagespeak writes `<output_dir>/.pagespeak-run.json`:
 ```
 
 Two runs against the same input file should produce the same `input_sha256`. Differences in `section_count` / `image_count` / `resolved_flags` between two runs reveal what changed.
+
+`ingest_flags` is written only by the run that produced `raw.md` (`pagespeak ingest`, or a convert whose ingest phase ran the backend) and carried unchanged by every later run; its values also replace the ingest keys in `resolved_flags`. The resume check reads it — see [pipeline-ingest.md](pipeline-ingest.md).
 
 The record is also the input to **re-run flag inheritance**: a later `pagespeak convert` into the same output dir defaults unspecified flags to these `resolved_flags`, so re-runs reproduce the original shape without re-typing the flag set. A run whose flags were inherited records them as its own resolved values (with `preset: null` — the concrete flags, not the preset name, carry forward). See [caching.md](caching.md) § "Re-run flag inheritance".
 

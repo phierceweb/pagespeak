@@ -6,10 +6,10 @@ Two general PDF backends. Pick per call via `pdf_backend="marker"` (default) or 
 
 | Backend | Pick it for | Avoid it when |
 |---|---|---|
-| **Marker** (default) | Heading hierarchy matters — RAG ingestion, navigation, downstream LLMs reasoning over structure. Preserves a proper 4-level pyramid on real docs. | Marker crashes recurrently on Apple Silicon MPS — pass `--device cpu`. Tables occasionally mangled (cell boundaries split words). |
-| **Docling** | Better figure extraction (~25% more figures on textbooks). Well-formed tables. MPS-clean on Apple Silicon. Formula → LaTeX via `do_formula_enrichment=True`. Documents with an embedded PDF outline, or `Section N.` / `N.M` numbering — with `--heading-hierarchy` (below). | Heading depth on a document with **no** outline and no section numbering. Docling's layout model labels every section heading at one level, so without `--heading-hierarchy` its output is capped at 2 heading levels regardless of doc structure — and *with* it, a no-signal document gets levels that are consistent but arbitrary. |
+| **Marker** (default) | Formula-heavy PDFs (emits LaTeX). Code-bearing PDFs (keeps multi-line code blocks). Scanned PDFs. Non-contiguous page ranges, e.g. keeping one language of a multilingual manual. | Heading hierarchy matters on a PDF with a bookmark outline — Marker guesses levels from font-size clusters, so they shift with the page range and flatten across chunks. Crashes recurrently on Apple Silicon MPS — pass `--device cpu`. Tables occasionally mangled (cell boundaries split words). |
+| **Docling** | PDFs with an embedded bookmark outline — with `--heading-hierarchy` (below) it takes levels from the outline. Across 38 outline-bearing PDFs its levels matched the bookmarks on 91% of headings, against 62% for Marker. On section numbering alone (no outline) results were mixed: even on most documents, a clear win on `Section N.` / `N.M` manuals, and bare-integer numbering can invert (below). Well-formed tables. More figures extracted (~25% more on textbooks). MPS-clean on Apple Silicon, and faster than Marker on CPU. | Code-bearing PDFs: every multi-line code block collapses to one line. Formulas: glyph codes (`n01`) unless `do_formula_enrichment=True`. Scanned PDFs. Non-contiguous page ranges (collapsed to one span). Some layouts that set prose inside figure regions (plugin-UI screenshots, print-format brochures) lose body text — check coverage on a new document class. Without `--heading-hierarchy`, every heading lands at one level. |
 
-The chunked pipeline flattens Marker's hierarchy too — Marker decides heading depth from local font statistics that don't agree across chunks. The same refit also means Marker's levels change with the **page range**: converting a slice of a document and converting the whole document produce different heading levels for the same pages. See [pipeline.md](pipeline.md) for details. Use `pagespeak convert` for any doc that fits in single-shot, or pair the pipeline with `--pdf-backend docling` (chunk-stable).
+The chunked pipeline flattens Marker's hierarchy too — Marker decides heading depth from local font statistics that don't agree across chunks. The same refit also means Marker's levels change with the **page range**: converting a slice of a document and converting the whole document produce different heading levels for the same pages. See [pipeline.md](pipeline.md) for details. Use `pagespeak convert` for any doc that fits in single-shot, or use `--pdf-backend docling --heading-hierarchy`, which is fast enough on CPU to run most large documents single-process (see [Speed](#speed)).
 
 ## `--heading-hierarchy` (Docling only)
 
@@ -43,6 +43,8 @@ pip install pagespeak[pdf,pdf-docling]  # both — pick at call time
 pip install pagespeak[tophat]           # Top Hat quiz backend (light; pypdfium2)
 ```
 
+Marker requires Pillow below 11, so the `pdf` extra installs Pillow 10.4. Read [SECURITY.md](../SECURITY.md#converting-untrusted-documents) before converting untrusted documents with it.
+
 If you ask for a backend that isn't installed, pagespeak raises `ImportError` with the exact pip extra in the message — no debugging needed.
 
 ## Library API
@@ -55,6 +57,7 @@ result = to_markdown(
     "textbook.pdf",
     output_dir="./out",
     pdf_backend="docling",            # default "marker"
+    heading_hierarchy=True,           # without it, every heading at one level
 )
 
 # Pipeline
@@ -62,6 +65,7 @@ mf = chunk(
     "textbook.pdf",
     output_dir="./out",
     pdf_backend="docling",
+    heading_hierarchy=True,
     workers=4,
     device="cpu",
 )
@@ -70,8 +74,8 @@ mf = chunk(
 ## CLI
 
 ```bash
-pagespeak convert textbook.pdf -o ./out --pdf-backend docling
-pagespeak ingest textbook.pdf -o ./out --pdf-backend docling --workers 4   # backend phase only, chunked-parallel
+pagespeak convert textbook.pdf -o ./out --pdf-backend docling --heading-hierarchy
+pagespeak ingest textbook.pdf -o ./out --pdf-backend docling --heading-hierarchy --workers 4   # backend phase only, chunked-parallel
 pagespeak convert ./out                                                    # then Phase 3 on the existing raw.md
 ```
 
@@ -142,4 +146,4 @@ Use `--force` to acknowledge the choice and re-run, or pick a fresh output dir.
 
 ## Speed
 
-Marker: ~30s model-load on first call, then ~10s for a 12-page PDF. Docling: ~10s model-load, but ~30s convert because it runs more layout/structure models. For pipeline runs, parallelism (chunk workers) hides Docling's per-page cost.
+On CPU, Docling converted all nine PDFs measured faster than Marker on the same machine — a median of ~8×. Marker also pays a ~30s model-load on the first call in a process. Docling's speed means a large PDF can usually run single-process; the `--workers N` chunked pipeline was built for Marker's per-page cost, and skipping it also avoids Marker's chunk-boundary heading drift.

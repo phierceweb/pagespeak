@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
+from dataclasses import dataclass
 
 from pf_core.log import get_logger
 
@@ -58,6 +59,34 @@ def fence_flags(lines: list[str]) -> list[bool]:
             len(flags) - opened_at + 1,
         )
     return flags
+
+
+@dataclass(frozen=True)
+class FencedBlock:
+    start: int  # 0-based index of the opening delimiter line
+    end: int | None  # the closing delimiter line; None when never closed
+    info: str  # the opener's info string, stripped
+
+
+def fenced_blocks(lines: list[str]) -> list[FencedBlock]:
+    """Each top-level fenced block, by the same open/close rule as `fence_flags`."""
+    blocks: list[FencedBlock] = []
+    start: int | None = None
+    fence_char, fence_len, info = "", 0, ""
+    for i, line in enumerate(lines):
+        m = _FENCE_RE.match(line)
+        if not m:
+            continue
+        run = m.group(1)
+        if start is None:
+            start, fence_char, fence_len = i, run[0], len(run)
+            info = line[m.end() :].strip()
+        elif run[0] == fence_char and len(run) >= fence_len:
+            blocks.append(FencedBlock(start, i, info))
+            start = None
+    if start is not None:
+        blocks.append(FencedBlock(start, None, info))
+    return blocks
 
 
 def split_by_fences(text: str) -> list[tuple[str, bool]]:

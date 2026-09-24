@@ -31,6 +31,44 @@ def test_upload_saves_to_in(monkeypatch, tmp_path):
     assert (conv / "in" / "My Doc.pdf").is_file()
 
 
+def test_upload_never_writes_through_a_staged_symlink(monkeypatch, tmp_path):
+    """`in/` holds symlinks into an ingester's tree; writing through one would
+    overwrite that tree's source file."""
+    client, conv = _client(monkeypatch, tmp_path)
+    upstream = tmp_path / "upstream.pdf"
+    upstream.write_bytes(b"original")
+    (conv / "in" / "Manual.pdf").symlink_to(upstream)
+    r = client.post("/api/upload", files={"file": ("Manual.pdf", b"replacement")})
+    assert r.status_code == 409
+    assert upstream.read_bytes() == b"original"
+
+
+def test_upload_refuses_names_that_are_not_a_plain_file(monkeypatch, tmp_path):
+    client, conv = _client(monkeypatch, tmp_path)
+    for name in ("..", ".env", "."):
+        r = client.post("/api/upload", files={"file": (name, b"x")})
+        assert r.status_code == 400, name
+    assert not (conv / "in" / ".env").exists()
+
+
+def test_upload_over_the_cap_is_refused_and_leaves_nothing(monkeypatch, tmp_path):
+    """The body cap is also enforced while copying, for a request with no Content-Length."""
+    from pagespeak.web.api import actions
+
+    client, conv = _client(monkeypatch, tmp_path)
+    monkeypatch.setattr(actions, "max_upload_bytes", lambda: 10)
+    r = client.post("/api/upload", files={"file": ("Big.pdf", b"x" * 100)})
+    assert r.status_code == 413
+    assert sorted(p.name for p in (conv / "in").iterdir()) == []
+
+
+def test_upload_replaces_a_regular_file(monkeypatch, tmp_path):
+    client, conv = _client(monkeypatch, tmp_path)
+    (conv / "in" / "Doc.pdf").write_bytes(b"old")
+    client.post("/api/upload", files={"file": ("Doc.pdf", b"new")})
+    assert (conv / "in" / "Doc.pdf").read_bytes() == b"new"
+
+
 def test_run_diagrams_off_creates_pending_job(monkeypatch, tmp_path):
     client, conv = _client(monkeypatch, tmp_path)
     (conv / "in" / "Doc.pdf").write_text("x", encoding="utf-8")
@@ -167,3 +205,74 @@ def test_run_live_vision_confirmed_creates_job(monkeypatch, tmp_path):
     from pf_core.jobs import JobRepo
 
     assert len(JobRepo().find(kind="pagespeak_convert")) == 1
+
+
+def _read_before(conv, ingest_flags):
+    """A PDF the console already read, with `ingest_flags` naming how."""
+    import json
+
+    (conv / "in" / "Doc.pdf").write_bytes(b"%PDF-1.4\n")
+    out = conv / "out" / "doc"
+    out.mkdir(parents=True)
+    (out / "Doc.raw.md").write_text("# raw", encoding="utf-8")
+    (out / ".pagespeak-run.json").write_text(
+        json.dumps({"ingest_flags": ingest_flags}), encoding="utf-8"
+    )
+    return out
+
+
+def _queued_options():
+    from pf_core.jobs import JobRepo
+
+    jobs = JobRepo().find(kind="pagespeak_convert")
+    assert len(jobs) == 1
+    return jobs[0]["inputs"]["options"]
+
+
+def test_run_with_another_pdf_reader_re_reads_the_document(monkeypatch, tmp_path):
+    """The pipeline refuses a raw.md read by another reader and the form has no
+    re-ingest control, so choosing another reader has to re-read."""
+    client, conv = _client(monkeypatch, tmp_path)
+    _read_before(conv, {"pdf_backend": "marker"})
+    r = client.post("/api/run/doc", data={"diagrams": "false", "pdf_backend": "docling"})
+    assert r.status_code == 200
+    assert _queued_options()["rerun_from"] == "ingest"
+
+
+def test_run_re_reads_docling_output_without_a_hierarchy(monkeypatch, tmp_path):
+    """The console's docling always adds --heading-hierarchy."""
+    client, conv = _client(monkeypatch, tmp_path)
+    _read_before(conv, {"pdf_backend": "docling", "heading_hierarchy": False})
+    client.post("/api/run/doc", data={"diagrams": "false", "pdf_backend": "docling"})
+    assert _queued_options()["rerun_from"] == "ingest"
+
+
+def test_run_with_the_reader_already_used_reuses_the_read(monkeypatch, tmp_path):
+    client, conv = _client(monkeypatch, tmp_path)
+    _read_before(conv, {"pdf_backend": "docling", "heading_hierarchy": True})
+    client.post("/api/run/doc", data={"diagrams": "false", "pdf_backend": "docling"})
+    assert _queued_options()["rerun_from"] is None
+
+
+def test_reader_change_counts_images_as_unknown(monkeypatch, tmp_path):
+    """Another reader extracts other images, so today's cache count says nothing."""
+    client, conv = _client(monkeypatch, tmp_path)
+    out = _read_before(conv, {"pdf_backend": "marker"})
+    (out / "images").mkdir()
+    (out / "images" / "a.png").write_bytes(b"a")
+    r = client.post("/api/run/doc", data={"diagrams": "true", "pdf_backend": "docling"})
+    assert "Exact count known after ingest" in r.text
+
+
+def test_reader_change_with_several_workers_is_refused(monkeypatch, tmp_path):
+    """A multi-worker run cannot re-ingest; it would resume the chunks already read."""
+    from pf_core.jobs import JobRepo
+
+    client, conv = _client(monkeypatch, tmp_path)
+    _read_before(conv, {"pdf_backend": "marker"})
+    r = client.post(
+        "/api/run/doc", data={"diagrams": "false", "pdf_backend": "docling", "workers": "4"}
+    )
+    assert r.status_code == 200
+    assert "workers" in r.text
+    assert JobRepo().find(kind="pagespeak_convert") == []

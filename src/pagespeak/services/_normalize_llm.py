@@ -1,5 +1,5 @@
-"""LLM heading-normalize machinery: prompt building, Claude invocation, response
-parsing, model/token resolution, and the response cache key.
+"""LLM heading-normalize machinery: prompt building, response parsing,
+model/token resolution, and the response cache key.
 
 `_heading_normalize.py` re-exports `_build_prompt_full` /
 `_estimate_tokens` / `_extract_body_anchors` / `_resolve_max_input_tokens`
@@ -45,10 +45,6 @@ _LEVEL_LINE_RE = re.compile(r"^\s*(\d+)\s*:\s*(\d+)\s*$")
 # `<idx>: KEEP|DROP` — the llm_dehead verdict line.
 _DEHEAD_LINE_RE = re.compile(r"^\s*(\d+)\s*:\s*(KEEP|DROP)\s*$", re.IGNORECASE)
 
-_CLAUDE_CODE_TIMEOUT_S_DEFAULT = 1800
-
-_CLAUDE_CODE_TIMEOUT_ENV_VAR = "PAGESPEAK_CLAUDE_CODE_TIMEOUT_S"
-
 _PROMPT_VERSION_BY_MODE: dict[str, int] = {
     "llm": NORMALIZE_PROMPT_VERSION,
     "llm_full": HEADING_NORMALIZE_FULL_PROMPT_VERSION,
@@ -60,18 +56,6 @@ _BODY_GUARD_MIN_WORDS_ENV_VAR = "PAGESPEAK_DEHEAD_GUARD_MIN_BODY_WORDS"
 # Above this many identical headings the line is running furniture, not a section.
 _BODY_GUARD_MAX_RECURRENCE_DEFAULT = 25
 _BODY_GUARD_MAX_RECURRENCE_ENV_VAR = "PAGESPEAK_DEHEAD_GUARD_MAX_RECURRENCE"
-
-
-def _claude_code_timeout_s() -> int:
-    """Read `PAGESPEAK_CLAUDE_CODE_TIMEOUT_S` at call time; fall back to default.
-
-    Operational tunables live in env, with
-    the in-code default as the fallback when the env var is unset or invalid.
-    Uses pf-core's `resolve_int`, which emits a structured
-    `env_var_malformed` warning on non-integer values rather than crashing.
-    """
-    n: int = resolve_int(None, _CLAUDE_CODE_TIMEOUT_ENV_VAR, default=_CLAUDE_CODE_TIMEOUT_S_DEFAULT)
-    return n
 
 
 DEFAULT_NORMALIZE_MODEL = "claude-haiku-4-5-20251001"
@@ -156,14 +140,16 @@ def _estimate_tokens(text: str) -> int:
     return len(text) // 4
 
 
-def _resolve_max_input_tokens(override: int | None = None) -> int:
-    """Resolve the `llm_full` token-budget threshold.
+def _resolve_max_input_tokens(
+    override: int | None = None, *, agent: str = "heading_normalize_full"
+) -> int:
+    """Resolve a normalize mode's token-budget threshold.
 
     Precedence (highest first):
 
     1. Explicit ``override`` arg (passed through from
        ``to_markdown(max_input_tokens=…)`` / library callers).
-    2. YAML ``agents.heading_normalize_full`` — the active backend's
+    2. YAML ``agents.<agent>`` — the active backend's
        ``max_input_tokens`` entry, then the agent-level one (a
        ``non_chat_keys`` option, read via ``_agent_runtime.agent_option``).
     3. :data:`DEFAULT_NORMALIZE_MAX_INPUT_TOKENS` (150,000).
@@ -179,7 +165,7 @@ def _resolve_max_input_tokens(override: int | None = None) -> int:
     from .._agent_runtime import agent_option
 
     try:
-        val = agent_option("heading_normalize_full", "max_input_tokens")
+        val = agent_option(agent, "max_input_tokens")
     except ConfigurationError:
         val = None  # custom YAML without the agent → default below
     if isinstance(val, int) and val > 0:
@@ -321,7 +307,7 @@ def _build_dehead_prompt_with_gate(
     max_input_tokens: int | None,
 ) -> tuple[str, bool]:
     """`_build_llm_full_prompt_with_gate`'s sibling for the de-headify prompt."""
-    threshold = _resolve_max_input_tokens(max_input_tokens)
+    threshold = _resolve_max_input_tokens(max_input_tokens, agent="heading_normalize_dehead")
     anchors = _extract_body_anchors(md, headings)
     prompt = _build_prompt_dehead(headings, anchors, include_anchors=True)
     estimate = _estimate_tokens(prompt)
@@ -373,41 +359,6 @@ def _cache_key(
     prompt_version = _PROMPT_VERSION_BY_MODE.get(mode, NORMALIZE_PROMPT_VERSION)
     h.update(str(prompt_version).encode("utf-8"))
     return h.hexdigest()[:16]
-
-
-def _claude_code_invoke(prompt: str, *, model: str | None = None) -> str:
-    """Default invoker — delegates to `pf_core.clients.claude_code.ClaudeCodeClient`.
-
-    Free of API charge if the user has a Claude Code subscription.
-    Slower than direct API (1-3s setup + LLM time). Tests inject a fake
-    via the `invoke=` parameter on `normalize_heading_levels`.
-
-    The transport layer is pf-core's `ClaudeCodeClient`:
-    pagespeak retains the prompt + model resolution policy, pf-core owns
-    the binary discovery + subprocess machinery + error mapping.
-    """
-    from pf_core.clients.claude_code import ClaudeCodeClient
-    from pf_core.exceptions import AppError
-
-    # retry=1: a failed call makes the caller skip normalization entirely,
-    # so one cheap retry is worth it.
-    client = ClaudeCodeClient(timeout=_claude_code_timeout_s(), model=model, retry=1)
-    try:
-        # `model` is already set on the client (constructor above); pf-core's
-        # chat() falls back to it (`model or self.model`), so passing it again
-        # here is redundant — and chat() now types `model: str`, not `str | None`.
-        content, _usage = client.chat(
-            messages=[{"role": "user", "content": prompt}],
-        )
-        assert isinstance(content, str)  # pf-core chat() contract
-        return content
-    except AppError as e:
-        ctx = getattr(e, "context", {}) or {}
-        stderr_head = ctx.get("stderr_head", "")
-        returncode = ctx.get("returncode", "?")
-        raise RuntimeError(
-            f"claude --print exited {returncode}: {stderr_head[:300] or str(e)[:300]}"
-        ) from e
 
 
 def _resolve_model(model: str | None, *, mode: NormalizeMode) -> str:

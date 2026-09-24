@@ -163,6 +163,12 @@ def _marker_flag(out: Path | None, key: str) -> bool:
     return bool(_marker_data(out).get(key))
 
 
+def ingested_from_outline(out: Path | None) -> bool:
+    """True when `out`'s raw.md came from docling's `--heading-hierarchy` reading
+    a bookmark outline; the marker is written at that ingest and nowhere else."""
+    return _marker_data(out).get("source") == "outline"
+
+
 def _marker_is_trusted(out: Path | None) -> bool:
     data = _marker_data(out)
     return data.get("source") == "outline" or any(bool(data.get(k)) for k in _TRUST_KEYS)

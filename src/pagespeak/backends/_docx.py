@@ -11,6 +11,7 @@ from pf_core.log import get_logger
 from ..models._models import IngestResult
 from ..services._image_refs import ImageRef, replace_image_refs
 from ..utils._mathml import prepare_mathml_for_markdown, restore_math
+from ._archive import ArchiveBudget, copy_member
 
 logger = get_logger(__name__)
 
@@ -177,6 +178,7 @@ def _extract_office_media(path: Path, output_dir: Path) -> list[Path]:
     images_dir.mkdir(parents=True, exist_ok=True)
 
     saved: list[Path] = []
+    budget = ArchiveBudget(path)
     with zipfile.ZipFile(path) as z:
         for name in z.namelist():
             if not name.startswith(_OFFICE_MEDIA_PREFIXES):
@@ -184,7 +186,7 @@ def _extract_office_media(path: Path, output_dir: Path) -> list[Path]:
             if name.endswith("/"):
                 continue
             target = images_dir / Path(name).name
-            target.write_bytes(z.read(name))
+            copy_member(z, name, target, budget)
             saved.append(target)
             logger.debug("extracted_office_media path=%s", target)
     return saved
@@ -206,6 +208,7 @@ def _extract_epub_media(path: Path, output_dir: Path) -> list[Path]:
     images_dir.mkdir(parents=True, exist_ok=True)
 
     saved: list[Path] = []
+    budget = ArchiveBudget(path)
     with zipfile.ZipFile(path) as z:
         for name in z.namelist():
             if name.endswith("/"):
@@ -213,7 +216,7 @@ def _extract_epub_media(path: Path, output_dir: Path) -> list[Path]:
             if not name.lower().endswith(_IMAGE_EXTENSIONS):
                 continue
             target = images_dir / Path(name).name
-            target.write_bytes(z.read(name))
+            copy_member(z, name, target, budget)
             saved.append(target)
             logger.debug("extracted_epub_media path=%s", target)
     return saved

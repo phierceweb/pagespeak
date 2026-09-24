@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pagespeak.services._staging import resolve_staged, staged_sources
+from pagespeak.services._staging import find_source_pdf, resolve_staged, staged_sources
 
 
 def _bundle(root: Path, slug: str, ext: str = ".html", *, extras: bool = True) -> Path:
@@ -137,3 +137,37 @@ def test_broken_symlink_is_skipped(tmp_path: Path) -> None:
     must not crash the scan."""
     (tmp_path / "gone").symlink_to(tmp_path / "does-not-exist")
     assert list(staged_sources(tmp_path)) == []
+
+
+def testfind_source_pdf_token_overlap(tmp_path: Path) -> None:
+    """Auto-locate tolerates naming drift (spaces, version suffixes, casing)."""
+    for name in [
+        "Acme Device User Guide v12.2.pdf",
+        "ACME MAIN Manual 14.0.pdf",
+        "Generic zx100 Manual.pdf",
+        "unrelated handbook.pdf",
+    ]:
+        (tmp_path / name).write_bytes(b"%PDF-1.4\n")
+    assert (
+        find_source_pdf("acme-device-user-guide", tmp_path).name
+        == "Acme Device User Guide v12.2.pdf"
+    )
+    assert find_source_pdf("acme-main-manual-14", tmp_path).name == "ACME MAIN Manual 14.0.pdf"
+    assert find_source_pdf("generic-zx100-gadget", tmp_path).name == "Generic zx100 Manual.pdf"
+    assert find_source_pdf("obscure-database-tool-guide", tmp_path) is None  # no good match
+
+
+def testfind_source_pdf_reaches_into_a_symlinked_bundle(tmp_path: Path) -> None:
+    """rglob does not descend a symlinked directory, so a bundle-staged PDF was
+    unreachable by the fuzzy branch."""
+    upstream = tmp_path / "upstream" / "acme-main-manual-14"
+    upstream.mkdir(parents=True)
+    (upstream / "acme-main-manual-14.pdf").write_bytes(b"%PDF-1.4\n")
+    (upstream / "manifest.json").write_text("{}", encoding="utf-8")
+    staging = tmp_path / "in"
+    staging.mkdir()
+    (staging / "acme-main-manual-14").symlink_to(upstream)
+
+    assert list(staging.rglob("*.pdf")) == [], "precondition: rglob cannot see it"
+    found = find_source_pdf("acme-main-manual-14-guide", staging)
+    assert found is not None and found.name == "acme-main-manual-14.pdf"

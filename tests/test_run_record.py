@@ -304,3 +304,124 @@ def test_run_record_omits_source_identity_when_not_provided(tmp_path: Path) -> N
     )
     data = json.loads(written.read_text(encoding="utf-8"))
     assert "source_identity" not in data
+
+
+def _record_ingest(out: Path, src: Path, **flags: object) -> None:
+    from pagespeak.services._run_record import record_ingest
+
+    record_ingest(
+        out,
+        version="0.16.0",
+        input_path=src,
+        flags=flags,
+        started_at="2026-09-22T00:00:00Z",
+        finished_at="2026-09-22T00:01:00Z",
+        image_count=3,
+        source_identity={"file": src.name, "source_id": "doc", "sha256": "b" * 64},
+    )
+
+
+def test_record_ingest_writes_a_fresh_record(tmp_path: Path) -> None:
+    """`ingest` alone must leave a record, or `convert <out_dir>` inherits nothing
+    and carries no source identity forward."""
+    src = tmp_path / "doc.pdf"
+    src.write_bytes(b"fake pdf bytes")
+    out = tmp_path / "out"
+    out.mkdir()
+
+    _record_ingest(out, src, pdf_backend="docling", heading_hierarchy=True)
+
+    data = read_run_record(out)
+    assert data is not None
+    assert data["resolved_flags"] == {"pdf_backend": "docling", "heading_hierarchy": True}
+    assert data["input"] == "doc.pdf"
+    assert data["source_identity"]["source_id"] == "doc"
+    assert data["image_count"] == 3
+
+
+def test_record_ingest_keeps_the_rest_of_an_existing_record(tmp_path: Path) -> None:
+    """Replacing the record would drop the split shape a later `--rerun-from`
+    inherits — the flags that decide whether `sections/` is rebuilt."""
+    src = tmp_path / "doc.pdf"
+    src.write_bytes(b"fake pdf bytes")
+    out = tmp_path / "out"
+    out.mkdir()
+    write_run_record(
+        out,
+        version="0.15.0",
+        preset="rag-default",
+        resolved_flags={"pdf_backend": "marker", "split_sections": True, "split_target_kb": 32},
+        input_path=src,
+        started_at="2026-09-01T00:00:00Z",
+        finished_at="2026-09-01T00:05:00Z",
+        section_count=40,
+        image_count=9,
+        llm_calls={"total_calls": 2},
+    )
+
+    _record_ingest(out, src, pdf_backend="docling", heading_hierarchy=True)
+
+    data = read_run_record(out)
+    assert data is not None
+    assert data["resolved_flags"] == {
+        "pdf_backend": "docling",
+        "heading_hierarchy": True,
+        "split_sections": True,
+        "split_target_kb": 32,
+    }
+    assert data["preset"] == "rag-default"
+    assert data["section_count"] == 40
+    assert data["llm_calls"] == {"total_calls": 2}
+
+
+def test_record_ingest_writes_the_ingest_block(tmp_path: Path) -> None:
+    """`ingest_flags` names what produced raw.md; it is what the resume guard trusts."""
+    src = tmp_path / "doc.pdf"
+    src.write_bytes(b"fake pdf bytes")
+    out = tmp_path / "out"
+    out.mkdir()
+
+    _record_ingest(out, src, pdf_backend="docling", max_pages=10)
+    data = read_run_record(out)
+    assert data is not None
+    assert data["ingest_flags"] == {"pdf_backend": "docling", "max_pages": 10}
+
+    _record_ingest(out, src, pdf_backend="marker", max_pages=None)
+    data = read_run_record(out)
+    assert data is not None
+    assert data["ingest_flags"] == {"pdf_backend": "marker", "max_pages": None}
+
+
+def test_write_run_record_carries_the_ingest_block_forward(tmp_path: Path) -> None:
+    """A run that did not re-ingest (a dir-mode or resumed run) cannot change what
+    produced raw.md: its own ingest flags are bare defaults or explicit no-ops."""
+    src = tmp_path / "doc.pdf"
+    src.write_bytes(b"fake pdf bytes")
+    out = tmp_path / "out"
+    out.mkdir()
+    _record_ingest(out, src, pdf_backend="docling", heading_hierarchy=True, max_pages=10)
+
+    write_run_record(
+        out,
+        version="0.16.1",
+        preset=None,
+        resolved_flags={"pdf_backend": "marker", "heading_hierarchy": False, "cleanup": "basic"},
+        input_path=src,
+        started_at="2026-09-22T00:00:00Z",
+        finished_at="2026-09-22T00:01:00Z",
+        section_count=None,
+        image_count=0,
+    )
+
+    data = read_run_record(out)
+    assert data is not None
+    assert data["ingest_flags"] == {
+        "pdf_backend": "docling",
+        "heading_hierarchy": True,
+        "max_pages": 10,
+    }
+    assert data["resolved_flags"] == {
+        "pdf_backend": "docling",
+        "heading_hierarchy": True,
+        "cleanup": "basic",
+    }

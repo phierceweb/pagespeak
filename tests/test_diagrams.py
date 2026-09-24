@@ -610,6 +610,23 @@ def test_claude_code_backend_constructs_pf_core_client_with_retry_1(
     )
 
 
+def test_claude_code_backend_client_can_read_the_image(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The prompt has the model Read the image file, so the argv must name the
+    Read tool: without it pf-core 0.23 loads no tools and the model captions an
+    image it never saw."""
+    monkeypatch.setattr(
+        "pagespeak.services._vision_backends.shutil.which", lambda _: "/fake/claude"
+    )
+    monkeypatch.setattr("pf_core.clients.claude_code.shutil.which", lambda _: "/fake/claude")
+    envelope = {"result": "ok", "is_error": False, "stop_reason": "end_turn"}
+    run = MagicMock(return_value=MagicMock(returncode=0, stdout=json.dumps(envelope), stderr=""))
+    monkeypatch.setattr("pf_core.clients.claude_code.subprocess.run", run)
+    ClaudeCodeVisionBackend(model="m").preflight_check()
+    cmd = run.call_args.args[0]
+    assert "--tools" in cmd, cmd
+    assert "Read" in cmd[cmd.index("--tools") + 1].split(","), cmd
+
+
 def test_gather_diagrams_emits_failure_summary_at_warning_below_25_percent(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:

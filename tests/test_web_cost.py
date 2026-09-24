@@ -3,6 +3,7 @@ from __future__ import annotations
 from pagespeak.web._cost import (
     cache_miss_count,
     gate_decision,
+    rerun_clears_vision_cache,
     vision_will_run,
 )
 
@@ -63,3 +64,29 @@ def test_gate_decision_claude_code_unknown_needs_confirm(tmp_path):
 def test_gate_decision_confirmed_passes(tmp_path):
     d = gate_decision(out_dir=tmp_path, will_run=True, backend="claude_code", confirmed=True)
     assert d.needs_confirm is False and d.blocked is False
+
+
+def test_rerun_clears_vision_cache_only_for_the_vision_stage():
+    """Only the named stage's own content-keyed cache is deleted by a re-run."""
+    assert rerun_clears_vision_cache("vision") is True
+    assert rerun_clears_vision_cache("ingest") is False
+    assert rerun_clears_vision_cache(None) is False
+
+
+def test_gate_counts_every_image_as_a_miss_when_the_run_clears_the_cache(tmp_path, monkeypatch):
+    """`--rerun-from vision` deletes `.vision-cache/` before it runs; quoting the
+    current hits as free understates the call count by exactly that many."""
+    import pagespeak.web._cost as cost
+
+    (tmp_path / "images").mkdir()
+    (tmp_path / "images" / "a.png").write_bytes(b"a")
+    cache = tmp_path / ".vision-cache"
+    cache.mkdir()
+    (cache / "a.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(cost, "compute_phash", lambda p: p.stem)
+
+    d = gate_decision(
+        out_dir=tmp_path, will_run=True, backend="openrouter", confirmed=False, cache_cleared=True
+    )
+    assert (d.images, d.cached, d.misses) == (1, 0, 1)
+    assert d.needs_confirm is True
