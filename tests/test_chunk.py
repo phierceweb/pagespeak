@@ -518,13 +518,17 @@ def test_chunk_records_pdf_backend_on_completion(
         assert c.pdf_backend == "docling"
 
 
-def test_run_one_chunk_serializes_error(tmp_path: Path) -> None:
+def test_run_one_chunk_serializes_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Worker should never raise — errors are returned in the dataclass."""
     from pagespeak.orchestrators._chunk import _run_one_chunk
 
+    def failing_convert(path, **_kwargs):
+        raise FileNotFoundError(path)
+
+    # The real backend loads Marker's models, downloading them on a cold cache, before failing.
+    monkeypatch.setattr("pagespeak.backends._pdf.convert_pdf", failing_convert)
     out = tmp_path / "out"
     out.mkdir()
-    # Pass a nonexistent file so convert_pdf raises inside the worker.
     result = _run_one_chunk(
         input_path=str(tmp_path / "missing.pdf"),
         output_dir=str(out),
@@ -533,6 +537,7 @@ def test_run_one_chunk_serializes_error(tmp_path: Path) -> None:
         force_ocr=False,
     )
     assert result.error is not None
+    assert "FileNotFoundError" in result.error
     assert result.raw_md_rel is None
 
 

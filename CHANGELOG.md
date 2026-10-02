@@ -2,6 +2,11 @@
 
 Notable changes to pagespeak, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## 0.16.1
+
+### Security
+- **Images are decoded only when they are PNG, JPEG, GIF, BMP, TIFF or WebP.** pagespeak requires pf-core 0.24.1, whose `compute_phash` judges an image by its content and refuses anything else before Pillow decodes it, so a crafted image in a document no longer reaches the PSD, FITS, McIdas or JPEG 2000 decoders of the `pdf` extra's Pillow 10.4. Deduplication skips a refused image and the vision pass cannot cache it, so each vision run sends it again. Images the PDF backends extract are re-encoded to PNG or JPEG and are unaffected.
+
 ## 0.16.0
 
 ### Added
