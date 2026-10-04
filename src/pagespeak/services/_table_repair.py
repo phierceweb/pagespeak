@@ -20,6 +20,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from ._fences import fence_flags
+from ._table_cells import split_table_row
 
 _BR_RE = re.compile(r"<br\s*/?>", re.IGNORECASE)
 _TOKEN_RE = re.compile(r"[A-Za-z0-9.]+")
@@ -78,7 +79,7 @@ def find_collapsed_cells(text: str) -> list[CollapsedCell]:
     for i, line in enumerate(lines):
         if i in fenced or not line.strip().startswith("|"):
             continue
-        cells = line.strip().strip("|").split("|")
+        cells = split_table_row(line)
         worst = max(cells, key=lambda c: len(_BR_RE.findall(c)), default="")
         n = len(_BR_RE.findall(worst))
         if n >= _MEGA_CELL_MIN:
@@ -121,7 +122,7 @@ def find_split_tables(text: str) -> list[TableBlock]:
     out: list[TableBlock] = []
     for block in _markdown_table_blocks(text):
         for raw in block.text.splitlines()[1:]:  # skip the header row
-            parts = [c.strip() for c in raw.strip().strip("|").split("|")]
+            parts = [c.strip() for c in split_table_row(raw)]
             if len(parts) < 2:
                 continue
             wrapped_value = parts[0] == "" and any(parts[1:])
@@ -161,7 +162,7 @@ def _cell_values(text: str) -> list[str]:
     for line in text.splitlines():
         s = line.strip()
         if s.startswith("|"):
-            out.extend(c.strip() for c in s.strip("|").split("|") if c.strip() and "---" not in c)
+            out.extend(c.strip() for c in split_table_row(s) if c.strip() and "---" not in c)
         elif _BR_RE.search(s):
             out.extend(seg.strip() for seg in _BR_RE.split(s) if seg.strip())
     return out
@@ -183,7 +184,11 @@ def _drops_content(original: str, candidate: str) -> bool:
 
 
 def _is_collapsed(table_text: str) -> bool:
-    return any(len(_BR_RE.findall(c)) >= _MEGA_CELL_MIN for c in table_text.split("|"))
+    return any(
+        len(_BR_RE.findall(c)) >= _MEGA_CELL_MIN
+        for line in table_text.splitlines()
+        for c in split_table_row(line)
+    )
 
 
 def _best_table_match(cell_text: str, docling_md: str) -> tuple[str, float] | None:
@@ -339,7 +344,7 @@ def _table_snippet(block_text: str) -> str | None:
     vals = [
         cell.strip()
         for line in block_text.splitlines()
-        for cell in line.strip().strip("|").split("|")
+        for cell in split_table_row(line)
         if len(cell.strip()) >= 8 and "---" not in cell
     ]
     return max(vals, key=len)[:48] if vals else None

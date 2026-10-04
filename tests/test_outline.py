@@ -170,19 +170,133 @@ def test_migrated_markitdown_3space_k2() -> None:
     assert not any("* +" in ln for ln in lines)
 
 
-def test_migrated_pandoc_4space_k2() -> None:
-    # Pure 4-space indentation, no list marker.
+_UNHEADED_PROCEDURE = (
+    "Follow these steps to replace the filter cartridge.\n"
+    "\n"
+    "1. Turn off the unit and unplug it.\n"
+    "   1. Wait five minutes for the motor to cool.\n"
+    "   2. Place a towel under the housing.\n"
+    "2. Remove the old cartridge.\n"
+    "3. Insert the new cartridge until it clicks.\n"
+    "\n"
+    "The indicator light turns green when the filter is seated.\n"
+)
+
+
+def test_unheaded_nested_numbered_list_is_untouched() -> None:
+    # No marker stack: a nested numbered list in a document with no headings
+    # is a list, not a flattened outline.
+    assert promote_outline(_UNHEADED_PROCEDURE) == (_UNHEADED_PROCEDURE, 0)
+
+
+def test_unheaded_4space_nested_list_is_untouched() -> None:
     src = (
         "1. Hydraulics\n    1. Pump\n        1. Chambers\n2. Acoustic\n    1. Bellows\n3. Optical\n"
     )
+    assert promote_outline(src) == (src, 0)
+
+
+def _section_text(tmp_path, doc: str) -> str:
+    from pagespeak import to_markdown
+
+    src = tmp_path / "doc.md"
+    src.write_text(doc)
+    to_markdown(src, output_dir=tmp_path / "out", diagrams=False, split_sections=True)
+    files = (tmp_path / "out" / "sections").rglob("*.md")
+    return "\n".join(p.read_text() for p in files if p.name != "INDEX.md")
+
+
+def test_unheaded_nested_list_steps_all_reach_sections(tmp_path) -> None:
+    sections = _section_text(tmp_path, _UNHEADED_PROCEDURE)
+    for step in (
+        "Turn off the unit and unplug it.",
+        "Wait five minutes for the motor to cool.",
+        "Place a towel under the housing.",
+        "Remove the old cartridge.",
+        "Insert the new cartridge until it clicks.",
+    ):
+        assert step in sections, f"step missing from sections/: {step!r}"
+
+
+def test_one_marker_stack_marks_the_whole_outline() -> None:
+    # A list starting at the outline's top level carries no marker stack;
+    # it is still part of the outline.
+    src = (
+        "1. **Overview**\n"
+        "   1. Scope\n"
+        "   2. Audience\n"
+        "2. **Layout**\n"
+        "\n"
+        "* + 1. Frame\n"
+        "       1. outer edge\n"
+        "    2. Panel\n"
+    )
     out, promoted = promote_outline(src)
     lines = out.splitlines()
-    assert "# 1. Hydraulics" in lines
-    assert "## 1. Pump" in lines
-    assert "- 1. Chambers" in lines
-    assert "# 2. Acoustic" in lines
-    assert "# 3. Optical" in lines
-    assert promoted == 5
+    assert "# 1. **Overview**" in lines
+    assert "## 1. Scope" in lines
+    assert "# 2. **Layout**" in lines
+    assert "# 1. Frame" in lines
+    assert promoted == 7
+
+
+_PAIRING_STEPS = (
+    "## Pair a controller\n"
+    "\n"
+    "1. Open **Settings**.\n"
+    "   1. Select **Devices**.\n"
+    "2. Hold the pairing button.\n"
+    "3. Choose the controller from the list.\n"
+)
+_STRAY_NUMBERED_BULLET_DOC = (
+    "## Connections\n\n* USB-C\n* Bluetooth\n* 5. 0 GHz Wi-Fi\n* Ethernet\n\n" + _PAIRING_STEPS
+)
+
+
+def test_stray_numbered_bullet_does_not_mark_outline() -> None:
+    # `* 5. 0 GHz` is a bullet whose text begins with a number. A wrapper
+    # stack sits on a nested list's first item, which is numbered 1.
+    out = promote_outline(_STRAY_NUMBERED_BULLET_DOC)
+    assert out == (_STRAY_NUMBERED_BULLET_DOC, 0)
+
+
+def test_stray_numbered_bullet_doc_steps_all_reach_sections(tmp_path) -> None:
+    sections = _section_text(tmp_path, _STRAY_NUMBERED_BULLET_DOC)
+    for step in (
+        "Open **Settings**.",
+        "Select **Devices**.",
+        "Hold the pairing button.",
+        "Choose the controller from the list.",
+    ):
+        assert step in sections, f"step missing from sections/: {step!r}"
+
+
+def test_typed_number_bullet_list_does_not_mark_outline() -> None:
+    # Each bullet carries its own number, so most stacks are not numbered 1.
+    src = "* 1. Unpack the controller.\n* 2. Charge it.\n* 3. Turn it on.\n\n" + _PAIRING_STEPS
+    assert promote_outline(src) == (src, 0)
+
+
+def test_outline_with_one_stray_numbered_bullet_still_promotes() -> None:
+    src = (
+        "1. **Overview**\n"
+        "   1. Scope\n"
+        "2. **Layout**\n"
+        "\n"
+        "* + 1. Frame\n"
+        "       1. outer edge\n"
+        "    2. Panel\n"
+        "\n"
+        "* + 1. Hinges\n"
+        "    2. Latches\n"
+        "\n"
+        "* 3. 5 mm hex key\n"
+    )
+    out, _ = promote_outline(src)
+    lines = out.splitlines()
+    assert "# 1. **Overview**" in lines
+    assert "# 1. Frame" in lines
+    assert "# 1. Hinges" in lines
 
 
 def test_migrated_nests_under_existing_heading() -> None:
@@ -229,11 +343,9 @@ def test_migrated_irregular_indent_relative_depth() -> None:
 
 
 def test_reader_clean_headed_nested_list_is_untouched() -> None:
-    # The no-regression invariant. python-docx reader output: real
-    # `#` headings + clean `1.`/`  1.` nested lists, NO marker-stack,
-    # every list already under a heading. Neither flattened-outline
-    # fingerprint is present, so promote_outline MUST be a no-op — the
-    # heading-cascade regression must not recur.
+    # python-docx reader output: real `#` headings + clean `1.`/`  1.`
+    # nested lists, no marker stack, every list already under a heading.
+    # promote_outline must leave it unchanged.
     src = (
         "# Steps of transport (fig. 16.1)\n"
         "\n"

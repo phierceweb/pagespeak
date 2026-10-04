@@ -43,34 +43,21 @@ def _enclosing_heading_level(line: str) -> int | None:
 def promote_outline(text: str) -> tuple[str, int]:
     """Reconstruct a flattened Word multilevel-list outline.
 
-    Detect→correct, not brute-force. The defect — a Word "Multilevel
-    List" whose section hierarchy was flattened into list indentation —
-    is diagnosed by EITHER fingerprint:
-
-    * a leading **bullet marker-stack** (``* + 1.``, ``* + - * 1.``):
-      the MarkItDown/Pandoc/Docling serialization of a Word multilevel
-      list (may sit under a real chapter heading); OR
-    * an **entirely un-headed numbered outline** — depth-1 numbered
-      items at ``h==0`` AND **no** depth-1 item already under a real
-      ``#`` heading: the document's whole structure IS the list (pure
-      4-space Pandoc output, no markers, no headings). If even one
-      depth-1 item is headed, the doc has a real section spine and the
-      un-headed items are just a preamble (a "Before you begin" list
-      before the first heading) — NOT flattened; reconstructing it
-      would cascade the genuine headed sections.
-
-    The python-docx structured reader has **neither**: it writes clean
-    ``1.`` / ``  1.`` nested lists that are *always* already under the
-    real ``#`` headings it emitted. So reader output (and any
-    correctly-structured doc / genuine content list) matches no
-    fingerprint and is returned **unchanged** — this function is
-    structurally incapable of "promoting" a list that isn't a
-    flattened Word outline.
+    Fires only when most of the document's bullet marker stacks are
+    wrappers (``* + 1.``, ``* + - * 1.``): how MarkItDown/Pandoc/Docling
+    serialize a Word multilevel list. A wrapper sits on a nested list's
+    first item, which MarkItDown numbers 1; a stacked item numbered
+    otherwise (``* 3. Setup``) is a bullet whose text starts with a number.
+    The python-docx reader never emits a stack. Lists that start at the
+    outline's top level carry none, so the wrappers mark the whole
+    document. Without them, a nested numbered list stays a list, headed
+    document or not — promoted, its items would become body-less headings
+    that the splitter drops.
 
     Returns ``(rewritten_text, promoted_count)`` (``promoted_count``
     drives the caller's ``is_outline_doc`` flag). Returns ``(text, 0)``
-    when neither fingerprint is present, or < 3 depth-1 items, or no
-    deeper item — a flat/short sequence or a non-flattened doc.
+    unless wrappers outnumber the other stacked items, or with < 3
+    depth-1 items or no deeper item.
     """
     lines = text.splitlines()
     _fenced = fence_flags(lines)
@@ -85,7 +72,8 @@ def promote_outline(text: str) -> tuple[str, int]:
     list_items: list[tuple[int, int, int, str, str]] = []
     h_level = 0
     stack: list[int] = []
-    has_marker_stack = False
+    wrappers = 0
+    numbered_bullets = 0
     for idx, line in enumerate(lines):
         hl = _enclosing_heading_level(line)
         if hl is not None:
@@ -102,9 +90,10 @@ def promote_outline(text: str) -> tuple[str, int]:
             pass_lines[idx] = line
             continue
         if m.group("markers"):
-            # The MarkItDown/Pandoc/Docling Word-multilevel-list
-            # fingerprint. The python-docx reader never emits it.
-            has_marker_stack = True
+            if m.group("num") == "1":
+                wrappers += 1
+            else:
+                numbered_bullets += 1
         col = len(m.group("markers")) + len(m.group("indent"))
         while stack and col < stack[-1]:
             stack.pop()
@@ -113,19 +102,9 @@ def promote_outline(text: str) -> tuple[str, int]:
         depth = len(stack)
         list_items.append((idx, h_level, depth, m.group("num"), m.group("content")))
 
-    # Diagnosis: a flattened Word outline shows EITHER a marker-stack OR a
-    # numbered outline that is *entirely* un-headed (depth-1 items at h==0
-    # AND no depth-1 item already under a real `#`). If any depth-1 item is
-    # headed, the doc has a real section spine and the un-headed items are
-    # just a preamble (e.g. a "Before you begin" list) — reconstructing
-    # would shred it. The reader's normal output has neither fingerprint;
-    # depth guards then reject a flat/short ordered list.
-    unheaded_d1 = any(h == 0 and d == 1 for _, h, d, _, _ in list_items)
-    headed_d1 = any(h >= 1 and d == 1 for _, h, d, _, _ in list_items)
-    has_unheaded_outline = unheaded_d1 and not headed_d1
     depth1 = sum(1 for _, _, d, _, _ in list_items if d == 1)
     deeper = any(d >= 2 for _, _, d, _, _ in list_items)
-    if (not has_marker_stack and not has_unheaded_outline) or depth1 < 3 or not deeper:
+    if wrappers <= numbered_bullets or depth1 < 3 or not deeper:
         return text, 0
 
     # Pass 2: render — reconstruct in original line order.

@@ -81,6 +81,16 @@ def test_prose_preamble_still_becomes_front_matter() -> None:
     assert "**Title:** Widget Guide" in joined and "cover.jpeg" in joined
 
 
+def test_headless_document_becomes_one_section() -> None:
+    sections = _parse_sections(["Body text.", "", "1. Step one.", "   1. Detail."], min_level=1)
+    assert [s.title for s in sections] == ["Front Matter"]
+    assert "   1. Detail." in sections[0].content_lines
+
+
+def test_headless_decoration_only_yields_no_section() -> None:
+    assert _parse_sections(["![](images/logo.png)", "[ ]"], min_level=1) == []
+
+
 def test_link_artifact_only_preamble_folds() -> None:
     """Empty-link debris (`[ ]`) is not prose; alone with images it folds."""
     lines = [

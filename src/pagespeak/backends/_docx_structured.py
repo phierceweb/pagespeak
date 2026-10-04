@@ -14,22 +14,20 @@ from pathlib import Path
 from typing import Any
 
 from docx.oxml.ns import qn
+from docx.text.paragraph import Paragraph
 from pf_core.log import get_logger
 
 from ..models._models import IngestResult
 from ..utils._alt import flatten_alt
+from ._docx_numbering import ORDERED_DEFAULT, WordNumbering, build_level_defs
+from ._docx_numpr import paragraph_numbering
 from ._docx_quality import (
     demote_nonsection_h1,
     emit_heading,
     strip_heading_emphasis,
 )
 from ._docx_runs import render_runs
-from ._docx_walk import (
-    ORDERED_DEFAULT,
-    build_numfmt_map,
-    build_numindent_map,
-    iter_body,
-)
+from ._docx_walk import iter_body
 
 logger = get_logger(__name__)
 
@@ -49,37 +47,11 @@ def _heading_level(style_name: str | None) -> int | None:
     return min(int(m.group(1)), 6)
 
 
-def _numpr(paragraph: Any) -> tuple[int, int] | None:
-    """The paragraph's list identity, direct override first.
-
-    Word stores `numPr` on the paragraph when the author used the toolbar, and
-    on the paragraph STYLE when they applied a list style — reading only the
-    former fuses a whole numbered list into one run-on paragraph.
-    """
-    ppr = paragraph._p.pPr
-    if ppr is not None and ppr.numPr is not None:
-        npr = ppr.numPr
-        if npr.numId is not None and npr.ilvl is not None:
-            return int(npr.numId.val), int(npr.ilvl.val)
-    return _style_numpr(paragraph)
-
-
-def _style_numpr(paragraph: Any) -> tuple[int, int] | None:
-    """Walk the `w:basedOn` chain for a style-carried `numPr`."""
+def _para_style(paragraph: Any) -> Any:
     try:
-        style = paragraph.style
+        return paragraph.style
     except (KeyError, ValueError):
         return None
-    seen: set[int] = set()
-    while style is not None and id(style) not in seen:
-        seen.add(id(style))
-        ppr = getattr(style.element, "pPr", None)
-        npr = getattr(ppr, "numPr", None) if ppr is not None else None
-        if npr is not None and npr.numId is not None:
-            ilvl = int(npr.ilvl.val) if npr.ilvl is not None else 0
-            return int(npr.numId.val), ilvl
-        style = getattr(style, "base_style", None)
-    return None
 
 
 def _doc_has_heading(document: Any) -> bool:
@@ -88,12 +60,24 @@ def _doc_has_heading(document: Any) -> bool:
     for item in iter_body(document):
         if item.kind == "table":
             continue
-        para = item.obj
-        if _numpr(para) is not None:
+        style = _para_style(item.obj)
+        if _heading_level(style.name if style else None) is not None:
             return True
-        if _heading_level(para.style.name if para.style else None) is not None:
+        if paragraph_numbering(item.obj, style) is not None:
             return True
     return False
+
+
+def _count_table_numbering(table: Any, numbering: WordNumbering) -> None:
+    """Word counts numbered paragraphs inside a table like any other; a text
+    box is a story of its own (and written twice, DrawingML + VML fallback)."""
+    for p in table._tbl.iter(qn("w:p")):
+        if next(p.iterancestors(qn("w:txbxContent")), None) is not None:
+            continue
+        para = Paragraph(p, table)
+        num = paragraph_numbering(para, _para_style(para))
+        if num is not None:
+            numbering.advance(num.num_id, num.ilvl)
 
 
 def _para_left_twips(paragraph: Any) -> int | None:
@@ -204,12 +188,14 @@ def render_markdown(
     with the ``list_stack`` reset below (a continued number under re-based
     nesting reads as an orphan), and `demote_nonsection_h1` rule 2 treats a
     section whose first item is ``>= 2`` as a numbering artefact — continue
-    the numbering and that signal inverts, deleting real sections.
+    the numbering and that signal inverts, deleting real sections. A heading
+    numbered through its style takes its label (``1.1.``) from Word's own
+    count instead, which no heading resets.
 
     `output_dir` reserved for image handling (added later).
     """
-    numfmt = build_numfmt_map(document)
-    numindent = build_numindent_map(document)
+    defs = build_level_defs(document)
+    numbering = WordNumbering(defs)
     counters: dict[tuple[int, int], int] = {}
     lines: list[str] = []
     protected: set[int] = set()
@@ -257,6 +243,7 @@ def render_markdown(
             from ._docx_table import render_table  # lazy: avoid import cycle
 
             lines.extend(render_table(item.obj))
+            _count_table_numbering(item.obj, numbering)
             title_done = True
             # A table is CONTENT inside the outline, not a section
             # break: do NOT clear `list_stack` (the outline must
@@ -269,10 +256,21 @@ def render_markdown(
             continue
 
         para = item.obj
-        np = _numpr(para)
-        hlevel = _heading_level(para.style.name if para.style else None)
+        style = _para_style(para)
+        hlevel = _heading_level(style.name if style else None)
         imgs = _emit_images(para, output_dir)  # writes files, returns refs
         text = render_runs(para)
+        # Numbering on a `Heading N` style is Word's heading numbering (`1.`,
+        # `1.1.`), not a list; a numId on the paragraph itself is, unless it
+        # continues the style's list (Set Numbering Value, Restart Numbering).
+        word_num = paragraph_numbering(para, style)
+        np: tuple[int, int] | None = None
+        if word_num is not None:
+            numbering.advance(word_num.num_id, word_num.ilvl)
+            if hlevel is None or (
+                word_num.own and not numbering.same_list(word_num.num_id, word_num.style_num_id)
+            ):
+                np = (word_num.num_id, word_num.ilvl)
 
         # A paragraph is a HEADING iff it has a genuine `Heading N`
         # style OR it sits at outline ilvl0. Its LEVEL comes from the
@@ -284,7 +282,8 @@ def render_markdown(
         # (simple non-outline docs) keeps its literal style level.
         if np is not None:
             num_id, ilvl = np
-            fmt = numfmt.get((num_id, ilvl), ORDERED_DEFAULT)
+            ldef = defs.get((num_id, ilvl))
+            fmt = ldef.fmt if ldef is not None else ORDERED_DEFAULT
             if ilvl < outline_heading_depth and fmt != "bullet":
                 # The switch: top outline level(s) overridden to the
                 # section spine → ATX heading at `ilvl+1`. Default
@@ -312,8 +311,8 @@ def render_markdown(
                 # numbering level's indent; else an ilvl ½-inch
                 # ladder (single-numId docs with no explicit indent).
                 cur_left = _para_left_twips(para)
-                if cur_left is None:
-                    cur_left = numindent.get((num_id, ilvl))
+                if cur_left is None and ldef is not None:
+                    cur_left = ldef.left
                 if cur_left is None:
                     cur_left = ilvl * 720
                 indent = "    " * _indent_depth(list_stack, cur_left)
@@ -344,7 +343,8 @@ def render_markdown(
             # everything after it (an empty `Heading 1` para between two
             # list items would knock the following item to column 0).
             # Only a real (emitted) heading is a section.
-            add, made = emit_heading("#" * hlevel, text)
+            label = numbering.label(word_num.num_id, word_num.ilvl) if word_num else ""
+            add, made = emit_heading("#" * hlevel, f"{label} {text}" if label and text else text)
             if made:
                 _append_heading(add, made)
                 title_done = True

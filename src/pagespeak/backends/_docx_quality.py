@@ -20,9 +20,8 @@ from __future__ import annotations
 
 import re
 
-# `_wrap` in the reader only ever emits `*`-based emphasis; `__`/`_`
-# covers any literal Word markdown. 1-3 of either, anywhere in the line.
-_EMPHASIS_RE = re.compile(r"\*{1,3}|_{1,3}")
+# The reader marks emphasis with `*` only, so an underscore is the author's text.
+_EMPHASIS_RE = re.compile(r"\*{1,3}")
 _MULTI_SPACE_RE = re.compile(r"\s{2,}")
 # A top-level ATX heading line (`# Foo`), exactly one `#`.
 _H1_RE = re.compile(r"^# \S")

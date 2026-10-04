@@ -17,6 +17,10 @@ from pagespeak.backends._docx_quality import (
         ("**HYDRAULICS SYSTEM: PUMP **", "HYDRAULICS SYSTEM: PUMP"),
         ("plain title", "plain title"),
         ("**T****oolcraft** position", "Toolcraft position"),
+        # The reader marks emphasis with `*` only: an underscore is the author's.
+        ("CONFIG / CONFIG_OPTIONS SETUP", "CONFIG / CONFIG_OPTIONS SETUP"),
+        ("**Retry Job (a retry_reason)**", "Retry Job (a retry_reason)"),
+        ("Label the ________", "Label the ________"),
     ],
 )
 def test_strip_heading_emphasis(raw: str, expected: str) -> None:

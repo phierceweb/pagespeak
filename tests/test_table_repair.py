@@ -56,6 +56,12 @@ def test_find_collapsed_cells_flags_megacell() -> None:
     assert "Data Pump Export Profile" in cells[0].cell_text
 
 
+def test_find_collapsed_cells_keeps_escaped_pipe_inside_the_cell() -> None:
+    cell = f"{_MEGA}<br>A \\| B"
+    cells = find_collapsed_cells(f"| {cell} | x |\n| --- | --- |\n")
+    assert [c.cell_text for c in cells] == [cell]
+
+
 def test_find_collapsed_cells_ignores_legit_multiline() -> None:
     text = "| a<br>b<br>c | x |\n| --- | --- |\n"
     assert find_collapsed_cells(text) == []

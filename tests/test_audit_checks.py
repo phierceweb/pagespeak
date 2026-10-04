@@ -83,6 +83,15 @@ def test_collapsed_table_ignores_fenced_code() -> None:
     assert check_collapsed_table(text) == []
 
 
+def test_collapsed_table_counts_across_an_escaped_pipe() -> None:
+    half = "<br>".join(f"Spec {i}" for i in range(20))
+    text = f"| Specifications |\n|---|\n| {half} \\| {half} |\n"
+    findings = check_collapsed_table(text)
+    assert [f.message for f in findings] == [
+        "table cell holding 38 <br>-joined lines (collapsed sheet)"
+    ]
+
+
 # ── html_fragment ──────────────────────────────────────────────────────────
 
 
@@ -356,6 +365,17 @@ def test_misaligned_table_time_and_url_colons_ok() -> None:
 
 def test_misaligned_table_ignores_fenced_code() -> None:
     text = f"```\n{_MISALIGNED_SPEC_TABLE}```\n"
+    assert check_misaligned_table(text) == []
+
+
+def test_misaligned_table_escaped_pipe_does_not_shift_columns() -> None:
+    text = (
+        "| Command | Setting: | Default |\n"
+        "| --- | --- | --- |\n"
+        "| ls | Mode: | auto |\n"
+        "| sort \\| uniq (note: sorted first) | Gain: | 3 dB |\n"
+        "| head | Pan: | center |\n"
+    )
     assert check_misaligned_table(text) == []
 
 

@@ -2,6 +2,25 @@
 
 Notable changes to pagespeak, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## 0.17.0
+
+### Added
+- **Word section numbers on numbered headings** (python-docx backend): a heading numbered through its style keeps the number Word shows for it (`### 2.1.3. Installation`), in the level's format (`1.1.`, `II.`, `b)`, legal numbering, start overrides, Word list styles), counted the way Word counts: an empty numbered heading or a numbered table cell still takes a number, lists built on one definition share a count, and a level not yet used shows one below its start (`0.1`, `1.0.1`). The split's `section_number` and breadcrumbs carry it. New modules `backends/_docx_numbering.py` and `backends/_docx_numpr.py`.
+
+### Fixed
+- **A nested numbered list in a document with no headings stays a list.** Cleanup rebuilt it as a Word outline, so each step became a body-less heading that the split dropped from `sections/`. The outline rebuild now needs the bullet marker stack (`* + 1.`) that MarkItDown, Pandoc and Docling write for a Word multilevel list; a Word outline without it gets headings from `--docx-backend python-docx --docx-outline-heading-depth N`.
+- **A bullet whose text starts with a number no longer turns a document's numbered lists into headings.** One such bullet (`* 3. Setup`) passed for that marker stack, so cleanup rebuilt every nested numbered list in the document as headings and the split dropped the steps from `sections/`. A stack now counts only on an item numbered 1, where MarkItDown puts it, and the rebuild needs more of those than of other stacked items.
+- **A document with no headings reaches `sections/`.** It split into nothing; it now lands whole in one `Front Matter` section, like any text before a first heading.
+- **An escaped pipe (`\|`) in a table cell stays in its cell.** Cleanup split the cell on it, adding a column and leaving a stray `\`. The `audit` table checks and `repair-tables` read cells the same way and are fixed with it.
+- **A Word heading numbered through its style stays a heading** (python-docx backend). Numbered-heading templates (`1.`, `1.1.`, `1.1.1.`) link `Heading 1`–`3` to a multilevel list on the style; since 0.13.0 those paragraphs converted to list items, so the document lost its chapter spine. A `Heading N` paragraph now takes its level from the style unless it is numbered on a list of its own; numbering that continues its style's list (Set Numbering Value, Restart Numbering) keeps it a heading.
+- **A Word paragraph with its numbering switched off is no longer a list item** (python-docx backend). Word writes `numId` 0 on a paragraph, or on a style such as `TOC Heading`, to turn its numbering off; the reader read it as a list, so an unnumbered heading such as a document's `Table of Contents` became a `1.` item and empty ones left bare `1.` lines.
+- **A paragraph's list and level inherit separately** (python-docx backend). A paragraph that sets only a level keeps its style's list at that level, and one that names only a list takes its style's level; the reader ignored a paragraph's numbering unless it set both. A list style deep in a `basedOn` chain is no longer sometimes missed, which folded its items into the one before.
+- **A list defined through a Word list style keeps its format** (python-docx backend). A `w:numStyleLink` list read as numbered whatever its format, so its bullets became `1.` items.
+- **Underscores survive in DOCX headings** (python-docx backend). The heading emphasis strip removed every `_`, so `MAX_RETRY_COUNT` read `MAXRETRYCOUNT` and fill-in blanks vanished. The reader marks emphasis with `*` only.
+
+### Changed
+- Requires `pf-core ~=0.25.0`.
+
 ## 0.16.1
 
 ### Security

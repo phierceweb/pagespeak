@@ -439,7 +439,8 @@ def _parse_sections(
             preamble.append(line)
 
     # Inserted after the loop so it never participates in parent attribution.
-    if sections and any(line.strip() for line in preamble):
+    # A document with no headings is all preamble, so it becomes this section.
+    if any(line.strip() for line in preamble):
         if _preamble_has_prose(preamble):
             sections.insert(
                 0,
@@ -452,7 +453,7 @@ def _parse_sections(
                     is_preamble=True,
                 ),
             )
-        else:
+        elif sections:
             # Decoration only (a cover logo, empty-link debris): fold into the
             # first section rather than standing as a retrievable chunk.
             sections[0].content_lines[:0] = preamble

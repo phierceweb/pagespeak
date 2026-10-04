@@ -19,6 +19,7 @@ from collections import Counter
 from ._audit_finding import AuditFinding
 from ._audit_image_refs import check_broken_image_ref
 from ._fences import fence_flags
+from ._table_cells import split_table_row
 
 __all__ = ["AuditFinding", "check_broken_image_ref", "run_text_checks"]
 
@@ -91,7 +92,7 @@ def check_collapsed_table(text: str) -> list[AuditFinding]:
         if not stripped.startswith("|"):
             continue
         worst = max(
-            (len(_BR_RE.findall(cell)) for cell in stripped.strip("|").split("|")),
+            (len(_BR_RE.findall(cell)) for cell in split_table_row(stripped)),
             default=0,
         )
         if worst >= _BR_BLOB_MIN:
@@ -180,7 +181,7 @@ def _table_rows(run: list[tuple[int, str]]) -> list[tuple[int, list[str]]]:
     (`--- / :---:`) are dropped so their colons never read as labels."""
     rows: list[tuple[int, list[str]]] = []
     for lineno, line in run:
-        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        cells = [c.strip() for c in split_table_row(line)]
         if all(_ALIGNMENT_CELL_RE.match(c) for c in cells):
             continue
         rows.append((lineno, cells))

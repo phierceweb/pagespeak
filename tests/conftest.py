@@ -35,6 +35,8 @@ os.environ.setdefault("HF_HUB_OFFLINE", "1")
 # per-test `pytest.importorskip` instead of this map.
 _OPTIONAL_EXTRA_FOR_MODULE = {
     "test_docx_image_alt": "docx",
+    "test_docx_numbering": "docx",
+    "test_docx_numpr": "docx",
     "test_docx_structured": "docx",
     "test_docx_table": "docx",
     "test_docx_walk": "docx",

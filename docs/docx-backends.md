@@ -60,13 +60,13 @@ Converts Word's outline-numbered paragraphs to **nested markdown lists** (indent
 
 Reads Word's explicit structure signals using membership in the outline (`numPr`):
 
-- **Outline membership** (`w:numPr` at `ilvl`) — decides structure. Paragraph at `ilvl==0` becomes a single `#` section heading. Paragraph at `ilvl>=1` becomes a nested ordered/bulleted list at depth `ilvl-1`, with per-section list numbering restart.
-- **Heading styles** (`Heading 1`, `Heading 2`, etc.) → honored **only for non-outline paragraphs** (no `numPr`), enforced as literal heading depth (`Heading N` → `#`×N)
+- **Outline membership** (`w:numPr` on the paragraph, or on a non-heading paragraph style such as `List Number`) — the Word outline. By default it is retained as a nested ordered/bulleted list, nested by indent, with numbering restarting at each heading; `--docx-outline-heading-depth N` promotes its top N levels to headings.
+- **Heading styles** (`Heading 1`, `Heading 2`, etc.) → literal heading depth (`Heading N` → `#`×N), including when the style is linked to Word numbering (numbered-heading templates). Such a heading keeps the section number Word shows for it (`### 2.1.3. Installation`), formatted per the level's `lvlText` (also through a Word list style) and counted the way Word counts: an empty numbered heading or a numbered table cell still takes a number, lists built on one definition share a count, and a level not yet used under its parent shows one below its start (`0.1`, `1.0.1`). A Heading paragraph numbered on another list of its own is an outline item instead; one whose own `numId` continues its style's list (Word's Set Numbering Value or Restart Numbering), or that sets only an `ilvl`, stays a heading, numbered at that level.
 - **Body-placed images** → extracted to `images/`; images in headers/footers are skipped
 - **Tables** → rendered as GFM tables (see [Tables](#tables) below)
 - **Hard fail fallback** → if parsing fails, falls back to MarkItDown automatically
 
-Faithful path honors outline membership over heading style (avoiding style-name noise on outline items). Structure is heading-based for top-level organization (outline `ilvl==0`), with nested lists for sub-structure. Validated on real outline-numbered DOCX to recover proper chapter hierarchy lost by MarkItDown's list collapse.
+Faithful path honors outline membership over heading style (avoiding style-name noise on outline items). Validated on real outline-numbered DOCX to recover proper chapter hierarchy lost by MarkItDown's list collapse.
 
 **`.docx` only** — `.doc` / `.ppt` / `.xlsx` / `.html` must use MarkItDown.
 
@@ -74,13 +74,11 @@ Faithful path honors outline membership over heading style (avoiding style-name 
 
 When using `docx_backend="python-docx"`:
 
-- Paragraphs with `numPr` (outline numbering) at `ilvl==0` → single `#` section heading
-- Paragraphs with `numPr` at `ilvl>=1` → nested ordered/bulleted list at depth `ilvl-1` with per-section numbering restart
-- Paragraphs with `Heading 1` / `Heading 2` style (**without** `numPr`) → heading level matching style name (`Heading N` → `#`×N)
+- Paragraphs in the outline (a `numId` on the paragraph or on a non-heading style) → nested ordered/bulleted list with per-section numbering restart; the top N levels become headings with `--docx-outline-heading-depth N`
+- Paragraphs with a `Heading 1` / `Heading 2` style and no `numId` of their own on another list → heading level matching style name (`Heading N` → `#`×N), whether or not the style is linked to Word numbering
 - Inline images (in body runs) → extracted and referenced
-- Multilevel outline items → converted to heading + nested list hierarchy based on `ilvl` (not style names)
 
-Non-structural elements (headers, footers, comments, tracked changes, textboxes, SmartArt, equations) are skipped. Outline membership (`numPr`) takes precedence over heading style names.
+Headers, footers, comments, text boxes, SmartArt and tracked deletions are skipped; tracked insertions and equations (as plain text) are kept. A `numId` on the paragraph that names a list other than its style's takes precedence over its heading style name. `numId` and `ilvl` inherit separately, the paragraph's own value first, then up the style's `w:basedOn` chain; `numId` 0, on the paragraph or on a style, is Word's "numbering off" and leaves the paragraph unnumbered.
 
 ## Tables
 

@@ -1401,12 +1401,12 @@ def test_split_explicit_min_level_overrides_fallback(tmp_path: Path) -> None:
     assert written == []
 
 
-def test_split_no_headings_at_all_produces_nothing(tmp_path: Path) -> None:
-    """A doc with zero headings can't have its split fallback succeed —
-    just write empty INDEX.md and return []."""
+def test_split_no_headings_at_all_writes_one_section(tmp_path: Path) -> None:
+    """A doc with zero headings lands whole in one section file."""
     md = "Just some plain body text.\nNo headings anywhere.\n"
     written = split_into_sections(md, tmp_path, source_name="test")
-    assert written == []
+    assert [p.name for p in written] == ["front-matter.md"]
+    assert "No headings anywhere." in written[0].read_text()
     assert (tmp_path / "INDEX.md").exists()
 
 

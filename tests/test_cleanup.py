@@ -983,6 +983,15 @@ def test_normalize_table_block_empty_returns_empty() -> None:
     assert normalize_table_block([]) == []
 
 
+def test_escaped_pipe_stays_inside_its_cell() -> None:
+    block = [
+        "| Operator | Meaning |",
+        "| --- | --- |",
+        "| `a \\| b` | either a or b |",
+    ]
+    assert normalize_table_block(block) == block
+
+
 # --- Orchestrator: blank-line collapse + level dispatch -----------------
 
 

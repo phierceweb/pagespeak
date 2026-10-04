@@ -95,6 +95,7 @@ from ._cleanup_transforms import (
 )
 from ._fences import fence_flags
 from ._outline import promote_outline
+from ._table_cells import split_table_row
 
 logger = get_logger(__name__)
 
@@ -119,7 +120,7 @@ def is_table_line(line: str) -> bool:
 
 
 def _split_table_cells(line: str) -> list[str]:
-    return [c.strip() for c in line.strip().strip("|").split("|")]
+    return [c.strip() for c in split_table_row(line)]
 
 
 def _join_table_cells(cells: list[str]) -> str:
