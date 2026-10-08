@@ -19,6 +19,8 @@ from ._split_write import _section_output_path
 
 logger = get_logger(__name__)
 
+_THEMATIC_BREAK_RE = re.compile(r"^ {0,3}([-*_])(?:\s*\1){2,}\s*$")
+
 # A TOC entry's "body" is at most a page anchor; anything longer is content
 # a subtree prune would destroy.
 _PHANTOM_BODY_CHARS = 40
@@ -72,11 +74,13 @@ def _has_substantive_body(section: _Section, *, min_body_chars: int) -> bool:
 
     Page-anchor-only lines (`<span id="page-28-14"></span>`) are structural
     furniture, not content, yet a single one is ~30 chars — enough to clear
-    the default cutoff on its own. They are excluded from the measure so a
-    heading whose only "body" is page anchors is correctly treated as an
-    orphan shell."""
+    the default cutoff on its own. They, and thematic breaks (`---`), are
+    excluded from the measure so a heading whose only "body" is furniture is
+    treated as an orphan shell."""
     real_lines = [
-        line for line in section.content_lines if not _PAGE_ANCHOR_LINE_RE.match(line.strip())
+        line
+        for line in section.content_lines
+        if not _PAGE_ANCHOR_LINE_RE.match(line.strip()) and not _THEMATIC_BREAK_RE.match(line)
     ]
     body = "\n".join(real_lines).strip()
     return len(body) >= min_body_chars

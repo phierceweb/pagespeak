@@ -160,6 +160,7 @@ def convert_with_markitdown(
         else:
             saved_images = _extract_office_media(path, output_dir)
 
+    is_html = path.suffix.lower() in (".html", ".htm")
     if saved_images and not _markdown_has_image_refs(markdown_text):
         markdown_text = _append_image_refs(markdown_text, saved_images, output_dir)
 
@@ -167,6 +168,9 @@ def convert_with_markitdown(
         markdown=markdown_text,
         images=saved_images,
         source_format=path.suffix.lstrip("."),
+        # An HTML page's heading tags are the author's levels, not a guess.
+        structure_authoritative=is_html,
+        authored_headings=is_html,
     )
 
 

@@ -2,6 +2,23 @@
 
 Notable changes to pagespeak, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## 0.18.0
+
+### Fixed
+- **Remote images whose URLs differ only in the query keep their own files.** A downloaded image was named from the URL path alone, so every image served from one endpoint (`…/servlet/image?id=…`) reused the first one's file and showed its picture. The name now carries a digest of the query. Two different URLs that still land on one name log `remote_image_name_collision`, and the reported image count counts files.
+- **Raw `<script>` and `<style>` blocks are dropped in cleanup.** A markdown source carried them into the output, and cleanup turned a CSS rule such as `#banner{` into a heading. A `<pre>` or `<textarea>` block passes through cleanup as written.
+- **Code that directly follows a table stays after it.** Cleanup wrote a fenced block that followed a table's last row, with no blank line between, above the table.
+- **An image in a section's heading, or in its Subsections list, resolves from the section file.** Only the body's image links were re-pathed, so an image in a heading line pointed at `images/…` beside the section file.
+- **A short section is no longer dropped from `sections/`.** The empty-section filter dropped any section with under 30 characters of body, so a one-line spec value or answer was missing from the split while the master kept it. It now drops only a heading with no text under it; page-anchor lines and `---` rules don't count as text. `--min-body-chars` defaults to 1.
+- **A heading that starts with a number keeps it in its title in `sections/`.** `## 404 Handling` in a document numbered nowhere else became section 404 titled `Handling`, filed in its own `404/` folder with its heading rewritten `## 404. Handling`, and a sub-heading such as `### 404 ERRORS` went under the wrong parent. A leading integer with no dot is now a section number only when the document's numbering reaches it (a `404.1` heading, or a 403 or 405).
+- **An empty heading is dropped instead of becoming a heading titled `#`.** Cleanup rewrote a heading with no text (`###`, as an empty `<h3>` converts) as `## #`, one level up, so the split started a section titled `#` and cut the document there. It now leaves only the paragraph break.
+- **A code block missing its closing fence no longer flips every later block.** A fence with a language tag (`` ```bash ``) was read as the closer of the block above, so each block after it was read inside-out and the headings between them were treated as code by cleanup, heading repair and the splitter. A language-tagged fence now always opens a new block, and a fence inside a definition list (`:   ```` ) opens one. `audit`'s `unclosed_code_fence` names the line where such a block is read as ending.
+
+### Changed
+- **`--split-target-kb` is no longer inherited from a run record.** A re-run splits on the document's own headings unless the flag is passed again.
+- **HTML headings are kept as the page states them.** No heading-demote pass runs on HTML input (prose-shaped titles, empty shells, recurring labels, TOC entries and the rest), nor the re-leveling of numbered headings by their dot count (`### 2.1 Practice Problems` stays inside `## 2.1`), and repair's numbered-depth lock, level-gap close and the structure phase's re-leveling stand down, as on the python-docx reader's output; only the table-row syntax fix still applies. A long, question-shaped title such as `Why Does My Session End Every Few Minutes?` stopped being a heading, and its section merged into the one before. `IngestResult.authored_headings` carries the claim. Recorded at ingest: re-ingest (`--rerun-from ingest`) to apply it to an existing conversion.
+- Requires `pf-core ~=0.26.0`.
+
 ## 0.17.0
 
 ### Added

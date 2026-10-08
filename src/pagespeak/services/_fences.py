@@ -19,57 +19,42 @@ from pf_core.log import get_logger
 
 logger = get_logger(__name__)
 
-# 3+ backticks or tildes, optional indent, optional info string.
-_FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})")
+# 3+ backticks or tildes, optional indent or definition-list marker, optional info string.
+_FENCE_RE = re.compile(r"^\s*(?::\s+)?(`{3,}|~{3,})")
+_LANGUAGE_TAG_RE = re.compile(r"[A-Za-z{.][\w+#.{}-]*")
 
 
-def fence_flags(lines: list[str]) -> list[bool]:
-    """True for every line inside a fenced block, delimiters included.
+def _is_language_tag(info: str) -> bool:
+    """`python`, `{.ruby}`, `mermaid pagespeak-image="…"`: a word plus attributes.
 
-    A block opened with backticks is closed only by backticks (and likewise for
-    tildes), so a `~~~` inside a ``` block does not end it. Per CommonMark the
-    closer must also be at least as long as the opener, which is how a document
-    shows fenced markdown: a longer outer fence wrapping a shorter inner one.
+    Not the rest of a sentence, link or table row an injected diagram sat in,
+    which a closer can carry.
     """
-    flags: list[bool] = []
-    in_fence = False
-    fence_char = ""
-    fence_len = 0
-    opened_at = 0
-    for line in lines:
-        m = _FENCE_RE.match(line)
-        if m:
-            run = m.group(1)
-            if not in_fence:
-                in_fence, fence_char, fence_len = True, run[0], len(run)
-                opened_at = len(flags) + 1
-            elif run[0] == fence_char and len(run) >= fence_len:
-                in_fence = False
-            flags.append(True)  # the delimiter itself is never a heading
-            continue
-        flags.append(in_fence)
-    if in_fence:
-        # Everything from the opener is now inert for every caller. Say so:
-        # a malformed document silently disabling a whole pass is the failure
-        # this project keeps re-learning.
-        logger.warning(
-            "fence_unclosed_at_eof line=%d delimiter=%s inert_lines=%d",
-            opened_at,
-            fence_char * fence_len,
-            len(flags) - opened_at + 1,
-        )
-    return flags
+    words = info.split()
+    return (
+        bool(words)
+        and _LANGUAGE_TAG_RE.fullmatch(words[0]) is not None
+        and all("=" in w or w[0] in "{.#" for w in words[1:])
+    )
 
 
 @dataclass(frozen=True)
 class FencedBlock:
     start: int  # 0-based index of the opening delimiter line
-    end: int | None  # the closing delimiter line; None when never closed
+    end: int | None  # the closing delimiter line; None when it has none
     info: str  # the opener's info string, stripped
 
 
 def fenced_blocks(lines: list[str]) -> list[FencedBlock]:
-    """Each top-level fenced block, by the same open/close rule as `fence_flags`."""
+    """Each top-level fenced block.
+
+    A block opened with backticks is closed only by backticks (and likewise for
+    tildes), and per CommonMark only by a run at least as long as the opener,
+    which is how a document shows fenced markdown. A delimiter carrying a
+    language tag always opens: inside a block it means the block lost its
+    closer, so that block ends there with `end=None`. A definition-list
+    delimiter (`:   ````) only opens.
+    """
     blocks: list[FencedBlock] = []
     start: int | None = None
     fence_char, fence_len, info = "", 0, ""
@@ -78,15 +63,47 @@ def fenced_blocks(lines: list[str]) -> list[FencedBlock]:
         if not m:
             continue
         run = m.group(1)
-        if start is None:
-            start, fence_char, fence_len = i, run[0], len(run)
-            info = line[m.end() :].strip()
-        elif run[0] == fence_char and len(run) >= fence_len:
-            blocks.append(FencedBlock(start, i, info))
-            start = None
+        line_info = line[m.end() :].strip()
+        if start is not None:
+            if line.lstrip().startswith(":") or run[0] != fence_char or len(run) < fence_len:
+                continue
+            if not _is_language_tag(line_info):
+                blocks.append(FencedBlock(start, i, info))
+                start = None
+                continue
+            blocks.append(FencedBlock(start, None, info))
+        start, fence_char, fence_len, info = i, run[0], len(run), line_info
     if start is not None:
         blocks.append(FencedBlock(start, None, info))
     return blocks
+
+
+def fence_flags(lines: list[str]) -> list[bool]:
+    """True for every line inside a fenced block (per `fenced_blocks`), delimiters included."""
+    flags = [False] * len(lines)
+    blocks = fenced_blocks(lines)
+    for k, block in enumerate(blocks):
+        if block.end is not None:
+            last = block.end
+        elif k + 1 < len(blocks):
+            last = blocks[k + 1].start - 1
+        else:
+            last = len(lines) - 1
+        for i in range(block.start, last + 1):
+            flags[i] = True
+    if blocks and blocks[-1].end is None:
+        # Everything from the opener is now inert for every caller. Say so:
+        # a malformed document silently disabling a whole pass is the failure
+        # this project keeps re-learning.
+        opened_at = blocks[-1].start + 1
+        opener = _FENCE_RE.match(lines[blocks[-1].start])
+        logger.warning(
+            "fence_unclosed_at_eof line=%d delimiter=%s inert_lines=%d",
+            opened_at,
+            opener.group(1) if opener else "",
+            len(lines) - opened_at + 1,
+        )
+    return flags
 
 
 def split_by_fences(text: str) -> list[tuple[str, bool]]:

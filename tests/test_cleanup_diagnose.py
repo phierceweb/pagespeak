@@ -509,3 +509,44 @@ def test_table_row_demote_runs_on_outline_docs_too() -> None:
     """Not a judgement about the backend's levels: no source states a heading as a pipe row."""
     _, counts = apply_heading_demotions("## | a | b |\nbody\n", is_outline_doc=True)
     assert counts["cleanup_demoted_table_row_headings"] == 1
+
+
+_AUTHORED = (
+    "# Guide\n\n"
+    + "".join(
+        f"## Field Note\n\n### Case {i}: a specific title\n\nBody of case {i} with real content.\n\n"
+        for i in range(3)
+    )
+    + "## Why Does The Device Restart After Every Update Is Installed?\n\nIt reboots.\n\n"
+    + "## | Parameter | Value |\n\nRows follow.\n"
+)
+
+
+def test_authored_headings_skip_every_judgment_demote() -> None:
+    out, _ = apply_heading_demotions(_AUTHORED, is_outline_doc=True, authored_headings=True)
+    assert out.count("## Field Note") == 3
+    assert "## Why Does The Device Restart After Every Update Is Installed?" in out
+    assert "## | Parameter | Value |" not in out  # markdown syntax, not a judgment
+
+
+def test_a_word_outline_still_gets_the_recurring_label_demote() -> None:
+    out, _ = apply_heading_demotions(_AUTHORED, is_outline_doc=True)
+    assert out.count("## Field Note") == 0
+
+
+def test_authored_headings_keep_the_levels_their_numbers_disagree_with() -> None:
+    """A page titled `# 7.3. Storage` owns the `##` subsections under it, and
+    `### 2.1 Practice Problems` sits inside `## 2.1`; re-levelling either by
+    its dot count breaks the nesting the page states."""
+    md = (
+        "# 7.3. Storage\n\n## Moving the data folder\n\nPick a folder.\n\n"
+        "## 2.1 Fractions\n\nText.\n\n### 2.1 Practice Problems\n\n1. Solve.\n"
+    )
+    out, counts = apply_heading_demotions(md, is_outline_doc=True, authored_headings=True)
+    assert out == md
+    assert counts.get("cleanup_locked_numbered_section_depth", 0) == 0
+
+
+def test_numbered_depth_still_levels_extracted_headings() -> None:
+    out, _ = apply_heading_demotions("# 7.3. Storage\n\nPick a folder.\n")
+    assert out.startswith("## 7.3. Storage")

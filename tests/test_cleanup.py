@@ -7,6 +7,8 @@ cleanup_markdown() directly.
 
 from __future__ import annotations
 
+import pytest
+
 from pagespeak.services._cleanup import (
     build_anchor_map,
     cleanup_markdown,
@@ -527,7 +529,7 @@ def test_strip_emphasis_strips_leading_bold() -> None:
         strip_emphasis_from_heading("## **Important Safety Instructions")
         == "## Important Safety Instructions"
     )
-    assert strip_emphasis_from_heading("### **1.1.1. API") == "### 1.1.1. API"
+    assert strip_emphasis_from_heading("### **3.2.1. Cache") == "### 3.2.1. Cache"
 
 
 def test_strip_emphasis_strips_trailing_and_middle_bold() -> None:
@@ -1434,3 +1436,35 @@ def test_multiple_bold_runs_in_a_caption_are_not_read_as_already_bold() -> None:
     out = normalize_table_block(["| **Left** and **Right** | |", "| --- | --- |", "| a | b |"])
     assert "****" not in "\n".join(out)
     assert out[0] == "**Left and Right**"
+
+
+def test_cleanup_drops_style_css_instead_of_promoting_it_to_a_heading() -> None:
+    text = (
+        "# Widget\n\n"
+        "<style>\n        #banner{\n        width: 100%;\n        }\n</style>\n\n"
+        "Choose an option.\n"
+    )
+    assert cleanup_markdown(text) == "# Widget\n\nChoose an option.\n"
+
+
+def test_cleanup_leaves_a_pre_block_as_written() -> None:
+    pre = "<pre>\n#include <stdio.h>\n    int main(void);\n</pre>"
+    out = cleanup_markdown(f"# Build\n\nCompile this:\n\n{pre}\n\nThen run it.\n")
+    assert pre in out
+    assert "# include" not in out
+
+
+@pytest.mark.parametrize("code", ["```\ncode line\n```\n", "<pre>\ncode line\n</pre>\n"])
+def test_code_right_after_a_table_stays_after_it(code: str) -> None:
+    out = cleanup_markdown(f"Intro.\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n{code}\nAfter.\n")
+    assert out.index("| 1 | 2 |") < out.index("code line") < out.index("After.")
+
+
+@pytest.mark.parametrize("empty", ["#", "###", "### ", "## #", "### ###"])
+def test_cleanup_drops_an_empty_heading(empty: str) -> None:
+    text = f"## Setup\n\nIntro text.\n\n{empty}\n\n### Options\n\nBody.\n"
+    assert cleanup_markdown(text) == "## Setup\n\nIntro text.\n\n### Options\n\nBody.\n"
+
+
+def test_an_empty_heading_still_separates_the_lines_around_it() -> None:
+    assert cleanup_markdown("First line.\n###\nSecond line.\n") == "First line.\n\nSecond line.\n"

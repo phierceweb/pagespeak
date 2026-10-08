@@ -152,12 +152,12 @@ def register(
         split_target_kb: int | None = typer.Option(
             None,
             "--split-target-kb",
-            help="With --split-sections, pack sections to a size target instead of a fixed depth: a branch fitting N KB becomes one file, an oversized branch splits deeper, and an oversized heading-less section is partitioned into '(part i of k)' files. Adapts per branch — works across mixed book shapes. Mutually exclusive with --split-max-level.",
+            help="With --split-sections, pack sections to a size target instead of splitting on every heading: a branch fitting N KB becomes one file, an oversized branch splits deeper, and an oversized heading-less section is partitioned into '(part i of k)' files. Off unless passed, and never inherited from a run record: pass it on each run that should pack. Mutually exclusive with --split-max-level.",
         ),
         min_body_chars: int | None = typer.Option(
             None,
             "--min-body-chars",
-            help="With --split-sections, drop sections whose body has fewer than N non-whitespace characters. Default 30, which discards heading-only shells. Pass 0 to keep every section, including empty ones — right for a document whose empty headings are placeholders to be filled in later.",
+            help="With --split-sections, drop sections whose body has fewer than N non-whitespace characters. Default 1: drops only heading-only shells; a section with any text is kept. Pass 0 to keep every section, including empty ones — right for a document whose empty headings are placeholders to be filled in later.",
         ),
         english_only: bool = typer.Option(
             False,
@@ -406,7 +406,7 @@ def register(
                     "split_min_level", split_min_level if "split_min_level" in explicit else None
                 ),
                 split_max_level=_flag("split_max_level", split_max_level),
-                split_target_kb=_flag("split_target_kb", split_target_kb),
+                split_target_kb=split_target_kb,
                 min_body_chars=_flag("min_body_chars", min_body_chars),
                 english_only=english_only,
                 regenerate_toc=_flag("regenerate_toc", True),

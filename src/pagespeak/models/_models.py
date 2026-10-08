@@ -61,9 +61,13 @@ class IngestResult:
             for the input. Useful for branching on source-type in
             downstream consumers without re-sniffing the original path.
         structure_authoritative: The backend read heading structure from the
-            source's own format (Word `w:ilvl` / Heading styles) rather than
+            source's own format (Word `w:ilvl` / Heading styles, HTML heading tags) rather than
             inferring it, so passes that repair *inferred* structure must
             stand down. Set by the backend that produced the markdown.
+        authored_headings: Every heading is one the author wrote (an HTML
+            page's heading tags), so no pass may demote one. Stricter than
+            `structure_authoritative`, which still lets the recurring-label
+            and TOC demotes run.
     """
 
     markdown: str
@@ -71,3 +75,4 @@ class IngestResult:
     diagrams: list[Diagram] = field(default_factory=list)
     source_format: str = ""
     structure_authoritative: bool = False
+    authored_headings: bool = False

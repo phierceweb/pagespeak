@@ -376,3 +376,10 @@ class TestRepairPassesRespectFences:
 
         out, n = strip_heading_spans('# <span id="page-1-0"></span>Title\n')
         assert n == 1 and out.strip() == "# Title"
+
+
+def test_authored_headings_keep_their_numbered_levels() -> None:
+    md = "# 7.3. Storage\n\n## Moving the data folder\n\nPick a folder.\n"
+    out, counts = repair_headings(md, is_outline_doc=True, authored_headings=True)
+    assert out == md
+    assert not any(counts.values())

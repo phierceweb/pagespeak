@@ -390,8 +390,6 @@ def _write_section_file(
             body = _rewrite_in_doc_refs_to_section_files(
                 body, section, slug_to_sections, output_dir, nested=nested
             )
-        if images_dir is not None:
-            body = _rewrite_image_paths_relative(body, path, images_dir)
         lines.append(body)
         lines.append("")
 
@@ -422,7 +420,11 @@ def _write_section_file(
         source_id=source_id,
         source_sha256=source_sha256,
     )
-    path.write_text(front + "\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    text = "\n".join(lines).rstrip()
+    if images_dir is not None:
+        # Headings and Subsections entries carry images too, not just the body.
+        text = _rewrite_image_paths_relative(text, path, images_dir)
+    path.write_text(front + text + "\n", encoding="utf-8")
     return path
 
 

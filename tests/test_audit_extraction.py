@@ -56,5 +56,14 @@ def test_an_unclosed_fence_is_flagged_with_how_much_it_swallows() -> None:
     assert "5 line" in findings[0].message
 
 
+def test_a_fence_missing_its_closer_is_flagged_where_the_next_one_opens() -> None:
+    md = "# Guide\n\n```\nconfig line\n\n```bash\necho hi\n```\n\n## Next\n"
+    findings = check_unclosed_code_fence(md)
+    assert [f.check for f in findings] == ["unclosed_code_fence"]
+    assert findings[0].line == 3
+    assert "line 6" in findings[0].message
+    assert "render as code" not in findings[0].message
+
+
 def test_closed_fences_are_fine() -> None:
     assert check_unclosed_code_fence("```\na\n```\n\n~~~\nb\n~~~\n") == []

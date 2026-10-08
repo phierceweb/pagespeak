@@ -58,10 +58,10 @@ def test_inherited_updates_explicit_flags_excluded() -> None:
 def test_inherited_updates_preset_excludes_preset_controlled_only() -> None:
     """An explicit --preset supplies the preset-controlled flags, so those
     must not inherit; every other recorded flag still does."""
-    flags = {"split_sections": True, "split_target_kb": 32, "source_label": "Guide"}
+    flags = {"split_sections": True, "min_body_chars": 45, "source_label": "Guide"}
     updates, _ = inherited_updates({"resolved_flags": flags}, explicit=set(), preset_explicit=True)
     assert "split_sections" not in updates
-    assert updates["split_target_kb"] == 32
+    assert updates["min_body_chars"] == 45
     assert updates["source_label"] == "Guide"
 
 
@@ -299,14 +299,12 @@ def test_convert_explicit_preset_beats_record_for_preset_flags(
     """--preset on the re-run re-shapes the preset-controlled flags (library
     resolves them from the preset); non-preset flags still inherit."""
     captured = _capture_to_markdown(monkeypatch)
-    out = _recorded_out_dir(
-        tmp_path, make_run_record, {"split_min_level": 3, "split_target_kb": 48}
-    )
+    out = _recorded_out_dir(tmp_path, make_run_record, {"split_min_level": 3, "min_body_chars": 48})
     result = runner.invoke(app, ["convert", str(out), "--preset", "flat"])
     assert result.exit_code == 0, result.output
     assert captured["preset"] == "flat"
     assert captured["split_min_level"] is None
-    assert captured["split_target_kb"] == 48
+    assert captured["min_body_chars"] == 48
 
 
 def test_convert_never_inherits_vision_flags(tmp_path: Path, monkeypatch, make_run_record) -> None:
@@ -396,3 +394,37 @@ def test_convert_qti_export_dir_never_inherits(
     result = runner.invoke(app, ["convert", str(src), "-o", str(out)])
     assert result.exit_code == 0, result.output
     assert captured["split_sections"] is None
+
+
+def _packable_out_dir(tmp_path: Path, make_run_record) -> Path:
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "doc.raw.md").write_text(
+        "# Guide\n\nIntro text for the guide.\n\n## Setup\n\nSetup steps go here.\n\n"
+        "## Usage\n\nUsage notes go here.\n",
+        encoding="utf-8",
+    )
+    make_run_record(
+        out,
+        {"split_sections": True, "nested_split": False, "split_target_kb": 32, "min_body_chars": 0},
+    )
+    return out
+
+
+def _section_files(out: Path) -> list[Path]:
+    return [p for p in (out / "sections").rglob("*.md") if p.name != "INDEX.md"]
+
+
+def test_a_recorded_size_target_is_not_inherited(tmp_path: Path, make_run_record) -> None:
+    out = _packable_out_dir(tmp_path, make_run_record)
+    result = runner.invoke(app, ["convert", str(out), "--no-diagrams"])
+    assert result.exit_code == 0, result.output
+    assert "split_target_kb" not in result.output
+    assert len(_section_files(out)) == 3
+
+
+def test_an_explicit_size_target_still_packs(tmp_path: Path, make_run_record) -> None:
+    out = _packable_out_dir(tmp_path, make_run_record)
+    result = runner.invoke(app, ["convert", str(out), "--no-diagrams", "--split-target-kb", "32"])
+    assert result.exit_code == 0, result.output
+    assert len(_section_files(out)) == 1

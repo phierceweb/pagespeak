@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from pagespeak.services._fences import apply_outside_fences, fence_flags
 
 
@@ -262,4 +264,48 @@ def test_fenced_blocks_report_opener_closer_and_info() -> None:
         FencedBlock(start=1, end=3, info='mermaid pagespeak-image="images/a.png"'),
         FencedBlock(start=4, end=8, info="markdown"),
         FencedBlock(start=9, end=None, info=""),
+    ]
+
+
+def test_a_language_tagged_fence_inside_a_block_opens_a_new_one() -> None:
+    """A closer never carries a language, so a `bash`-tagged fence inside a block means the
+    block above lost its closer. Reading it as the closer would flip every
+    later fence and bury the headings after them."""
+    lines = ["```", "code", "```bash", "echo hi", "```", "# Heading", "prose"]
+    assert fence_flags(lines) == [True, True, True, True, True, False, False]
+
+
+@pytest.mark.parametrize(
+    "closer",
+    ["``` from the side panel.", "```](https://example.com/flow.svg)", "```\xa0Select Area |"],
+)
+def test_text_after_a_closer_does_not_make_it_an_opener(closer: str) -> None:
+    """An injected diagram that sat inline in a sentence, link or table cell
+    leaves the rest of that line on its closer."""
+    lines = ['```mermaid pagespeak-image="images/a.png"', "flowchart LR", closer, "# Heading"]
+    assert fence_flags(lines) == [True, True, True, False]
+
+
+@pytest.mark.parametrize(
+    "opener", ["```python", '```mermaid pagespeak-image="images/a.png"', "``` {.ruby}", "~~~ js"]
+)
+def test_a_language_tag_with_attributes_reopens(opener: str) -> None:
+    fence = opener[:3]
+    lines = [fence, "code", opener, "more code", fence, "# Heading"]
+    assert fence_flags(lines) == [True, True, True, True, True, False]
+
+
+def test_a_definition_list_fence_opens_a_block() -> None:
+    """`:   ```` is a code block inside a definition; its closer is indented to match."""
+    lines = ["Examples", ":   ```", "key: value", "      ```", "", "# Heading"]
+    assert fence_flags(lines) == [False, True, True, True, False, False]
+
+
+def test_fenced_blocks_report_a_missing_closer() -> None:
+    from pagespeak.services._fences import FencedBlock, fenced_blocks
+
+    lines = ["```", "a", "```python", "b", "```", "# H"]
+    assert fenced_blocks(lines) == [
+        FencedBlock(start=0, end=None, info=""),
+        FencedBlock(start=2, end=4, info="python"),
     ]

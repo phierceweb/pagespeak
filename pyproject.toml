@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pagespeak"
-version = "0.17.0"
+version = "0.18.0"
 description = "Convert PDF, Word, and other documents into retrieval-ready markdown — one document or a whole corpus, diagrams turned to Mermaid."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -29,7 +29,7 @@ dependencies = [
     "markdownify>=0.13",
     "markitdown[docx,pptx,xlsx,outlook]>=0.0.1a3",
     # 0.24.1+ refuses the image formats whose decoders carry CVEs in the pdf extra's Pillow 10.4.
-    "pf-core[tracking,llm]~=0.25.0",
+    "pf-core[tracking,llm]~=0.26.0",
     # Not via pf-core[image-phash]: its Pillow>=12.3 floor can't co-install with
     # marker-pdf's Pillow<11 (pdf extra). 10.4 is the last release under that cap.
     "ImageHash>=4.3.2",

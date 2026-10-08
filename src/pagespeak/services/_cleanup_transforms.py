@@ -231,7 +231,7 @@ def strip_emphasis_from_heading(line: str) -> str:
     Marker promotes PDF-styled bold headings into markdown headings but
     leaves the bold delimiters in place — producing eyesores like
     ``# **2. Callouts``, ``## **Important Safety Instructions``,
-    ``### **1.1.1. API``. The bold is redundant inside a heading (the
+    ``### **3.2.1. Cache``. The bold is redundant inside a heading (the
     heading itself is already visually prominent), so just remove the
     markers and collapse the resulting whitespace.
 

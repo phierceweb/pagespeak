@@ -16,8 +16,13 @@ from typing import Literal
 
 from pf_core.log import get_logger
 
-from ._cleanup_html import convert_embedded_html_blocks
+from ._cleanup_html import (
+    convert_embedded_html_blocks,
+    preformatted_block_flags,
+    strip_script_style_blocks,
+)
 from ._cleanup_regexes import (
+    EMPTY_HEADING_RE,
     IMAGE_ONLY_RE,
     LEADING_WS_RE,
     LIST_ITEM_BODY_RE,
@@ -224,6 +229,7 @@ def cleanup_markdown(
     cross_refs: CrossRefs = "keep",
     stats: dict[str, int] | None = None,
     structure_authoritative: bool = False,
+    authored_headings: bool = False,
 ) -> str:
     """Run the cleanup pipeline at the requested level.
 
@@ -240,12 +246,16 @@ def cleanup_markdown(
 
     `structure_authoritative=True` stands the heading-demote passes down: they
     fix *inferred* structure, and against read structure they delete real
-    sections. See `IngestResult.structure_authoritative`.
+    sections. See `IngestResult.structure_authoritative`. `authored_headings=True`
+    goes further: no heading-demote pass runs except the table-row syntax fix.
     """
     if level == "off":
         return text
 
     # Before entity decoding, while the HTML is still pristine for the parser.
+    text, scripts_stripped = strip_script_style_blocks(text)
+    if scripts_stripped:
+        logger.info("cleanup_stripped_script_style_blocks count=%d", scripts_stripped)
     text = convert_embedded_html_blocks(text)
 
     # Decode HTML entities the backend left in the markdown (`T3 &lt; 34F` →
@@ -283,17 +293,28 @@ def cleanup_markdown(
     out: list[str] = []
     table_buf: list[str] = []
     blank_run = 0
+    empty_headings = 0
 
     _src_lines = text.splitlines()
     _fenced = fence_flags(_src_lines)
+    _preformatted = preformatted_block_flags(_src_lines, _fenced)
     for _li, raw_line in enumerate(_src_lines):
         line = raw_line.rstrip()
 
-        # A `#` inside a fenced block is a comment, never a heading — emit it
-        # untouched so no heading transform can rewrite code.
-        if _fenced[_li]:
+        # A `#` inside a fenced or `<pre>` block is code, never a heading — emit
+        # it untouched so no heading transform can rewrite it.
+        if _fenced[_li] or _preformatted[_li]:
+            if table_buf:
+                out.extend(normalize_table_block(table_buf))
+                table_buf = []
             out.append(raw_line)
             continue
+
+        # The heading-promote step would title an empty heading `#`; it carries
+        # no text, so it stays only as the paragraph break it made.
+        if EMPTY_HEADING_RE.match(line):
+            empty_headings += 1
+            line = ""
 
         if aggressive:
             if _TOC_HEADING_LINE_RE.match(line):
@@ -390,6 +411,8 @@ def cleanup_markdown(
     if table_buf:
         out.extend(normalize_table_block(table_buf))
 
+    if empty_headings:
+        logger.info("cleanup_dropped_empty_headings count=%d", empty_headings)
     out = _dedupe_heading_lines(out)
 
     # Whole-text heading-demotion passes. Detect→correct: dispatched
@@ -400,7 +423,9 @@ def cleanup_markdown(
     from ._cleanup_diagnose import apply_heading_demotions
 
     out_text = "\n".join(out)
-    out_text, demote_counts = apply_heading_demotions(out_text, is_outline_doc=is_outline_doc)
+    out_text, demote_counts = apply_heading_demotions(
+        out_text, is_outline_doc=is_outline_doc, authored_headings=authored_headings
+    )
     for event, n in demote_counts.items():
         if n:
             logger.info("%s count=%d", event, n)

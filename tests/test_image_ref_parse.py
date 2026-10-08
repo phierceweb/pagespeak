@@ -132,12 +132,15 @@ def test_parsing_scales_linearly_inside_a_blank_line_free_block() -> None:
         )
 
     def elapsed(text: str) -> float:
-        start = time.perf_counter()
-        assert len(parse_image_refs(text)) == text.count("![")
-        return time.perf_counter() - start
+        # Fastest of several runs: a sub-millisecond timing swings with machine load.
+        times = []
+        for _ in range(5):
+            start = time.perf_counter()
+            assert len(parse_image_refs(text)) == text.count("![")
+            times.append(time.perf_counter() - start)
+        return min(times)
 
     small, large = build(500), build(2000)
-    elapsed(small)  # warm any import-time cost
     ratio = elapsed(large) / max(elapsed(small), 1e-6)
     assert ratio < 12, f"4x the rows took {ratio:.1f}x the time — parsing is superlinear"
 

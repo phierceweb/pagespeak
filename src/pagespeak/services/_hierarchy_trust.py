@@ -190,15 +190,23 @@ def outline_promoted(out: Path | None) -> bool:
     return _marker_flag(out, "outline_promoted")
 
 
-def record_structured(out: Path | None, *, authoritative: bool) -> None:
-    """Record whether the backend read this document's structure from its format.
+def record_structured(
+    out: Path | None, *, authoritative: bool, authored_headings: bool = False
+) -> None:
+    """Record whether the backend read this document's structure from its format,
+    and whether every heading is one the author wrote.
 
     Call only where the backend actually ran: this writes `False` too, so a
     re-ingest that switched backends clears the previous run's claim.
     """
     if out is None:
         return
-    _merge_marker(out, structure_authoritative=authoritative)
+    _merge_marker(out, structure_authoritative=authoritative, authored_headings=authored_headings)
+
+
+def authored_headings(out: Path | None, *, in_memory: bool = False) -> bool:
+    """True when every heading is the author's, from the marker or the in-memory claim."""
+    return _marker_flag(out, "authored_headings") or in_memory
 
 
 def structure_authoritative(out: Path | None) -> bool:

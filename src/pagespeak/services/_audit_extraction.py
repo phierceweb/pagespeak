@@ -56,19 +56,24 @@ def check_collapsed_code_blocks(text: str) -> list[AuditFinding]:
 
 def check_unclosed_code_fence(text: str) -> list[AuditFinding]:
     lines = text.splitlines()
-    unclosed = [b for b in fenced_blocks(lines) if b.end is None]
-    if not unclosed:
+    blocks = fenced_blocks(lines)
+    k = next((k for k, b in enumerate(blocks) if b.end is None), None)
+    if k is None:
         return []
-    opened_at = unclosed[0].start + 1
+    opened_at = blocks[k].start + 1
+    if k + 1 < len(blocks):
+        message = (
+            f"code fence never closed — read as ending where the next fence opens "
+            f"(line {blocks[k + 1].start + 1}); the source likely lost a closing fence"
+        )
+    else:
+        message = (
+            f"code fence never closed — the remaining {len(lines) - opened_at} "
+            "line(s) render as code and are skipped by every fence-aware pass"
+        )
     return [
         AuditFinding(
-            check="unclosed_code_fence",
-            severity="warning",
-            line=opened_at,
-            message=(
-                f"code fence never closed — the remaining {len(lines) - opened_at} "
-                "line(s) render as code and are skipped by every fence-aware pass"
-            ),
+            check="unclosed_code_fence", severity="warning", line=opened_at, message=message
         )
     ]
 

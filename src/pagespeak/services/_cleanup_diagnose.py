@@ -336,7 +336,7 @@ _OUTLINE_SKIP_EVENTS = frozenset(
 
 
 def apply_heading_demotions(
-    text: str, *, is_outline_doc: bool = False
+    text: str, *, is_outline_doc: bool = False, authored_headings: bool = False
 ) -> tuple[str, dict[str, int]]:
     """Run the detect→correct heading passes in load-bearing order.
 
@@ -360,7 +360,8 @@ def apply_heading_demotions(
        the deepest level). Empty-shell, bare-int, and orphan-fragments
        are skipped when ``is_outline_doc`` (the invariant —
        reconstructed structure-faithful headings are trusted, never
-       second-guessed).
+       second-guessed). ``authored_headings`` skips steps 1, 1b, 3 and every
+       registry demote but the table-row fix, which repairs markdown syntax.
 
     Returns ``(rewritten_text, counts)`` mapping each pass's log-event
     name to the number of heading lines it changed (0 when its pattern
@@ -369,13 +370,14 @@ def apply_heading_demotions(
     counts: dict[str, int] = {}
     text, n = normalize_spaced_numbering_pass(text)
     counts["cleanup_normalized_spaced_numbering"] = n
-    text, n = lock_numbered_section_depth_pass(text)
-    counts["cleanup_locked_numbered_section_depth"] = n
-    text, n = lock_numbered_chapter_parents_pass(text)
-    counts["cleanup_locked_numbered_chapter_parents"] = n
+    if not authored_headings:
+        text, n = lock_numbered_section_depth_pass(text)
+        counts["cleanup_locked_numbered_section_depth"] = n
+        text, n = lock_numbered_chapter_parents_pass(text)
+        counts["cleanup_locked_numbered_chapter_parents"] = n
     text, n = strip_heading_emphasis_pass(text)
     counts["cleanup_stripped_heading_emphasis"] = n
-    if not is_outline_doc:
+    if not (is_outline_doc or authored_headings):
         text, n = demote_prose_headings(text)
         counts["cleanup_demoted_prose_headings"] = n
     for event, pass_fn in HEADING_DEMOTE_PASSES:
@@ -388,6 +390,8 @@ def apply_heading_demotions(
         # load-bearing position, after TOC-phantom, is preserved for
         # the non-outline path.)
         if is_outline_doc and event in _OUTLINE_SKIP_EVENTS:
+            continue
+        if authored_headings and event != "cleanup_demoted_table_row_headings":
             continue
         text, n = pass_fn(text)
         counts[event] = n

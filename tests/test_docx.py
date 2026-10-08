@@ -278,3 +278,58 @@ def test_html_ingest_actually_applies_the_title(tmp_path: Path) -> None:
     )
     result = convert_with_markitdown(src, output_dir=tmp_path / "out")
     assert result.markdown.lstrip().startswith("# Widget Guide Web Manual"), result.markdown[:120]
+
+
+def test_html_ingest_reports_its_headings_as_authored(tmp_path: Path) -> None:
+    pytest.importorskip("markitdown")
+    from pagespeak.backends._docx import convert_with_markitdown
+
+    src = tmp_path / "page.html"
+    src.write_text("<html><body><h2>Setup</h2><p>body text</p></body></html>", encoding="utf-8")
+    result = convert_with_markitdown(src)
+    assert result.structure_authoritative is True
+    assert result.authored_headings is True
+
+
+def test_office_ingest_does_not_claim_authored_headings(tmp_path: Path) -> None:
+    from unittest.mock import patch
+
+    from pagespeak.backends._docx import convert_with_markitdown
+
+    class _R:
+        text_content = "# Title\n\nBody."
+
+    with patch("markitdown.MarkItDown") as MD:
+        MD.return_value.convert.return_value = _R()
+        result = convert_with_markitdown(tmp_path / "deck.docx")
+    assert result.structure_authoritative is False
+    assert result.authored_headings is False
+
+
+def test_a_question_shaped_html_title_stays_a_heading(tmp_path: Path) -> None:
+    pytest.importorskip("markitdown")
+    from pagespeak import to_markdown
+
+    src = tmp_path / "help.html"
+    src.write_text(
+        "<html><body><h1>Help</h1>"
+        "<h2>Why Does My Session End Every Few Minutes?</h2><p>Sign in again.</p>"
+        "<h2>Exporting</h2><p>Choose a format.</p></body></html>",
+        encoding="utf-8",
+    )
+    result = to_markdown(src, output_dir=tmp_path / "out", diagrams=False)
+    assert "## Why Does My Session End Every Few Minutes?" in result.markdown
+
+
+def test_html_recurring_label_headings_stay_headings(tmp_path: Path) -> None:
+    pytest.importorskip("markitdown")
+    from pagespeak import to_markdown
+
+    cases = "".join(
+        f"<h2>Field Note</h2><h3>Case {i}: a specific title</h3><p>Body of case {i}.</p>"
+        for i in range(3)
+    )
+    src = tmp_path / "notes.html"
+    src.write_text(f"<html><body><h1>Guide</h1>{cases}</body></html>", encoding="utf-8")
+    result = to_markdown(src, output_dir=tmp_path / "out", diagrams=False)
+    assert result.markdown.count("## Field Note") == 3

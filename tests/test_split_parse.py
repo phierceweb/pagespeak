@@ -2,54 +2,74 @@
 
 from __future__ import annotations
 
-from pagespeak.services._split_parse import (
-    _parse_any_heading,
-    _parse_numbered_heading,
-    _parse_sections,
-)
+from pagespeak.services._split_parse import _parse_sections
+
+_TITLE_INTEGER_DOC = [
+    "# Site Admin",
+    "## Using the Dashboard",
+    "Dashboard body.",
+    "## 404 + Redirect Rules",
+    "Overview body.",
+    "### 404 ERRORS",
+    "404 body.",
+    "### REDIRECT RULES",
+    "Redirect body.",
+    "## 404 Handling With the Admin App",
+    "Handling body.",
+]
 
 
-def test_measurement_heading_is_not_numbered_in_min_level_mode() -> None:
-    """`## 6.3 mm stereo jack plug` labels a connector, not section 6.3.
-
-    Default mode rejects these; min-level mode applied neither guard, so a spec
-    table leaked `6.3/` folders into the split. The heading is still a section —
-    just an unnumbered one.
-    """
-    assert _parse_any_heading("## 6.3 mm stereo jack plug", min_level=2) == (
-        "##",
-        None,
-        "6.3 mm stereo jack plug",
-    )
-    assert _parse_any_heading("#### 35 mm and 65 mm", min_level=2) == (
-        "####",
-        None,
-        "35 mm and 65 mm",
-    )
+def test_bare_integer_outside_any_numbering_is_title_text() -> None:
+    """`## 404 + Redirect Rules` in an unnumbered manual is not section 404:
+    nothing else in the document is numbered 403, 405 or 404.x."""
+    sections = {s.title: s for s in _parse_sections(_TITLE_INTEGER_DOC, min_level=1)}
+    for line in (
+        "## 404 + Redirect Rules",
+        "### 404 ERRORS",
+        "## 404 Handling With the Admin App",
+    ):
+        title = line.lstrip("# ")
+        assert title in sections, f"{title!r} lost its leading integer"
+        assert sections[title].number is None
+        assert sections[title].heading_line == line
+    assert sections["404 ERRORS"].parent is sections["404 + Redirect Rules"]
 
 
-def test_measurement_unit_heading_is_not_numbered_in_min_level_mode() -> None:
-    """Uppercase-initial units (`48 V`, `2.4 GHz`) need the second guard."""
-    assert _parse_any_heading("### 48 V phantom power", min_level=2) == (
-        "###",
-        None,
-        "48 V phantom power",
-    )
-    assert _parse_any_heading("## 2.4 GHz band", min_level=2) == ("##", None, "2.4 GHz band")
+def test_bare_integer_outside_numbering_is_not_a_section_in_numbered_mode() -> None:
+    lines = [
+        "# 1 Introduction",
+        "Intro body.",
+        "## 1.1 Background",
+        "Background body.",
+        "### 404 ERRORS",
+        "404 body.",
+        "# 2 Methods",
+        "Methods body.",
+    ]
+    sections = _parse_sections(lines, min_level=None)
+    assert [s.number for s in sections] == ["1", "1.1", "2"]
+    assert "### 404 ERRORS" in sections[1].content_lines
 
 
-def test_real_numbered_headings_still_parse_in_min_level_mode() -> None:
-    """The guard must not swallow genuine numbered sections."""
-    assert _parse_any_heading("## 1.4 Configuration", min_level=2) == ("##", "1.4", "Configuration")
-    assert _parse_any_heading("# 2. INSTALLATION", min_level=2) == ("#", "2", "INSTALLATION")
-    assert _parse_any_heading("### 1.4.1 Wiring", min_level=2) == ("###", "1.4.1", "Wiring")
+def test_bare_integer_in_a_numbering_sequence_stays_numbered() -> None:
+    """Siblings, a dotted child, a `Chapter N` neighbour, or a sequence Marker
+    spread across levels each corroborate the number."""
+    cases = [
+        (["# 1 Safety", "a", "# 2 Description", "b"], ["1", "2"]),
+        (["# 7 Results", "a", "## 7.1 Data", "b"], ["7", "7.1"]),
+        (["### Chapter 3 Setup", "a", "### 4 Wiring", "b"], ["3", "4"]),
+        (["### 5 Remove", "a", "# 3 RESULTS", "b", "### 4 Insert", "c"], ["5", "3", "4"]),
+    ]
+    for lines, numbers in cases:
+        for min_level in (None, 1):
+            got = [s.number for s in _parse_sections(lines, min_level=min_level)]
+            assert got == numbers, (lines, min_level)
 
 
-def test_measurement_guards_agree_across_both_parse_modes() -> None:
-    """Default mode already rejected these; the two modes must not disagree."""
-    for line in ("## 6.3 mm stereo jack plug", "### 48 V phantom power", "## 2.4 GHz band"):
-        assert _parse_numbered_heading(line) is None
-        assert (_parse_any_heading(line, min_level=2) or (None, None, None))[1] is None
+def test_dotted_single_number_needs_no_corroboration() -> None:
+    """`# 2. INSTALLATION` carries its own section-number punctuation."""
+    sections = _parse_sections(["# 2. INSTALLATION", "Body."], min_level=None)
+    assert [(s.number, s.title) for s in sections] == [("2", "INSTALLATION")]
 
 
 def test_image_only_preamble_folds_into_first_section() -> None:

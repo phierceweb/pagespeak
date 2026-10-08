@@ -217,18 +217,18 @@ def test_nested_mixed_numbered_and_semantic(tmp_path: Path) -> None:
 def test_nested_unnumbered_child_nests_under_numbered_ancestor(tmp_path: Path) -> None:
     # Regression (real-world manual): an unnumbered subsection under a NUMBERED parent
     # must nest in the numeric tree (1/1.1/1.1.1/Namespaces.md), not diverge
-    # into a separate title-named tree (ARCHITECTURE/TECHNOLOGY STACK/API/).
+    # into a separate title-named tree (PLATFORM/SERVICES/CACHE/).
     md = (
-        "# 1. ARCHITECTURE\nintro\n"
-        "## 1.1. TECHNOLOGY STACK\nstack\n"
-        "### 1.1.1. API\napi body\n"
-        "#### Namespaces\nnamespaces body\n"
+        "# 1. PLATFORM\nintro\n"
+        "## 1.1. SERVICES\nservices\n"
+        "### 1.1.1. CACHE\ncache body\n"
+        "#### Eviction\neviction body\n"
     )
     written = split_into_sections(md, tmp_path, nested=True, min_level=2)
-    ns = next(p for p in written if p.name == "namespaces.md")
-    assert ns == tmp_path / "1" / "1-1" / "1-1-1" / "namespaces.md"
+    ns = next(p for p in written if p.name == "eviction.md")
+    assert ns == tmp_path / "1" / "1-1" / "1-1-1" / "eviction.md"
     # The divergent title-named tree must NOT be created.
-    assert not (tmp_path / "architecture").exists()
+    assert not (tmp_path / "platform").exists()
 
 
 def test_split_rewrites_image_paths_relative_flat(tmp_path: Path) -> None:
@@ -977,12 +977,15 @@ def test_single_part_numbered_does_not_level_fallback_through_numbered_ancestor(
 
     Fixture note: uses a non-TOC fixture (TOC-shaped `#### 1 Bar 31`
     headings are dropped at split time) so the parent-attribution
-    behavior is still pinnable."""
+    behavior is still pinnable. The `#### 2` sibling makes `1` part of a
+    numbering sequence; a lone bare integer is title text."""
     md = (
         "### Chapter 24 Thermal Runaway\n"
         "Real chapter body content well above the cutoff threshold.\n"
         "#### 1 Introduction to Widgetry\n"
         "Sibling chapter body content above the cutoff threshold.\n"
+        "#### 2 Widget Assembly\n"
+        "Second sibling chapter body content above the cutoff.\n"
     )
     split_into_sections(md, tmp_path, min_body_chars=0)
     intro = (tmp_path / "1-introduction-to-widgetry.md").read_text()
@@ -1832,3 +1835,22 @@ def test_cleanup_identifies_files_the_way_the_filesystem_does(tmp_path: Path) ->
     _remove_unwritten_markdown(tmp_path, [tmp_path / "overview.md"])
     assert written.exists(), "the just-written section was deleted by the cleanup"
     assert not stale.exists(), "a genuinely unwritten file should still be removed"
+
+
+def test_default_min_body_keeps_short_sections_and_drops_heading_only_shells(
+    tmp_path: Path,
+) -> None:
+    from pagespeak.services._split import DEFAULT_MIN_BODY_CHARS
+
+    md = (
+        "# Widget\n\nA sample widget for the bench.\n\n"
+        "## Range\n\n10 to 90 units\n\n"
+        "## Contents\n\n"
+        "## Weight\n\n---\n\n"
+        "## Finish\n\nMatte\n"
+    )
+    written = split_into_sections(md, tmp_path, min_level=1, min_body_chars=DEFAULT_MIN_BODY_CHARS)
+    text = "\n".join(p.read_text(encoding="utf-8") for p in written)
+    assert "10 to 90 units" in text and "Matte" in text
+    assert 'section_title: "Contents"' not in text
+    assert 'section_title: "Weight"' not in text

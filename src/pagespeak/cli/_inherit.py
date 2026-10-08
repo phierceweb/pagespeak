@@ -10,6 +10,8 @@ the preset-controlled flags; `--no-inherit` disables the mechanism.
 LLM/engine/runtime selection (`diagrams`, `vision_*`, `preserve_alt`,
 `normalize_headings_model`, `device`) is never inherited: engine choice
 and spend stay per-invocation decisions, and a device is machine-bound.
+`split_target_kb` is never inherited either: size packing applies only to
+a run that passes it.
 """
 
 from __future__ import annotations
@@ -49,7 +51,6 @@ _FLAG_TYPES: dict[str, type] = {
     "nested_split": bool,
     "split_min_level": int,
     "split_max_level": int,
-    "split_target_kb": int,
     "english_only": bool,
     "min_body_chars": int,
     "regenerate_toc": bool,

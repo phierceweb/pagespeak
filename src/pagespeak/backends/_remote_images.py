@@ -19,12 +19,16 @@ so the ref still resolves in a browser.
 
 from __future__ import annotations
 
+from collections import defaultdict
 from pathlib import Path
 from typing import Protocol
 
 from pf_core.fetch import Fetcher
 from pf_core.fetch.images import default_namer, localize_images
+from pf_core.log import get_logger
 from pf_core.utils.env import resolve_bool, resolve_int
+
+logger = get_logger(__name__)
 
 DOWNLOAD_REMOTE_IMAGES_ENV_VAR = "PAGESPEAK_DOWNLOAD_REMOTE_IMAGES"
 DEFAULT_DOWNLOAD_REMOTE_IMAGES = True
@@ -101,16 +105,29 @@ def download_remote_images(
     browser. Non-image refs, refs blocked by the SSRF guard, and refs whose
     download fails keep their original target. A ref whose local file already
     exists is reused without re-fetching. Nothing is fetched and no ``images/``
-    dir is created when there is nothing to download.
+    dir is created when there is nothing to download. Each saved file is listed
+    once; distinct URLs that land on one name log ``remote_image_name_collision``.
     """
+    urls_by_name: defaultdict[str, set[str]] = defaultdict(set)
+
+    def namer(url: str) -> str:
+        name = _local_name(url)
+        urls_by_name[name].add(url)
+        return name
+
     result = localize_images(
         markdown,
         output_dir / "images",
         base_url=base_url,
         fetcher=_TimeoutPinnedFetcher(_make_fetcher(), _remote_image_timeout_s()),
+        namer=namer,
         reuse_existing=True,
     )
-    return result.markdown, result.saved
+    for name, urls in urls_by_name.items():
+        if len(urls) > 1:
+            # The later URLs reuse the first one's file, so they show its image.
+            logger.warning("remote_image_name_collision name=%s urls=%d", name, len(urls))
+    return result.markdown, list(dict.fromkeys(result.saved))
 
 
 def localize_remote_images_in_markdown(

@@ -347,14 +347,14 @@ def test_reader_clean_headed_nested_list_is_untouched() -> None:
     # nested lists, no marker stack, every list already under a heading.
     # promote_outline must leave it unchanged.
     src = (
-        "# Steps of transport (fig. 16.1)\n"
+        "# Stages of shipping (fig. 4.2)\n"
         "\n"
-        "1. **External transport **\n"
-        "  1. **Primary intake** (loading)\n"
-        "  2. Fluid exchange between chambers and primary channel beds\n"
-        "2. **Internal transport (modular transport)**\n"
-        "3. Fluid transport in the line\n"
-        "  1. Carrier loading onto the medium\n"
+        "1. **Order intake **\n"
+        "  1. **Order entry** (capture)\n"
+        "  2. Stock check between warehouse and store shelves\n"
+        "2. **Packing (box selection)**\n"
+        "3. Parcel transport on the route\n"
+        "  1. Label printing onto the carton\n"
     )
     out, promoted = promote_outline(src)
     assert (out, promoted) == (src, 0)

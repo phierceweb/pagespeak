@@ -21,6 +21,9 @@ MULTI_SPACE_RE = re.compile(r"\s{2,}")
 
 HEADING_HASH_RE = re.compile(r"^(#+)\s*(.+?)\s*$")
 
+# A heading with no text, closing `#` sequence included (`###`, `## #`).
+EMPTY_HEADING_RE = re.compile(r"^ {0,3}#{1,6}(?:[ \t]+#*)?[ \t]*$")
+
 HEADING_NUM_RE = re.compile(r"^\s*(\d+(?:\.\d+)*\.)\s+(.+?)\s*$")
 
 NUMBERED_SECTION_HEADING_RE = re.compile(r"^(\s*)#+\s+(\d+\.\d+(?:\.\d+)*[a-z]?\.?\s+.+?)\s*$")

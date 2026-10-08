@@ -69,3 +69,6 @@ CLAUDE.md
 
 # Playwright MCP artifacts
 .playwright-mcp/
+
+# pagespring-sync bookkeeping (local state)
+conversions/.pagespring-sync.json

@@ -5,7 +5,8 @@ textbook-style docs with numbered sections. Set `min_level=N` to also split on
 semantic headings at depth ≥ N (e.g. `## Quick Start`) — designed for product
 manuals.
 
-Module layout: parsing → `_split_parse.py`, file/path writing → `_split_write.py`,
+Module layout: heading-line parsing → `_split_heading.py`, section-tree
+parsing → `_split_parse.py`, file/path writing → `_split_write.py`,
 section-set filtering → `_split_filter.py`. This module keeps the
 `split_into_sections` orchestrator + `DEFAULT_MIN_BODY_CHARS`, and re-exports
 `_Section` / `_parse_numbered_heading` / `_detect_fallback_min_level` /
@@ -29,6 +30,9 @@ from ._split_filter import (
     _reparent_nav_list_children,
     _select_kept_sections,
 )
+from ._split_heading import (
+    _parse_numbered_heading as _parse_numbered_heading,
+)
 from ._split_pack import pack_sections
 from ._split_parse import (
     _detect_fallback_min_level as _detect_fallback_min_level,
@@ -36,9 +40,6 @@ from ._split_parse import (
 from ._split_parse import (
     _numbered_parse_is_representative,
     _parse_sections,
-)
-from ._split_parse import (
-    _parse_numbered_heading as _parse_numbered_heading,
 )
 from ._split_parse import (
     _Section as _Section,
@@ -53,10 +54,10 @@ from ._split_write import (
 
 logger = get_logger(__name__)
 
-DEFAULT_MIN_BODY_CHARS = 30
-"""Production-quality default for `min_body_chars` when the pipeline / dispatch
-layers call `split_into_sections`. The library function itself defaults to 0
-so direct callers and existing tests see the original behavior unless they opt in."""
+DEFAULT_MIN_BODY_CHARS = 1
+"""Default `min_body_chars` for the pipeline / dispatch layers: drop only
+heading-only shells; a section with any text is kept. The library function
+itself defaults to 0, which keeps empty shells too."""
 
 
 def _clear_prior_split(output_dir: Path) -> None:
@@ -148,7 +149,7 @@ def split_into_sections(
 
     Default `min_body_chars=0` preserves the original behavior for direct callers.
     `to_markdown()` and the pipeline `stitch()` opt into
-    `DEFAULT_MIN_BODY_CHARS=30` to drop those empty shells.
+    `DEFAULT_MIN_BODY_CHARS=1`, which drops those empty shells and nothing else.
 
     Always writes `INDEX.md` listing top-level sections.
 
@@ -166,14 +167,12 @@ def split_into_sections(
         min_level: If set, also split on semantic headings at this depth or deeper.
         images_dir: Override the default `<output>/../images/` location.
         min_body_chars: Drop sections whose body has fewer than this many
-            non-whitespace chars. Default 30. Set 0 to disable.
-        target_kb: Size-targeted packing (see `_split_pack`). Each branch of
-            the heading tree decides for itself: a subtree fitting this many
-            KB becomes ONE file (descendants inlined); an oversized node
-            recurses into its children; an oversized flat node is
-            partitioned at block boundaries into `(part i of k)` sections
-            sharing its identity. Mutually exclusive with `max_level`
-            (competing mechanisms). None (default) = off.
+            non-whitespace chars. Default 0 keeps every section.
+        target_kb: Size-targeted packing (see `_split_pack`): a subtree
+            fitting this many KB becomes one file, an oversized node recurses
+            into its children, and an oversized flat node is partitioned into
+            `(part i of k)` sections. Mutually exclusive with `max_level`.
+            None (default) = off.
         doc_id: Stable document identifier emitted in every section's
             frontmatter (the corpus-level join key). Defaults to the name
             of ``output_dir``'s parent — the conversion/out-dir name in the

@@ -127,9 +127,10 @@ def to_markdown(
         split_target_kb: With `split_sections`, size-targeted packing: each
             branch fitting this many KB becomes one file, oversized branches
             split deeper, oversized heading-less sections partition into
-            `(part i of k)` files. Adapts per branch; mutually exclusive
-            with `split_max_level` (default None: off).
-        min_body_chars: Drop sections under this body-char count (default 30).
+            `(part i of k)` files. Mutually exclusive with `split_max_level`
+            (default None: off, split on the document's headings).
+        min_body_chars: Drop sections under this body-char count (default 1:
+            heading-only shells).
         regenerate_toc: Rebuild `## Table of Contents` from real headings (default True).
         decoration_threshold: Page-header/footer decoration cutoff (5; `0` off).
         decoration_hamming_distance: Phash grouping distance (default 12).

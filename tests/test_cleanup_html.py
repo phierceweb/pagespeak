@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from pagespeak.services._cleanup_html import convert_embedded_html_blocks
+from pagespeak.services._cleanup_html import (
+    convert_embedded_html_blocks,
+    preformatted_block_flags,
+    strip_script_style_blocks,
+)
 
 
 def test_embedded_table_becomes_pipe_table() -> None:
@@ -49,3 +53,72 @@ def test_fenced_code_is_untouched() -> None:
 def test_unbalanced_table_is_untouched() -> None:
     text = "<table>\n<tr><td>never closed\n"
     assert convert_embedded_html_blocks(text) == text
+
+
+def test_script_and_style_blocks_are_stripped() -> None:
+    text = (
+        "# Widget\n"
+        '<script src="../vendor.min.js"></script>\n'
+        "<style>\n"
+        "        #banner{\n"
+        "        width: 100%;\n"
+        "        }\n"
+        "</style>\n"
+        "Choose an option.\n"
+        "<SCRIPT>\n"
+        "function render() {\n"
+        "\n"
+        "  widget.draw(state);\n"
+        "}\n"
+        "</SCRIPT>\n"
+        "Save the result.\n"
+    )
+    assert strip_script_style_blocks(text) == ("# Widget\nChoose an option.\nSave the result.\n", 3)
+
+
+def test_form_controls_and_text_after_a_closing_tag_are_kept() -> None:
+    controls = (
+        '<input type="radio" id="o1" name="option" value="opt1"> <label for="o1">Option A</label>\n'
+    )
+    text = controls + '<script src="a.js"></script><script src="b.js"></script> Get the app.\n'
+    assert strip_script_style_blocks(text) == (controls + " Get the app.\n", 2)
+
+
+def test_script_in_code_or_left_unclosed_is_kept() -> None:
+    text = (
+        "```html\n<script>\nalert(1)\n</script>\n```\n"
+        "Inline `<script>` stays.\n"
+        "\n"
+        '    <script src="indented-code-example.js"></script>\n'
+        "\n"
+        "<style>\n"
+        "never closed, so it is not known to be a style block\n"
+    )
+    assert strip_script_style_blocks(text) == (text, 0)
+
+
+def test_preformatted_block_flags_cover_closed_pre_and_textarea_blocks() -> None:
+    lines = [
+        "Intro",
+        "<pre>",
+        "#include <stdio.h>",
+        "</pre>",
+        "<textarea>#note</textarea>",
+        "<pre>",
+        "never closed",
+    ]
+    assert preformatted_block_flags(lines, [False] * len(lines)) == [
+        False,
+        True,
+        True,
+        True,
+        True,
+        False,
+        False,
+    ]
+
+
+def test_preformatted_block_flags_ignore_a_pre_tag_inside_fenced_code() -> None:
+    lines = ["```html", "<pre>", "```", "#include <stdio.h>", "</pre>"]
+    fenced = [True, True, True, False, False]
+    assert preformatted_block_flags(lines, fenced) == [False] * len(lines)

@@ -268,7 +268,11 @@ def _ingest_single_process(
     record_hierarchy_source(out, src, pdf_backend=pdf_backend, heading_hierarchy=heading_hierarchy)
     # Both ingest entry points stamp this, so a split ingest/convert keeps the
     # signal. This path always runs the backend, so the value is always current.
-    record_structured(out, authoritative=result.structure_authoritative)
+    record_structured(
+        out,
+        authoritative=result.structure_authoritative,
+        authored_headings=result.authored_headings,
+    )
     logger.info(
         "ingest_single_process_complete src=%s raw_md=%s images=%d",
         src.name,

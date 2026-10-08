@@ -131,7 +131,8 @@ def test_repair_phase_actually_passes_the_flag(tmp_path, monkeypatch) -> None:
 
     seen: dict[str, object] = {}
 
-    def fake_repair(text, *, is_outline_doc=False):
+    def fake_repair(text, *, is_outline_doc=False, authored_headings=False):
+        seen["authored_headings"] = authored_headings
         seen["is_outline_doc"] = is_outline_doc
         return text, {}
 
@@ -161,7 +162,8 @@ def test_repair_phase_does_not_trust_an_inferred_hierarchy(tmp_path, monkeypatch
 
     seen: dict[str, object] = {}
 
-    def fake_repair(text, *, is_outline_doc=False):
+    def fake_repair(text, *, is_outline_doc=False, authored_headings=False):
+        seen["authored_headings"] = authored_headings
         seen["is_outline_doc"] = is_outline_doc
         return text, {}
 
@@ -295,18 +297,31 @@ def test_cleanup_phase_reads_the_flag_when_there_is_no_out_dir(tmp_path, monkeyp
 
     seen: dict[str, object] = {}
 
-    def fake_cleanup(text, *, level, cross_refs, stats=None, structure_authoritative=False):
+    def fake_cleanup(
+        text,
+        *,
+        level,
+        cross_refs,
+        stats=None,
+        structure_authoritative=False,
+        authored_headings=False,
+    ):
         seen["structure_authoritative"] = structure_authoritative
+        seen["authored_headings"] = authored_headings
         return text
 
     monkeypatch.setattr("pagespeak.services._cleanup.cleanup_markdown", fake_cleanup)
 
-    ctx = make_ctx(src=tmp_path / "doc.docx", out=None, cleaned_md_path=None)
+    ctx = make_ctx(src=tmp_path / "doc.html", out=None, cleaned_md_path=None)
     ctx.result = IngestResult(
-        markdown="# A\n\nbody\n", source_format="docx", structure_authoritative=True
+        markdown="# A\n\nbody\n",
+        source_format="html",
+        structure_authoritative=True,
+        authored_headings=True,
     )
     phases.CleanupPhase().run(ctx)
     assert seen.get("structure_authoritative") is True
+    assert seen.get("authored_headings") is True
 
 
 def test_repair_phase_reads_the_flag_when_there_is_no_out_dir(tmp_path, monkeypatch) -> None:
@@ -319,7 +334,8 @@ def test_repair_phase_reads_the_flag_when_there_is_no_out_dir(tmp_path, monkeypa
 
     seen: dict[str, object] = {}
 
-    def fake_repair(text, *, is_outline_doc=False):
+    def fake_repair(text, *, is_outline_doc=False, authored_headings=False):
+        seen["authored_headings"] = authored_headings
         seen["is_outline_doc"] = is_outline_doc
         return text, {}
 
@@ -529,3 +545,42 @@ def test_chunked_ingest_stamps_the_hierarchy_marker(tmp_path, monkeypatch):
     assert recorded.get("heading_hierarchy") is True
     assert recorded.get("src") == src, "must stamp the real PDF, not the checkpoint"
     assert recorded.get("structured") is False
+
+
+def test_authored_headings_are_recorded_read_back_and_cleared(tmp_path: Path) -> None:
+    from pagespeak.services._hierarchy_trust import authored_headings, record_structured
+
+    assert authored_headings(tmp_path) is False
+    assert authored_headings(None, in_memory=True) is True
+    record_structured(tmp_path, authoritative=True, authored_headings=True)
+    assert authored_headings(tmp_path) is True
+    record_structured(tmp_path, authoritative=True)  # a later ingest by another reader
+    assert authored_headings(tmp_path) is False
+
+
+def test_repair_phase_forwards_recorded_authored_headings(tmp_path, monkeypatch) -> None:
+    import pagespeak.orchestrators._phases as phases
+    from pagespeak.models._models import IngestResult
+    from pagespeak.services._hierarchy_trust import record_structured
+
+    from .test_context import _ctx as make_ctx
+
+    seen: dict[str, object] = {}
+
+    def fake_repair(text, *, is_outline_doc=False, authored_headings=False):
+        seen["authored_headings"] = authored_headings
+        return text, {}
+
+    monkeypatch.setattr("pagespeak.services._normalize_repair.repair_headings", fake_repair)
+    out = tmp_path / "out"
+    out.mkdir()
+    record_structured(out, authoritative=True, authored_headings=True)
+    ctx = make_ctx(
+        src=tmp_path / "doc.raw.md",
+        out=out,
+        normalized_md_path=out / "doc.normalized.md",
+        repaired_md_path=out / "doc.repaired.md",
+    )
+    ctx.result = IngestResult(markdown="# A\n\nbody\n", images=[], source_format="markdown")
+    phases.RepairPhase().run(ctx)
+    assert seen.get("authored_headings") is True

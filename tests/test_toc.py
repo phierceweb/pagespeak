@@ -9,29 +9,29 @@ def test_regenerate_toc_replaces_broken_table() -> None:
     raw = (
         "## Table of Contents\n"
         "\n"
-        "| 1. | ARCHIT | ECTURE | 4 |\n"
+        "| 1. | PLAT | FORM | 4 |\n"
         "| --- | --- | --- | --- |\n"
-        "|  | 1.1. | API |  |\n"
+        "|  | 1.1. | CACHE |  |\n"
         "\n"
-        "# 1. ARCHITECTURE\n"
+        "# 1. PLATFORM\n"
         "intro\n"
-        "## 1.1. STACK\n"
-        "stack body\n"
-        "### 1.1.1. API\n"
-        "api body\n"
+        "## 1.1. SERVICES\n"
+        "services body\n"
+        "### 1.1.1. CACHE\n"
+        "cache body\n"
     )
     out = regenerate_toc(raw)
     # Original broken pipe-table cells gone (would split words mid-character).
-    assert "| ARCHIT |" not in out
+    assert "| PLAT |" not in out
     assert "| --- |" not in out
     # Generated bullets present, with anchors.
     assert "## Table of Contents" in out
-    assert "- [1. ARCHITECTURE](#1-architecture)" in out
-    assert "  - [1.1. STACK](#11-stack)" in out
-    assert "    - [1.1.1. API](#111-api)" in out
+    assert "- [1. PLATFORM](#1-platform)" in out
+    assert "  - [1.1. SERVICES](#11-services)" in out
+    assert "    - [1.1.1. CACHE](#111-cache)" in out
     # Body content preserved.
-    assert "stack body" in out
-    assert "api body" in out
+    assert "services body" in out
+    assert "cache body" in out
 
 
 def test_regenerate_toc_indents_by_depth() -> None:

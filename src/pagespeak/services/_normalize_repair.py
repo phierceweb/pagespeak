@@ -212,16 +212,19 @@ _ARTIFACT_PASSES: tuple[tuple[str, Callable[[str], tuple[str, int]]], ...] = (
 )
 
 
-def repair_headings(text: str, *, is_outline_doc: bool = False) -> tuple[str, dict[str, int]]:
+def repair_headings(
+    text: str, *, is_outline_doc: bool = False, authored_headings: bool = False
+) -> tuple[str, dict[str, int]]:
     """Detect→correct repair of post-LLM heading slips, on ``normalized.md``.
 
     Mirrors ``_cleanup_diagnose.apply_heading_demotions`` but runs AFTER the
     heading-normalize LLM, repairing the residual slips it introduces or
     leaves. $0, deterministic, never calls the LLM.
 
-    1. **numbered-depth lock** (reused from cleanup) — the universal ``N.M``
-       dot-count depth rule; always runs. Normalizes the inconsistent levels
-       the LLM leaves on numbered sections.
+    1. **numbered-depth lock** (reused from cleanup) — the ``N.M`` dot-count
+       depth rule. Normalizes the inconsistent levels the LLM leaves on
+       numbered sections; skipped on ``authored_headings`` (an HTML page's
+       levels are the author's).
     2. **backend-artifact passes** — span-strip, number-only demote,
        doubled-text dedupe, spaced-letter demote. Skipped on outline docs
        (structure-faithful reader output is trusted, never second-guessed).
@@ -233,10 +236,11 @@ def repair_headings(text: str, *, is_outline_doc: bool = False) -> tuple[str, di
     its pattern is absent (a clean doc → all-zero, output unchanged).
     """
     counts: dict[str, int] = {}
-    text, n = lock_numbered_section_depth_pass(text)
-    counts["repair_locked_numbered_section_depth"] = n
-    text, n = lock_lettered_subsection_runs_pass(text)
-    counts["repair_locked_lettered_subsection_runs"] = n
+    if not authored_headings:
+        text, n = lock_numbered_section_depth_pass(text)
+        counts["repair_locked_numbered_section_depth"] = n
+        text, n = lock_lettered_subsection_runs_pass(text)
+        counts["repair_locked_lettered_subsection_runs"] = n
     if not is_outline_doc:
         for event, fn in _ARTIFACT_PASSES:
             text, n = fn(text)

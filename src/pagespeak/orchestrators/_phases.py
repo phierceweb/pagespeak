@@ -140,7 +140,11 @@ class IngestPhase:
                 stamp_ingest_record(out, src, flags)
             # Only the run that produced raw.md may claim its structure; a
             # resume rehydrates the flag to False and would clear a true one.
-            record_structured(out, authoritative=result.structure_authoritative)
+            record_structured(
+                out,
+                authoritative=result.structure_authoritative,
+                authored_headings=result.authored_headings,
+            )
 
         # Stamp provenance now: a resume run resolves src to a checkpoint.
         record_hierarchy_source(
@@ -226,7 +230,11 @@ class CleanupPhase:
 
         if c.cleanup != "off":
             from ..services._cleanup import cleanup_markdown
-            from ..services._hierarchy_trust import hierarchy_is_trusted, record_outline_promoted
+            from ..services._hierarchy_trust import (
+                authored_headings,
+                hierarchy_is_trusted,
+                record_outline_promoted,
+            )
 
             # Same invariant as repair. `trusted_structure` alone reads only the
             # DOCX reader's claim, which no PDF ever sets.
@@ -243,6 +251,7 @@ class CleanupPhase:
                     heading_hierarchy=c.heading_hierarchy,
                     in_memory=result.structure_authoritative,
                 ),
+                authored_headings=authored_headings(c.out, in_memory=result.authored_headings),
             )
             # Repair runs separately and cannot see cleanup's locals.
             record_outline_promoted(c.out, promoted=_cleanup_stats.get("outline_promoted", 0) > 0)
@@ -312,7 +321,7 @@ class RepairPhase:
         _load_input(c, c.normalized_md_path)  # input: normalized.md
         result = _require_result(c)
         # Never second-guess a hierarchy the source itself stated.
-        from ..services._hierarchy_trust import hierarchy_is_trusted
+        from ..services._hierarchy_trust import authored_headings, hierarchy_is_trusted
         from ..services._normalize_repair import repair_headings
 
         trusted = hierarchy_is_trusted(
@@ -322,7 +331,11 @@ class RepairPhase:
             heading_hierarchy=c.heading_hierarchy,
             in_memory=result.structure_authoritative,
         )
-        result.markdown, counts = repair_headings(result.markdown, is_outline_doc=trusted)
+        result.markdown, counts = repair_headings(
+            result.markdown,
+            is_outline_doc=trusted,
+            authored_headings=authored_headings(c.out, in_memory=result.authored_headings),
+        )
         applied = {k: v for k, v in counts.items() if v}
         if applied:
             logger.info("repair_headings_applied %s", applied)

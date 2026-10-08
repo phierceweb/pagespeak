@@ -122,6 +122,55 @@ def test_download_pulls_images_and_retargets(
     assert "https://" not in out
 
 
+def test_download_keeps_query_only_different_urls_apart(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    a = "https://community.example.com/servlet/download?eid=1&refid=a"
+    b = "https://community.example.com/servlet/download?eid=2&refid=b"
+    jpg = b"\xff\xd8\xff\xe0" + b"fake-jpg-body"
+    fetcher = _patch_fetcher(monkeypatch, {a: _PNG, b: jpg})
+    out, saved = download_remote_images(f"![one]({a})\n\n![two]({b})\n", tmp_path)
+
+    assert fetcher.calls == [a, b]
+    assert len({p.name for p in saved}) == len(saved) == 2
+    assert [p.read_bytes() for p in saved] == [_PNG, jpg]
+    assert all(f"](images/{p.name})" in out for p in saved)
+
+
+def test_download_warns_when_two_urls_share_a_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The later URL reuses the earlier one's file, so its image is wrong; the
+    file still counts once."""
+    a = "https://cdn-a.example.com/assets/images/fig.png"
+    b = "https://cdn-b.example.com/static/images/fig.png"
+    _patch_fetcher(monkeypatch, {a: _PNG, b: _PNG + b"-other"})
+    with caplog.at_level("WARNING"):
+        _out, saved = download_remote_images(f"![a]({a})\n\n![b]({b})\n", tmp_path)
+
+    assert saved == [tmp_path / "images" / "fig.png"]
+    assert any(
+        "remote_image_name_collision" in r.getMessage() and "fig.png" in r.getMessage()
+        for r in caplog.records
+    )
+
+
+def test_download_does_not_warn_when_two_refs_name_one_url(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    url = "https://docs.example.com/help/img/a.png"
+    _patch_fetcher(monkeypatch, {url: _PNG})
+    with caplog.at_level("WARNING"):
+        _out, saved = download_remote_images(
+            "![a](img/a.png)\n\n![b](img/./a.png)\n",
+            tmp_path,
+            base_url="https://docs.example.com/help/page.html",
+        )
+
+    assert saved == [tmp_path / "images" / "img-a.png"]
+    assert "remote_image_name_collision" not in caplog.text
+
+
 def test_download_skips_non_image_urls(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     md = "![link](https://x.com/page.html)\n![img](https://x.com/images/p.png)\n"
     fetcher = _patch_fetcher(monkeypatch, {"https://x.com/images/p.png": _PNG})

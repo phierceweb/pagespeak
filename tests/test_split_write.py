@@ -134,3 +134,24 @@ def test_mermaid_fence_image_path_follows_the_section_file(tmp_path: Path) -> No
     rel = text.split("![Flow of the loop](", 1)[1].split(")", 1)[0]
     assert rel.endswith("images/fig1.png") and rel != "images/fig1.png"
     assert f'pagespeak-image="{rel}"' in text
+
+
+def test_images_in_headings_and_subsection_lists_follow_the_section_file(tmp_path: Path) -> None:
+    import re
+
+    images = tmp_path / "images"
+    images.mkdir()
+    (images / "icon.png").write_bytes(b"png")
+    (images / "logo.png").write_bytes(b"png")
+    md = (
+        "# Guide\n\nIntro text.\n\n"
+        "## Controls ![Mode button](images/icon.png)\n\nPress it to switch modes.\n\n"
+        "### ![](images/logo.png)\n\nLogo usage text.\n"
+    )
+    written = split_into_sections(md, tmp_path / "sections", nested=True, min_level=1)
+    refs = []
+    for f in written:
+        body = re.sub(r"\A---\n.*?\n---\n", "", f.read_text(encoding="utf-8"), flags=re.S)
+        refs += [(f, ref) for ref in re.findall(r"!\[[^\]]*\]\(([^)\s]+)\)", body)]
+    assert len(refs) >= 3  # two headings + the child's entry in the Subsections list
+    assert all((f.parent / ref).resolve().exists() for f, ref in refs), refs
