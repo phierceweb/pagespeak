@@ -1,6 +1,6 @@
 """Write `<output_dir>/.pagespeak-run.json` after every successful run.
 
-Thin shim over `pf_core.pipeline.run_record`. The run record captures the
+Thin shim over `pw_core.pipeline.run_record`. The run record captures the
 resolved configuration that produced the output — preset name (if any),
 every flag value the pipeline saw, the input file's SHA-256, and
 timestamps. Makes re-run drift diagnosable: a one-line diff
@@ -8,8 +8,8 @@ between two `.pagespeak-run.json` files shows exactly what config
 differs.
 
 It also includes an `llm_calls` per-task summary aggregated from the
-per-call summaries drained out of pf-core's recording window
-(`pf_core.llm.recording`, re-exported by `_agent_runtime`). The schema is
+per-call summaries drained out of pw-core's recording window
+(`pw_core.llm.recording`, re-exported by `_agent_runtime`). The schema is
 documented in `docs/presets.md` § "Re-run reproducibility".
 
 Binds the pagespeak-specific filename (`.pagespeak-run.json`) and
@@ -23,10 +23,10 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from pf_core.pipeline.run_record import file_sha256
-from pf_core.pipeline.run_record import read_run_record as _read_run_record
-from pf_core.pipeline.run_record import write_run_record as _write_run_record
-from pf_core.utils.io import atomic_write_text
+from pw_core.pipeline.run_record import file_sha256
+from pw_core.pipeline.run_record import read_run_record as _read_run_record
+from pw_core.pipeline.run_record import write_run_record as _write_run_record
+from pw_foundation.utils.io import atomic_write_text
 
 __all__ = [
     "INGEST_FLAGS_FIELD",
@@ -72,7 +72,7 @@ def read_run_record(output_dir: Path) -> dict[str, Any] | None:
 
 
 def summarize_llm_calls(records: list[dict[str, Any]]) -> dict[str, Any]:
-    """Aggregate pf-core recording-window summaries (`agent_type` /
+    """Aggregate pw-core recording-window summaries (`agent_type` /
     `provider` / usage fields) into the per-task `by_task` summary stored
     in ``.pagespeak-run.json``.
 

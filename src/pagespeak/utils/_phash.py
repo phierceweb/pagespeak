@@ -1,15 +1,15 @@
-"""Perceptual-hash helpers — pf-core shim.
+"""Perceptual-hash helpers — pw-core shim.
 
-A thin re-export of `pf_core.utils.phash`, so pagespeak imports resolve
+A thin re-export of `pw_core.utils.phash`, so pagespeak imports resolve
 to the shared implementation.
 
-`ImageHash` + `Pillow` are pagespeak's own dependencies, not pf-core's
+`ImageHash` + `Pillow` are pagespeak's own dependencies, not pw-core's
 `[image-phash]` extra (see the note in pyproject.toml).
 """
 
 from __future__ import annotations
 
-from pf_core.utils.phash import (
+from pw_core.utils.phash import (
     cluster_phashes,
     compute_phash,
     detect_decoration_basenames,

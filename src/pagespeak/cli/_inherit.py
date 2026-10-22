@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 import typer
-from pf_core.log import get_logger
+from pw_foundation.log import get_logger
 
 from ..services._run_record import RUN_RECORD_FILENAME, read_run_record
 

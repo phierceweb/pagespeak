@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from pf_core.jobs import register_kind
+from pw_core.jobs import register_kind
 from pydantic import BaseModel, Field, field_validator
 
 CONVERSION_KIND = "pagespeak_convert"

@@ -14,7 +14,7 @@ from __future__ import annotations
 import re
 from typing import Literal
 
-from pf_core.log import get_logger
+from pw_foundation.log import get_logger
 
 from ._cleanup_html import (
     convert_embedded_html_blocks,

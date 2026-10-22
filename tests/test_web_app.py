@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import pf_core.db.connection as conn_mod
+import pw_core.db.connection as conn_mod
 from fastapi.testclient import TestClient
 
 from pagespeak.web import create_app

@@ -23,7 +23,7 @@ import xml.etree.ElementTree as ET
 from collections.abc import Callable
 from urllib.parse import unquote
 
-from pf_core.log import get_logger
+from pw_foundation.log import get_logger
 
 from ..models._quiz import Quiz, QuizOption, QuizQuestion
 from ..utils._html import html_fragment_to_markdown

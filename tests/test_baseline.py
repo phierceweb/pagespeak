@@ -2,12 +2,12 @@
 
 The full behavior matrix (save copies manifest files, skips caches,
 default label format, no-run-record error, collision error, list sort,
-auto-snapshot skip/fire/dedupe rules) is exercised in pf-core's
+auto-snapshot skip/fire/dedupe rules) is exercised in pw-core's
 `test_pipeline_baseline.py` against `BaselineConfig`-parameterized
 filenames. This module keeps the pagespeak-specific bindings:
 
 1. The shim passes `PAGESPEAK_BASELINE_CONFIG` (filename
-   `.pagespeak-run.json`) so pf-core writes a pagespeak-shaped baseline.
+   `.pagespeak-run.json`) so pw-core writes a pagespeak-shaped baseline.
 2. `auto_snapshot_on_version_change` catches `OSError` / `ValueError`
    at the shim layer so test mocks that raise arbitrary errors don't
    kill the calling pipeline.
@@ -50,7 +50,7 @@ def _populate_live_output(out: Path, version: str = "0.1.1") -> None:
 
 def test_save_baseline_writes_pagespeak_run_record_filename(tmp_path: Path) -> None:
     """The shim binds `.pagespeak-run.json` — baseline's copy uses the
-    same name, not pf-core's default `run.json`."""
+    same name, not pw-core's default `run.json`."""
     out = tmp_path / "out"
     _populate_live_output(out)
 
@@ -87,9 +87,9 @@ def test_auto_snapshot_fires_on_version_change(tmp_path: Path) -> None:
 
 
 def test_auto_snapshot_failure_is_non_fatal(tmp_path: Path, monkeypatch) -> None:
-    """The shim adds a try/except so an arbitrary error from pf-core or
+    """The shim adds a try/except so an arbitrary error from pw-core or
     a monkeypatched save_baseline doesn't propagate. Defense-in-depth on
-    top of pf-core's own internal error handling."""
+    top of pw-core's own internal error handling."""
     out = tmp_path / "out"
     _populate_live_output(out, version="0.1.0")
 

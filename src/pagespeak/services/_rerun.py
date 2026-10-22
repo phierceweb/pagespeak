@@ -1,6 +1,6 @@
 """Cache invalidation for `--rerun-from <stage>` and `pagespeak invalidate`.
 
-Thin shim over `pf_core.pipeline.cache`. Stages map to cache files.
+Thin shim over `pw_core.pipeline.cache`. Stages map to cache files.
 Cascade rule: bust the target stage's OWN cache (whether
 structural or content-keyed) plus every DOWNSTREAM stage's STRUCTURAL
 files. Downstream content-keyed caches (`.vision-cache/`,
@@ -39,14 +39,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal, get_args
 
-from pf_core.pipeline.cache import (
+from pw_core.pipeline.cache import (
     StageDefinition,
     StageRegistry,
 )
-from pf_core.pipeline.cache import (
+from pw_core.pipeline.cache import (
     files_to_invalidate as _files_to_invalidate,
 )
-from pf_core.pipeline.cache import (
+from pw_core.pipeline.cache import (
     invalidate_caches as _invalidate_caches,
 )
 

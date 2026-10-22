@@ -34,6 +34,7 @@ os.environ.setdefault("HF_HUB_OFFLINE", "1")
 # Genuinely mixed modules worth preserving (test_docx_dispatch, test_pdf) use a
 # per-test `pytest.importorskip` instead of this map.
 _OPTIONAL_EXTRA_FOR_MODULE = {
+    "test_cost": "fastapi",
     "test_docx_image_alt": "docx",
     "test_docx_numbering": "docx",
     "test_docx_numpr": "docx",
@@ -51,6 +52,7 @@ _OPTIONAL_EXTRA_FOR_MODULE = {
     "test_web_llm_summary": "fastapi",
     "test_web_security": "fastapi",
     "test_web_pages": "fastapi",
+    "test_web_reader": "fastapi",
     "test_web_scan": "fastapi",
     "test_web_worker": "fastapi",
 }
@@ -89,7 +91,7 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
 
 @pytest.fixture(autouse=True)
 def _fresh_model_router_cache():
-    """pf-core's model-router cache is process-global and keyed by the
+    """pw-core's model-router cache is process-global and keyed by the
     RELATIVE config path, so a chdir'd test that writes its own
     config/model_router.yaml would otherwise be served a previous test's
     cached doc for up to the 60s reload TTL. Clear around every test.
@@ -100,7 +102,7 @@ def _fresh_model_router_cache():
     packaged-YAML path into every later test."""
     import os
 
-    from pf_core.llm.router import clear_cache
+    from pw_core.llm.router import clear_cache
 
     prior = os.environ.get("MODEL_ROUTER_CONFIG")
     clear_cache()

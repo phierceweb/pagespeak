@@ -15,7 +15,7 @@ from typing import Any
 
 from docx.oxml.ns import qn
 from docx.text.paragraph import Paragraph
-from pf_core.log import get_logger
+from pw_foundation.log import get_logger
 
 from ..models._models import IngestResult
 from ..utils._alt import flatten_alt

@@ -1,14 +1,14 @@
 # pagespeak build gates. Run `pre-commit install` once per clone (from the
 # project venv) so these run on every commit; CI (.github/workflows/guards.yml)
-# is the unskippable backstop. Mirrors pf-core's gate set, scoped to
-# src/pagespeak. The file-size gate is the same pf_core.guards check that
+# is the unskippable backstop. Mirrors pw-core's gate set, scoped to
+# src/pagespeak. The file-size gate is the same pw_foundation.guards check that
 # bin/lint already runs locally.
 repos:
   - repo: local
     hooks:
       - id: pagespeak-guards
         name: pagespeak structural gate
-        entry: .venv/bin/python -m pf_core.guards
+        entry: .venv/bin/python -m pw_foundation.guards
         language: system
         pass_filenames: false
         always_run: true

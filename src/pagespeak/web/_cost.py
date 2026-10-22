@@ -69,10 +69,7 @@ def _safe_phash(img: Path) -> str | None:
     direction the cost gate wants. A bad image must never 500 the gate.
     """
     try:
-        # compute_phash is typed Any to mypy (pf_core is untyped here); bind to
-        # a str-annotated local so the return doesn't trip no-any-return.
-        phash: str = compute_phash(img)
-        return phash
+        return compute_phash(img)
     except Exception:
         return None
 
@@ -178,7 +175,7 @@ def gate_decision(
 def _estimate_paid(misses: int) -> float | None:
     """Rough $ estimate for ``misses`` paid vision calls (~4K in / ~1K out per image)."""
     try:
-        from pf_core.budget import project_cost
+        from pw_core.budget import project_cost
 
         per: float = project_cost(
             agent_type="vision",

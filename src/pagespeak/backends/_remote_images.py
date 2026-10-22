@@ -4,7 +4,7 @@ MarkItDown converts an HTML document by preserving its ``<img src="http…">``
 tags as remote markdown image refs — it never downloads the binaries. The
 pagespeak vision pass only processes images that live locally under
 ``<output_dir>/images/``, so a converted HTML doc's figures would be invisible
-to vision. This module closes that gap over ``pf_core.fetch.images``, which
+to vision. This module closes that gap over ``pw_core.fetch.images``, which
 owns the download / naming / retarget mechanics (and the SSRF guard); what
 lives here is the pagespeak-side policy: the ``PAGESPEAK_*`` operator knobs and
 the pipeline entry points. Mirrors what ``_docx._extract_epub_media`` +
@@ -23,10 +23,10 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Protocol
 
-from pf_core.fetch import Fetcher
-from pf_core.fetch.images import default_namer, localize_images
-from pf_core.log import get_logger
-from pf_core.utils.env import resolve_bool, resolve_int
+from pw_core.fetch import Fetcher
+from pw_core.fetch.images import default_namer, localize_images
+from pw_foundation.log import get_logger
+from pw_foundation.utils.env import resolve_bool, resolve_int
 
 logger = get_logger(__name__)
 

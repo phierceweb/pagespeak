@@ -6,8 +6,8 @@ reply re-levels part of the tree and leaves the rest as extracted.
 
 from __future__ import annotations
 
-from pf_core.log import get_logger
-from pf_core.utils.env import resolve_int
+from pw_foundation.log import get_logger
+from pw_foundation.utils.env import resolve_int
 
 logger = get_logger(__name__)
 

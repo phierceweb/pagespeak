@@ -15,10 +15,10 @@ echo "ruff format --check"
 echo "mypy strict"
 "$RUN" mypy src
 
-echo "file-size guard (pf-core)"
+echo "file-size guard (pw-guards)"
 # Enforces per-file line budgets: hard 500 = FAIL, soft 300 = WARN. No file is
 # currently over the hard limit, so the guard runs from zero with no grandfather
 # list — a NEW file over 500 lines fails the lint.
-"$RUN" python -m pf_core.guards --root src/pagespeak
+"$RUN" python -m pw_foundation.guards --root src/pagespeak
 
 echo "all checks passed"

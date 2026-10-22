@@ -2,7 +2,7 @@ from __future__ import annotations
 
 
 def test_run_job_success_marks_succeeded(monkeypatch, tmp_path):
-    import pf_core.db.connection as conn_mod
+    import pw_core.db.connection as conn_mod
 
     monkeypatch.setenv("PAGESPEAK_DB_DEFAULT_DIR", str(tmp_path))
     monkeypatch.delenv("DATABASE_URL", raising=False)
@@ -12,7 +12,7 @@ def test_run_job_success_marks_succeeded(monkeypatch, tmp_path):
     db._initialized = False
     db.init_db()
 
-    from pf_core.jobs import JobRepo, clear_registry
+    from pw_core.jobs import JobRepo, clear_registry
 
     from pagespeak.web._jobs import CONVERSION_KIND, register_conversion_kind
 
@@ -46,9 +46,9 @@ def test_run_job_success_marks_succeeded(monkeypatch, tmp_path):
     def _fake_popen(cmd, **kwargs):  # noqa: ANN001
         return _FakeProc()
 
-    import pf_core.jobs.workers as pf_workers
+    import pw_core.jobs.workers as pw_workers
 
-    monkeypatch.setattr(pf_workers.subprocess, "Popen", _fake_popen)
+    monkeypatch.setattr(pw_workers.subprocess, "Popen", _fake_popen)
 
     job_row = JobRepo().claim_next(kinds=[CONVERSION_KIND], worker_id="w1")
     assert job_row is not None
@@ -59,7 +59,7 @@ def test_run_job_success_marks_succeeded(monkeypatch, tmp_path):
 
 
 def test_run_job_nonzero_marks_failed(monkeypatch, tmp_path):
-    import pf_core.db.connection as conn_mod
+    import pw_core.db.connection as conn_mod
 
     monkeypatch.setenv("PAGESPEAK_DB_DEFAULT_DIR", str(tmp_path))
     monkeypatch.delenv("DATABASE_URL", raising=False)
@@ -69,7 +69,7 @@ def test_run_job_nonzero_marks_failed(monkeypatch, tmp_path):
     db._initialized = False
     db.init_db()
 
-    from pf_core.jobs import JobRepo, clear_registry
+    from pw_core.jobs import JobRepo, clear_registry
 
     from pagespeak.web._jobs import CONVERSION_KIND, register_conversion_kind
 
@@ -95,9 +95,9 @@ def test_run_job_nonzero_marks_failed(monkeypatch, tmp_path):
             out.mkdir(parents=True, exist_ok=True)
             return 2
 
-    import pf_core.jobs.workers as pf_workers
+    import pw_core.jobs.workers as pw_workers
 
-    monkeypatch.setattr(pf_workers.subprocess, "Popen", lambda cmd, **kw: _FakeProc())
+    monkeypatch.setattr(pw_workers.subprocess, "Popen", lambda cmd, **kw: _FakeProc())
 
     job_row = JobRepo().claim_next(kinds=[CONVERSION_KIND], worker_id="w1")
     worker.run_job(job_row)

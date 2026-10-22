@@ -1,14 +1,14 @@
-"""Sequencing as pagespeak wires it: `pf_core.pipeline.sequencer` driving
+"""Sequencing as pagespeak wires it: `pw_core.pipeline.sequencer` driving
 phases that carry pagespeak's `is_fresh` convention. The resume tests pass
 the same `skip_fresh` closure `_dispatch` uses — they are the wiring
-contract, not a duplicate of pf-core's upstream suite.
+contract, not a duplicate of pw-core's upstream suite.
 """
 
 from __future__ import annotations
 
 import pytest
-from pf_core.pipeline.sequencer import Phase as SequencedPhase
-from pf_core.pipeline.sequencer import UnknownStageError, run_pipeline
+from pw_core.pipeline.sequencer import Phase as SequencedPhase
+from pw_core.pipeline.sequencer import UnknownStageError, run_pipeline
 
 from pagespeak.orchestrators._phase import Phase
 

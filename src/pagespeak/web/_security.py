@@ -24,7 +24,7 @@ from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import PlainTextResponse, Response
-from pf_core.utils.env import resolve_int, resolve_str
+from pw_foundation.utils.env import resolve_int, resolve_str
 from starlette.middleware import Middleware
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -153,7 +153,7 @@ def install_security(app: FastAPI, *, bind_host: str) -> None:
         request.state.csp_nonce = nonce
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
-        # pf-core's admin pages ship their own inline scripts.
+        # pw-core's admin pages ship their own inline scripts.
         if not request.url.path.startswith("/admin"):
             response.headers["Content-Security-Policy"] = content_security_policy(nonce)
         return response

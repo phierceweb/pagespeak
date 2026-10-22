@@ -45,7 +45,7 @@ def test_resolve_workers_rejects_zero() -> None:
 def test_resolve_workers_bad_env_falls_back_to_default(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Malformed env warns (via `pf_core.utils.env.resolve_int`) and falls
+    """Malformed env warns (via `pw_foundation.utils.env.resolve_int`) and falls
     back to default, so an operator typo doesn't crash the pipeline."""
     monkeypatch.setenv(WORKERS_ENV_VAR, "abc")
     with caplog.at_level("WARNING"):
@@ -79,9 +79,9 @@ def test_resolve_chunk_pages_rejects_zero() -> None:
 def test_resolve_chunk_pages_bad_env_falls_back_to_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Malformed env warns (via pf_core.resolve_int) and falls back to
+    """Malformed env warns (via pw-foundation's resolve_int) and falls back to
     default. We only assert the fall-back value here so this test doesn't
-    couple to pf-core's log format."""
+    couple to pw-foundation's log format."""
     monkeypatch.setenv(CHUNK_PAGES_ENV_VAR, "abc")
     assert resolve_chunk_pages(None) == DEFAULT_CHUNK_PAGES
 

@@ -59,7 +59,7 @@ conversions/.superseded/
 # consumer library, not its own build harness.
 .ai/
 docs/superpowers
-docs/pf-core
+docs/pw-core
 CLAUDE.md
 /bin/validate
 
@@ -72,3 +72,6 @@ CLAUDE.md
 
 # pagespring-sync bookkeeping (local state)
 conversions/.pagespring-sync.json
+
+# pw-setup: links into this machine's venv
+docs/pw-foundation

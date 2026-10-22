@@ -252,4 +252,4 @@ def test_orchestrators_write_documents_atomically() -> None:
         for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
         if re.search(r"\.write_text\(", line)
     ]
-    assert not offenders, f"use pf_core.utils.io.atomic_write_text: {offenders}"
+    assert not offenders, f"use pw_foundation.utils.io.atomic_write_text: {offenders}"

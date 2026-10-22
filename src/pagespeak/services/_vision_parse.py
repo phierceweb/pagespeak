@@ -3,7 +3,7 @@
 The narrow concern of turning a vision backend's raw text response into a
 `Diagram` (tolerant JSON parse + field normalization). Imported by the
 backends' `analyze()` and re-exported from `_diagrams` for the test surface.
-Self-contained — depends only on pf-core + models, so there is no import cycle.
+Self-contained — depends only on pw-foundation / pw-core + models, so there is no import cycle.
 """
 
 from __future__ import annotations
@@ -11,8 +11,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from pf_core.llm.parse import parse_llm_json
-from pf_core.log import get_logger
+from pw_core.llm.parse import parse_llm_json
+from pw_foundation.log import get_logger
 
 from ..models._models import Diagram
 
@@ -81,7 +81,7 @@ def _parse_response(text: str, image_path: Path) -> dict[str, Any]:
     free-form text (Claude Code may include "I'll analyze this image..."
     preamble or tool-use traces).
 
-    Delegates to `pf_core.llm.parse.parse_llm_json` which walks the full
+    Delegates to `pw_core.llm.parse.parse_llm_json` which walks the full
     fallback pipeline: strip fences → json.loads → balanced-brace extract
     → truncation recovery → json_repair (permissive last-resort).
     """

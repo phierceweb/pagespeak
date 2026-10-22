@@ -90,7 +90,7 @@ async def run(request: Request, dir_name: str) -> Response:
         )
         return resp
 
-    from pf_core.jobs import JobRepo
+    from pw_core.jobs import JobRepo
 
     from pagespeak.web.api.partials import render_job_status
 
@@ -143,8 +143,8 @@ async def deliver(request: Request, dir_name: str) -> Response:
 
 @router.post("/jobs/{job_id}/cancel")
 async def cancel(request: Request, job_id: int) -> Response:
-    from pf_core.exceptions import PreconditionError
-    from pf_core.jobs import JobRepo
+    from pw_core.jobs import JobRepo
+    from pw_foundation.exceptions import PreconditionError
 
     from pagespeak.web._worker import terminate_job
 
@@ -163,7 +163,7 @@ async def cancel(request: Request, job_id: int) -> Response:
 
 @router.post("/jobs/{job_id}/retry")
 async def retry(request: Request, job_id: int) -> Response:
-    from pf_core.jobs import JobRepo
+    from pw_core.jobs import JobRepo
 
     JobRepo().retry(job_id)
     return RedirectResponse(url="/", status_code=303)

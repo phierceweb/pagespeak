@@ -1,6 +1,6 @@
 """Resume helpers for the single-shot dispatcher.
 
-Thin shim over `pf_core.pipeline.resume`. Two checkpoints can
+Thin shim over `pw_core.pipeline.resume`. Two checkpoints can
 short-circuit a re-run:
 
 1. `<stem>.raw.md` — the backend's output, persisted immediately after
@@ -11,7 +11,7 @@ short-circuit a re-run:
    skip cleanup. Vision runs in a downstream phase, so vision flag
    changes don't invalidate `cleaned.md`.
 
-A thin binding over `pf_core.pipeline.resume`: supplies the
+A thin binding over `pw_core.pipeline.resume`: supplies the
 pagespeak-specific cleanup-affecting flag set + run-record filename and
 preserves the public API.
 """
@@ -22,7 +22,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from pf_core.pipeline.resume import SnapshotValidator, try_resume_from_snapshot
+from pw_core.pipeline.resume import SnapshotValidator, try_resume_from_snapshot
 
 from ..backends._pdf import parse_page_range
 from ..models._models import IngestResult

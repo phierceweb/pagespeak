@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import pf_core.db.connection as conn_mod
+import pw_core.db.connection as conn_mod
 import pytest
 from fastapi.testclient import TestClient
 
@@ -9,9 +9,9 @@ from pagespeak.web import create_app
 
 @pytest.fixture(autouse=True)
 def _reset_runtime_state():
-    # pf_core caches agent_type_id/model_id in-process; across tests that each
+    # pw_core caches agent_type_id/model_id in-process; across tests that each
     # build a fresh temp DB those cached ids go stale and cause FK failures.
-    from pf_core.llm.tracking import clear_resolver_caches as clear_caches
+    from pw_core.llm.tracking import clear_resolver_caches as clear_caches
 
     clear_caches()
     yield
@@ -36,8 +36,8 @@ def _client(monkeypatch, tmp_path):
 def test_llm_summary_counts_runs_for_conversion_jobs(monkeypatch, tmp_path):
     client, conv = _client(monkeypatch, tmp_path)
 
-    from pf_core.jobs import JobRepo
-    from pf_core.llm.tracking import LlmRunRepo
+    from pw_core.jobs import JobRepo
+    from pw_core.llm.tracking import LlmRunRepo
 
     from pagespeak.web._jobs import CONVERSION_KIND
 

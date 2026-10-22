@@ -13,7 +13,7 @@ consumers/tests that want the static text.
 
 from __future__ import annotations
 
-from pf_core.llm.prompts import render_spec
+from pw_core.llm.prompts import render_spec
 
 from ._loader import load_pagespeak_spec
 

@@ -28,7 +28,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
 
-from pf_core.utils.env import resolve_str
+from pw_foundation.utils.env import resolve_str
 
 from ..models._models import IngestResult
 

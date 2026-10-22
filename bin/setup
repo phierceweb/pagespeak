@@ -105,7 +105,11 @@ if [ ! -f ".env" ] && [ -f ".env.example" ]; then
   echo "  edit .env before running anything that hits a real backend"
 fi
 
-echo "ready: $(.venv/bin/python -c 'import pagespeak; print(pagespeak.__version__)')"
+# Framework wiring: docs links, starter rules, .claude/.cursor -> .ai/ (pw-setup).
+# Last, so a wiring conflict fails setup only after the hooks and .env exist.
+.venv/bin/pw-setup
+
+echo "ready:$(.venv/bin/python -c 'import pagespeak; print(pagespeak.__version__)')"
 echo ""
 echo "next:"
 echo "  bin/run --help      see pagespeak CLI options"

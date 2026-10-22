@@ -1,15 +1,15 @@
-"""Tests for `pagespeak._agent_runtime` — the seam over pf-core's router,
+"""Tests for `pagespeak._agent_runtime` — the seam over pw-core's router,
 tracked calls, and recording.
 
 Covers:
 
-- config resolution via `pf_core.llm.router.get_agent_config` (as wired by
+- config resolution via `pw_core.llm.router.get_agent_config` (as wired by
   pagespeak's YAML: `env_prefix` / `default_client` / `non_chat_keys`) and
   the packaged-YAML bootstrap (`_ensure_router_config`).
 - `resolve_backend`: env-var selection narrowed to
   `claude_code | anthropic | openrouter`; undeclared env values fall back
   to the YAML `default_client`.
-- `invoke_agent`: dispatch to the right pf-core client; capture of
+- `invoke_agent`: dispatch to the right pw-core client; capture of
   usage/duration/error into the returned tuple.
 - DB tracking: when `pagespeak._db.init_db()` has been called, every
   successful invoke writes one `llm_runs` row (via
@@ -26,13 +26,13 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _reset_runtime_state():
-    """Reset pf-core's engine cache + pagespeak's DB-init flag + every
-    pf-core client singleton between tests. Without this, modules cache
+    """Reset pw-core's engine cache + pagespeak's DB-init flag + every
+    pw-core client singleton between tests. Without this, modules cache
     state from earlier tests and we see ghost engines / wrong models /
     leaked DBs."""
-    from pf_core.clients import claude_code as cc
-    from pf_core.clients import openrouter as orr
-    from pf_core.db.connection import reset_engine
+    from pw_core.clients import claude_code as cc
+    from pw_core.clients import openrouter as orr
+    from pw_core.db.connection import reset_engine
 
     import pagespeak._db as db_mod
 
@@ -43,17 +43,17 @@ def _reset_runtime_state():
     # Anthropic client has a reset too, but it requires an API key on
     # creation — only reset if we'd actually used it.
     try:
-        from pf_core.clients import anthropic as anth
+        from pw_core.clients import anthropic as anth
 
         anth.reset_client()
     except Exception:
         pass
-    # pf-core's resolver-caches (llm_agent_types, llm_models) are
+    # pw-core's resolver-caches (llm_agent_types, llm_models) are
     # module-level dicts that survive across tests. If a prior test
     # populated them against a different SQLite tmp_path, a later test
     # gets a cached id that doesn't exist in its fresh DB — FK INSERTs
     # downstream then fail. Clear before AND after each test.
-    from pf_core.llm.tracking import clear_resolver_caches as _clear_resolver_caches
+    from pw_core.llm.tracking import clear_resolver_caches as _clear_resolver_caches
 
     _clear_resolver_caches()
     yield
@@ -64,7 +64,7 @@ def _reset_runtime_state():
     _clear_resolver_caches()
 
 
-# --- config resolution (pf_core.llm.router as wired by pagespeak) ---------
+# --- config resolution (pw_core.llm.router as wired by pagespeak) ---------
 
 
 def test_get_agent_config_picks_backend_specific_model(
@@ -86,7 +86,7 @@ agents:
 """,
         encoding="utf-8",
     )
-    from pf_core.llm.router import get_agent_config
+    from pw_core.llm.router import get_agent_config
 
     monkeypatch.setenv("PAGESPEAK_VISION_BACKEND", "claude_code")
     assert get_agent_config("vision")["model"] == "haiku-via-claude-code"
@@ -99,7 +99,7 @@ def test_get_agent_config_explicit_override_wins(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A `model_override` kwarg beats the YAML entry (repo YAML at cwd)."""
-    from pf_core.llm.router import get_agent_config
+    from pw_core.llm.router import get_agent_config
 
     cfg = get_agent_config("vision", model_override="from-arg")
     assert cfg["model"] == "from-arg"
@@ -120,7 +120,7 @@ def test_get_agent_config_ignores_legacy_env_model_var(
     )
     monkeypatch.setenv("PAGESPEAK_VISION_MODEL", "from-env-ignored")
     monkeypatch.setenv("PAGESPEAK_VISION_BACKEND", "claude_code")
-    from pf_core.llm.router import get_agent_config
+    from pw_core.llm.router import get_agent_config
 
     assert get_agent_config("vision")["model"] == "from-yaml"
 
@@ -131,11 +131,11 @@ def test_get_agent_config_missing_config_raises(
     """An explicit MODEL_ROUTER_CONFIG pointing at a missing file is a hard
     ConfigurationError, not a silent model fallback. (The packaged-YAML
     bootstrap never fires when the operator chose an explicit path.)"""
-    from pf_core.exceptions import ConfigurationError
+    from pw_foundation.exceptions import ConfigurationError
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("MODEL_ROUTER_CONFIG", str(tmp_path / "missing.yaml"))
-    from pf_core.llm.router import get_agent_config
+    from pw_core.llm.router import get_agent_config
 
     with pytest.raises(ConfigurationError):
         get_agent_config("vision")
@@ -150,7 +150,7 @@ def test_packaged_default_bootstrap_when_no_cwd_or_env(
     package, so the tuned defaults ship."""
     monkeypatch.chdir(tmp_path)  # no config/ here → bootstrap must fire
     monkeypatch.delenv("MODEL_ROUTER_CONFIG", raising=False)
-    from pf_core.llm.router import get_agent_config
+    from pw_core.llm.router import get_agent_config
 
     from pagespeak._agent_runtime import _ensure_router_config, agent_option
 
@@ -170,8 +170,8 @@ def test_packaged_default_bootstrap_when_no_cwd_or_env(
 
 
 def test_get_agent_config_unknown_slug_raises() -> None:
-    from pf_core.exceptions import ConfigurationError
-    from pf_core.llm.router import get_agent_config
+    from pw_core.llm.router import get_agent_config
+    from pw_foundation.exceptions import ConfigurationError
 
     with pytest.raises(ConfigurationError):
         get_agent_config("nonexistent_agent")
@@ -199,7 +199,7 @@ agents:
 """,
         encoding="utf-8",
     )
-    from pf_core.llm.router import get_agent_config
+    from pw_core.llm.router import get_agent_config
 
     monkeypatch.setenv("PAGESPEAK_VISION_BACKEND", "claude_code")
     cfg = get_agent_config("vision")
@@ -291,7 +291,7 @@ def test_resolve_backend_invalid_env_value_falls_back_to_default(
 
 
 def test_resolve_backend_unknown_slug_raises() -> None:
-    from pf_core.exceptions import ConfigurationError
+    from pw_foundation.exceptions import ConfigurationError
 
     from pagespeak._agent_runtime import resolve_backend
 
@@ -397,7 +397,7 @@ def test_invoke_agent_reraises_client_error(monkeypatch: pytest.MonkeyPatch) -> 
 def test_invoke_agent_writes_llm_runs_row_when_db_initialized(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """When pf-core tracking DB is initialized, invoke_agent writes
+    """When pw-core tracking DB is initialized, invoke_agent writes
     one llm_runs row per call."""
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/track.db")
     monkeypatch.setenv("PAGESPEAK_VISION_BACKEND", "openrouter")
@@ -538,7 +538,7 @@ def test_invoke_agent_metadata_splits_into_tags_and_metrics(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Per-call metadata flows through `_write_run_row` into
-    pf-core's `tags` / `metrics` kwargs, landing in `llm_run_tags` and
+    pw-core's `tags` / `metrics` kwargs, landing in `llm_run_tags` and
     `llm_run_metrics`. String / bool values → tags as `"key:value"`;
     numeric values → metrics with the value cast to float."""
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/track.db")
@@ -738,7 +738,7 @@ def test_invoke_agent_client_override_bypasses_client_resolution(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """`client_override` bypasses `_get_client_for_backend` so test
-    fixtures can inject mock clients without setting up pf-core
+    fixtures can inject mock clients without setting up pw-core
     singletons."""
     from pagespeak._agent_runtime import invoke_agent
 
@@ -859,13 +859,13 @@ def test_get_client_for_backend_passes_default_timeout_to_claude_code(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Without PAGESPEAK_CLAUDE_CODE_TIMEOUT_S, `_get_client_for_backend`
-    must pass our 1800s default (NOT pf-core's internal 600s default)
-    to `claude_code.get_client` — otherwise pf-core's
+    must pass our 1800s default (NOT pw-core's internal 600s default)
+    to `claude_code.get_client` — otherwise pw-core's
     DEFAULT_TIMEOUT_SECONDS=600 silently wins."""
     from pagespeak._agent_runtime import _get_client_for_backend
 
     monkeypatch.delenv("PAGESPEAK_CLAUDE_CODE_TIMEOUT_S", raising=False)
-    with patch("pf_core.clients.claude_code.get_client") as mock_get_client:
+    with patch("pw_core.clients.claude_code.get_client") as mock_get_client:
         _get_client_for_backend("claude_code")
     mock_get_client.assert_called_once()
     assert mock_get_client.call_args.kwargs["timeout"] == 1800
@@ -879,19 +879,19 @@ def test_get_client_for_backend_respects_env_timeout_override(
     from pagespeak._agent_runtime import _get_client_for_backend
 
     monkeypatch.setenv("PAGESPEAK_CLAUDE_CODE_TIMEOUT_S", "2400")
-    with patch("pf_core.clients.claude_code.get_client") as mock_get_client:
+    with patch("pw_core.clients.claude_code.get_client") as mock_get_client:
         _get_client_for_backend("claude_code")
     assert mock_get_client.call_args.kwargs["timeout"] == 2400
 
 
-def test_pf_core_claude_code_client_isolates_by_default() -> None:
-    """Dependency-floor canary: pf-core >= 0.5.0 runs `claude --print` with
-    `--safe-mode` by default (`isolate=True`), so the cwd project's CLAUDE.md/
-    skills can't hijack a vision caption or normalize call. A downgrade below
-    that floor silently reintroduces the hijack — this catches it."""
+def test_pw_core_claude_code_client_isolates_by_default() -> None:
+    """Dependency canary: pw-core runs `claude --print` with `--safe-mode` by
+    default (`isolate=True`), so the cwd project's CLAUDE.md/skills can't
+    hijack a vision caption or normalize call. A pw-core release that drops
+    that default silently reintroduces the hijack — this catches it."""
     import inspect
 
-    from pf_core.clients.claude_code import ClaudeCodeClient
+    from pw_core.clients.claude_code import ClaudeCodeClient
 
     assert inspect.signature(ClaudeCodeClient.__init__).parameters["isolate"].default is True
 

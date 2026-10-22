@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from pf_core.log import get_logger
+from pw_foundation.log import get_logger
 
 from ..services._cleanup import CleanupLevel, CrossRefs
 from ..services._heading_normalize import NormalizeMode

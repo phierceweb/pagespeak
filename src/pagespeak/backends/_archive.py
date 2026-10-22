@@ -11,7 +11,7 @@ import stat
 import zipfile
 from pathlib import Path
 
-from pf_core.utils.env import resolve_int
+from pw_foundation.utils.env import resolve_int
 
 MAX_ARCHIVE_BYTES_DEFAULT = 1024 * 1024 * 1024
 _MAX_ARCHIVE_BYTES_ENV_VAR = "PAGESPEAK_MAX_ARCHIVE_BYTES"

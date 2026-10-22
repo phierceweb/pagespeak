@@ -1,7 +1,7 @@
 """Tests for `pagespeak._db` — DB URL resolution + schema initialization.
 
-The DB layer is a thin wrapper over pf-core's `pf_core.db.connection`
-and `pf_core.llm.tracking.metadata`. Default sink is a SQLite file in
+The DB layer is a thin wrapper over pw-core's `pw_core.db.connection`
+and `pw_core.llm.tracking.metadata`. Default sink is a SQLite file in
 the user's home dir; any `DATABASE_URL` SQLAlchemy connection string
 (sqlite/postgres/mysql) overrides it.
 
@@ -19,11 +19,11 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _reset_db_state():
-    """Reset pf-core's module-level engine cache and pagespeak's
-    `_initialized` flag between tests. pf-core's `get_engine()`
+    """Reset pw-core's module-level engine cache and pagespeak's
+    `_initialized` flag between tests. pw-core's `get_engine()`
     caches by global, so without this each test would see the
     previous test's engine."""
-    from pf_core.db.connection import reset_engine
+    from pw_core.db.connection import reset_engine
 
     import pagespeak._db as db_mod
 
@@ -101,7 +101,7 @@ def test_resolve_db_url_creates_default_directory_on_call(
 
 
 def test_init_db_creates_tracking_tables(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """init_db creates all pf-core tracking tables idempotently."""
+    """init_db creates all pw-core tracking tables idempotently."""
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/test.db")
     # Reset module-level state from any earlier test.
     import pagespeak._db as db_mod

@@ -19,7 +19,7 @@ import contextlib
 from collections.abc import Iterable
 from pathlib import Path
 
-from pf_core.log import get_logger
+from pw_foundation.log import get_logger
 
 from ._cleanup import heading_slug
 from ._split_filter import (

@@ -20,7 +20,7 @@ _NORMALIZE_MODEL_BASE = (
 
 def normalize_model_help() -> str:
     try:
-        from pf_core.llm.router import get_agent_config
+        from pw_core.llm.router import get_agent_config
 
         from .._agent_runtime import _ensure_router_config
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uvicorn
-from pf_core.log import get_logger
+from pw_foundation.log import get_logger
 
 from pagespeak.web import create_app
 from pagespeak.web._config import load_config

@@ -1,8 +1,8 @@
 """Wrapper-level tests for the remote-image localizer.
 
 The download / naming / retarget / SSRF mechanics live in
-`pf_core.fetch.images` + `pf_core.fetch` and are tested there. What's pinned
-here is pagespeak's side: the `PAGESPEAK_*` knobs reaching pf-core as explicit
+`pw_core.fetch.images` + `pw_core.fetch` and are tested there. What's pinned
+here is pagespeak's side: the `PAGESPEAK_*` knobs reaching pw-core as explicit
 kwargs, the on-disk filenames the vision pass and the `_local_images` mirror
 depend on, and the pipeline wiring.
 """
@@ -14,8 +14,8 @@ from email.message import Message
 from pathlib import Path
 
 import pytest
-from pf_core.exceptions import ClientError
-from pf_core.fetch import Fetcher
+from pw_core.fetch import Fetcher
+from pw_foundation.exceptions import ClientError
 
 from pagespeak.backends._remote_images import (
     _local_name,
@@ -36,7 +36,7 @@ def _http_error(code: int) -> urllib.error.HTTPError:
 
 
 class _FakeFetcher:
-    """Stands in for pf-core's Fetcher. `responses` maps url → bytes | Exception."""
+    """Stands in for pw-core's Fetcher. `responses` maps url → bytes | Exception."""
 
     def __init__(self, responses: dict[str, bytes | Exception]) -> None:
         self._responses = responses
@@ -63,7 +63,7 @@ def _patch_fetcher(
     return fetcher
 
 
-# ── _local_name (pf-core's default namer, via the alias) ───────────────────
+# ── _local_name (pw-core's default namer, via the alias) ───────────────────
 
 
 def test_local_name_joins_segments_after_images() -> None:
@@ -395,7 +395,7 @@ def test_max_bytes_reads_env(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_download_pins_env_timeout_on_every_fetch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The operator's timeout must reach pf-core's localizer, which would
+    """The operator's timeout must reach pw-core's localizer, which would
     otherwise apply its own per-call default."""
     monkeypatch.setenv("PAGESPEAK_REMOTE_IMAGE_TIMEOUT_S", "90")
     urls = ["https://x.com/images/a.png", "https://x.com/images/b.png"]
@@ -408,7 +408,7 @@ def test_download_pins_env_timeout_on_every_fetch(
 
 
 def test_download_passes_env_max_bytes_to_fetcher(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The size cap is enforced by pf-core's Fetcher, so the env value has to be
+    """The size cap is enforced by pw-core's Fetcher, so the env value has to be
     handed to its constructor."""
     from pagespeak.backends import _remote_images
 
@@ -515,8 +515,8 @@ def test_convert_html_resolves_relative_refs_with_base_url(
 def test_download_skips_ssrf_internal_url(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """An image ref pointed at a loopback/metadata IP is never fetched — the
     ref is left as-is and nothing is written. The fetcher is deliberately NOT
-    seamed out: pf-core's guard has to be live in the one this wrapper builds.
-    (Which address classes it covers is pinned in pf-core's own tests.)"""
+    seamed out: pw-core's guard has to be live in the one this wrapper builds.
+    (Which address classes it covers is pinned in pw-core's own tests.)"""
     monkeypatch.delenv("URL_FETCH_ALLOW_PRIVATE", raising=False)
 
     def _never_requested(*_a: object, **_k: object) -> object:

@@ -3,8 +3,7 @@
 `build_backend` factory, and the response → `Diagram` parsing.
 
 `_diagrams` re-exports every name here, so the public + test surface is
-unchanged. Self-contained: imports only from pf-core / models / prompts (never
-from `_diagrams`), so there is no import cycle.
+unchanged. It never imports `_diagrams`, so there is no import cycle.
 """
 
 from __future__ import annotations
@@ -15,8 +14,8 @@ import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
-from pf_core.log import get_logger
-from pf_core.utils.env import resolve_int
+from pw_foundation.log import get_logger
+from pw_foundation.utils.env import resolve_int
 
 from ..models._models import Diagram
 from ..utils._prompts import DIAGRAM_PROMPT_VERSION, render_diagram_prompt
@@ -25,7 +24,7 @@ from ._vision_media import _media_type as _media_type
 from ._vision_parse import _build_diagram
 
 if TYPE_CHECKING:
-    from pf_core.clients.claude_code import ClaudeCodeClient
+    from pw_core.clients.claude_code import ClaudeCodeClient
 
     from .._agent_runtime import AgentResult
 
@@ -75,7 +74,7 @@ class AnthropicVisionBackend:
     """Calls Anthropic's messages API with a base64-encoded image payload.
 
     Costs API credits; the default backend is `claude_code` (free, local).
-    Transport is pf-core's `AnthropicClient` (pagespeak builds the multimodal
+    Transport is pw-core's `AnthropicClient` (pagespeak builds the multimodal
     content blocks). Auth: `ANTHROPIC_API_KEY` env var or `api_key=`; a
     pre-built client can be injected via `client=` (timeouts, test mocks).
     """
@@ -88,7 +87,7 @@ class AnthropicVisionBackend:
         api_key: str | None = None,
     ) -> None:
         # Model resolution: explicit `model=` > YAML (bundled copy = the floor).
-        from pf_core.llm.router import get_agent_config
+        from pw_core.llm.router import get_agent_config
 
         cfg = get_agent_config("vision", backend="anthropic", model_override=model)
         self._model = cfg["model"]
@@ -99,9 +98,9 @@ class AnthropicVisionBackend:
                     "Anthropic backend requires an API key. Set "
                     "ANTHROPIC_API_KEY or pass `api_key=` to the constructor."
                 )
-            from pf_core.clients.anthropic import AnthropicClient as _AnthropicClient
+            from pw_core.clients.anthropic import AnthropicClient as _AnthropicClient
 
-            # retry=1: one pf-core retry after the SDK's own retries are exhausted.
+            # retry=1: one pw-core retry after the SDK's own retries are exhausted.
             client = _AnthropicClient(api_key=resolved_key, model=self._model, retry=1)
         self._client = client
 
@@ -162,7 +161,7 @@ class ClaudeCodeVisionBackend:
     """Routes vision calls through the local `claude --print` CLI.
 
     $0 per call (active Claude Code session), ~1-3s per image vs ~500ms direct
-    API, needs the `claude` binary on PATH. Transport is pf-core's
+    API, needs the `claude` binary on PATH. Transport is pw-core's
     `ClaudeCodeClient`, which runs the subprocess with `--safe-mode` by default
     so the cwd project's CLAUDE.md/skills can't hijack a caption.
 
@@ -181,7 +180,7 @@ class ClaudeCodeVisionBackend:
         client: ClaudeCodeClient | None = None,
     ) -> None:
         # Model resolution: explicit `model=` > YAML (bundled copy = the floor).
-        from pf_core.llm.router import get_agent_config
+        from pw_core.llm.router import get_agent_config
 
         cfg = get_agent_config("vision", backend="claude_code", model_override=model)
         self._model = cfg["model"]
@@ -189,7 +188,7 @@ class ClaudeCodeVisionBackend:
         # message here, not deep inside chat().
         binary_arg = claude_bin or "binary-not-resolved-yet"
         if client is None:
-            from pf_core.clients.claude_code import ClaudeCodeClient as _ClaudeCodeClient
+            from pw_core.clients.claude_code import ClaudeCodeClient as _ClaudeCodeClient
 
             resolved_bin = claude_bin or shutil.which("claude")
             if not resolved_bin:
@@ -198,10 +197,9 @@ class ClaudeCodeVisionBackend:
                     "https://claude.com/claude-code or pass an explicit `claude_bin`."
                 )
             binary_arg = resolved_bin
-            # Model goes per-call via chat(model=...) (older pf-core lacks the
-            # ctor kwarg); retry=1 = pf-core retries transients internally.
-            # The prompt has the model Read the image, and pf-core 0.23 loads no
-            # tools unless named; --tools in extra_args names it on 0.22 as well.
+            # Model goes per-call via chat(model=...); retry=1 = pw-core retries
+            # transients internally. The prompt has the model Read the image, and
+            # the client loads no tools unless named.
             client = _ClaudeCodeClient(
                 timeout=_claude_code_timeout_s(),
                 binary=resolved_bin,
@@ -225,10 +223,10 @@ class ClaudeCodeVisionBackend:
     ) -> AgentResult:
         """One chat invocation via `invoke_agent` (captures the llm_runs row).
 
-        pf-core retries transients internally (`retry=1`); raises RuntimeError
+        pw-core retries transients internally (`retry=1`); raises RuntimeError
         naming model + stdout + stderr_head when both attempts fail.
         """
-        from pf_core.exceptions import AppError
+        from pw_foundation.exceptions import AppError
 
         from .._agent_runtime import invoke_agent
 
@@ -243,10 +241,10 @@ class ClaudeCodeVisionBackend:
                 client_override=self._client,
                 metadata={"image_basename": image_name, "image_phash": phash},
             )
-            assert isinstance(result.content, str)  # pf-core's chat() contract
+            assert isinstance(result.content, str)  # pw-core's chat() contract
             return result
         except AppError as e:
-            # Surface pf-core's stderr_head + returncode inline in the message.
+            # Surface pw-core's stderr_head + returncode inline in the message.
             ctx = getattr(e, "context", {}) or {}
             stderr_head = ctx.get("stderr_head", "")
             returncode = ctx.get("returncode", "?")

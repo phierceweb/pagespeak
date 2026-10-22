@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import pf_core.db.connection as conn_mod
+import pw_core.db.connection as conn_mod
 import pytest
 from fastapi.testclient import TestClient
 

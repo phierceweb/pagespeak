@@ -4,7 +4,7 @@ One job = one ``pagespeak convert`` subprocess covering the job's phase
 slice, run with ``PAGESPEAK_JOB_ID`` set so LLM rows attribute to the job.
 Progress is read from on-disk checkpoints by the scanner. The runtime —
 claim loop, subprocess lifecycle, cancel with SIGKILL escalation,
-stale-lease reclaim at startup — is ``pf_core.jobs.workers``; this module
+stale-lease reclaim at startup — is ``pw_core.jobs.workers``; this module
 supplies the conversion-domain :class:`SubprocessJobSpec`.
 """
 
@@ -13,14 +13,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from pf_core.jobs.workers import (  # noqa: F401 — re-exports for web/__init__ + actions
+from pw_core.jobs.workers import (  # noqa: F401 — re-exports for web/__init__ + actions
     SubprocessJobSpec,
     WorkerHandle,
     run_subprocess_job,
     stop_workers,
     terminate_job,
 )
-from pf_core.jobs.workers import start_workers as _pf_start_workers
+from pw_core.jobs.workers import start_workers as _pw_start_workers
 
 from pagespeak.web._command import build_command, log_path, resolve_pagespeak_bin
 from pagespeak.web._config import WebConfig
@@ -80,7 +80,7 @@ def run_job(job_row: dict[str, Any]) -> None:
 def start_workers(cfg: WebConfig) -> WorkerHandle:
     """Register the kind and start ``cfg.concurrency`` claim-loop workers."""
     register_conversion_kind()
-    return _pf_start_workers(
+    return _pw_start_workers(
         kinds=[CONVERSION_KIND],
         run=run_job,
         concurrency=cfg.concurrency,

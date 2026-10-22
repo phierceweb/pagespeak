@@ -178,16 +178,16 @@ def test_security_md_discloses_tracked_payloads() -> None:
 
 
 def test_security_md_states_ssrf_rebinding_limit() -> None:
-    """pf-core documents its SSRF guard as rebinding-defeatable; SECURITY.md must not overclaim."""
-    from pf_core.utils import url_safety
+    """pw-core documents its SSRF guard as rebinding-defeatable; SECURITY.md must not overclaim."""
+    from pw_core.utils import url_safety
 
     assert "Not TOCTOU-safe" in (url_safety.__doc__ or ""), (
-        "pf-core's SSRF guard changed — re-check the SECURITY.md remote-fetch claim"
+        "pw-core's SSRF guard changed — re-check the SECURITY.md remote-fetch claim"
     )
     section = _security_section("### Remote image fetching")
     assert "rebinding" in section.lower(), (
         "SECURITY.md must state the SSRF check is not DNS-rebinding-proof"
     )
     assert "cannot steer" not in section, (
-        "SECURITY.md overclaims the SSRF guard as absolute; pf-core disclaims that"
+        "SECURITY.md overclaims the SSRF guard as absolute; pw-core disclaims that"
     )

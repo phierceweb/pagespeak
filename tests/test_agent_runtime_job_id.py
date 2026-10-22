@@ -1,20 +1,20 @@
 from __future__ import annotations
 
-import pf_core.db.connection as conn_mod
+import pw_core.db.connection as conn_mod
 import pytest
 
 
 @pytest.fixture(autouse=True)
 def _reset_runtime_state():
-    """Clear pf-core resolver caches + DB-init flag + engine between tests.
+    """Clear pw-core resolver caches + DB-init flag + engine between tests.
 
     Without this, `agent_type_id` / `model_id` resolved against one test's
     SQLite DB are cached and cause FK failures in the next test's fresh DB.
     Mirrors the identical fixture in `test_agent_runtime.py`.
     """
-    from pf_core.db.connection import reset_engine
-    from pf_core.jobs import clear_registry
-    from pf_core.llm.tracking import clear_resolver_caches as _clear_resolver_caches
+    from pw_core.db.connection import reset_engine
+    from pw_core.jobs import clear_registry
+    from pw_core.llm.tracking import clear_resolver_caches as _clear_resolver_caches
 
     import pagespeak._db as db_mod
 
@@ -45,7 +45,7 @@ def test_job_id_from_env_is_recorded(monkeypatch, tmp_path):
     db._initialized = False
     db.init_db()
 
-    from pf_core.jobs import JobRepo, clear_registry, register_kind
+    from pw_core.jobs import JobRepo, clear_registry, register_kind
 
     clear_registry()
     register_kind(kind="job_attr_test")
@@ -64,7 +64,7 @@ def test_job_id_from_env_is_recorded(monkeypatch, tmp_path):
     run_id = _res.run_id
     assert run_id is not None
 
-    from pf_core.llm.tracking import LlmRunRepo
+    from pw_core.llm.tracking import LlmRunRepo
 
     row = LlmRunRepo().get(run_id)
     assert row is not None
@@ -81,7 +81,7 @@ def test_no_job_id_env_is_none(monkeypatch, tmp_path):
     db._initialized = False
     db.init_db()
 
-    from pf_core.jobs import clear_registry, register_kind
+    from pw_core.jobs import clear_registry, register_kind
 
     clear_registry()
     register_kind(kind="job_attr_test")
@@ -95,7 +95,7 @@ def test_no_job_id_env_is_none(monkeypatch, tmp_path):
         client_override=_FakeClient(),
     )
     run_id = _res.run_id
-    from pf_core.llm.tracking import LlmRunRepo
+    from pw_core.llm.tracking import LlmRunRepo
 
     row = LlmRunRepo().get(run_id)
     assert row is not None

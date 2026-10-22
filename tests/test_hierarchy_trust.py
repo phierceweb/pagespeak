@@ -273,6 +273,7 @@ class TestStructuredFlagIsProvenanceNotIntent:
     output's structure is inferred."""
 
     def test_markitdown_fallback_is_not_authoritative(self, tmp_path, monkeypatch):
+        pytest.importorskip("docx")
         import pagespeak.backends._docx_structured as mod
         from pagespeak.models._models import IngestResult
 

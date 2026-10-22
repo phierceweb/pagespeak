@@ -6,7 +6,7 @@
 #
 # Per-agent model + sampling config for pagespeak's LLM-calling tasks.
 #
-# Read by pf-core's model router (`pf_core.llm.router`); pagespeak's
+# Read by pw-core's model router (`pw_core.llm.router`); pagespeak's
 # `_agent_runtime` seam points the router at this bundled copy when no
 # override is present. Nested schema — each task declares a model per
 # backend:
@@ -55,7 +55,7 @@ agents:
         max_tokens: 2048
         # Anthropic's strict mode for Haiku 4.5 rejects sending both
         # `temperature` AND `top_p`. Keep `temperature` (set per-call /
-        # via pf-core default 0.2), drop `top_p` (set null → pf-core's
+        # via pw-core default 0.2), drop `top_p` (set null → pw-core's
         # conditional-include omits it from the API body).
         top_p: null
       openrouter:
@@ -130,7 +130,7 @@ agents:
       anthropic:
         # Direct Anthropic API. Opus 4.8 is a reasoning model that
         # rejects `temperature` and `top_p` — set both to null to
-        # opt out (pf-core's AnthropicClient drops `None` kwargs from
+        # opt out (pw-core's AnthropicClient drops `None` kwargs from
         # the API call body). Swap model to `claude-sonnet-4-6` (or
         # similar non-reasoning model) and the temperature/top_p
         # opt-out can stay or be removed; both are accepted there.

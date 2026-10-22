@@ -8,7 +8,7 @@ single phase runnable in isolation: give it a valid input checkpoint,
 run it, read its output checkpoint.
 
 The concrete pipeline phases live one-per-stage and are sequenced by
-`pf_core.pipeline.sequencer.run_pipeline`. pf-core's `Phase` protocol is
+`pw_core.pipeline.sequencer.run_pipeline`. pw-core's `Phase` protocol is
 just `name` + `run`; this one adds `is_fresh` — pagespeak's resume
 convention, consumed by the `skip_fresh` closure at the dispatch call
 site.

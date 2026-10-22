@@ -13,7 +13,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from pf_core.log import get_logger
+from pw_foundation.log import get_logger
 
 from ..utils._phash import cluster_phashes, compute_phash
 from ._image_refs import ImageRef, replace_image_refs

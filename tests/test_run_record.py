@@ -1,10 +1,10 @@
 """Binding test for `pagespeak.services._run_record`.
 
 The substantive behavior (file_sha256, run-record schema, atomic write,
-streaming-hash correctness) is exercised in pf-core's
+streaming-hash correctness) is exercised in pw-core's
 `test_pipeline_run_record.py`. This module pins the pagespeak-specific
 binding only: `RUN_RECORD_FILENAME == ".pagespeak-run.json"` is what
-the shim passes through to pf-core, and `write_run_record` writes to
+the shim passes through to pw-core, and `write_run_record` writes to
 that exact name.
 """
 
@@ -65,7 +65,7 @@ def test_read_run_record_non_dict_returns_none(tmp_path: Path) -> None:
 
 
 def test_write_run_record_uses_pagespeak_filename(tmp_path: Path) -> None:
-    """The shim must write to `.pagespeak-run.json`, not pf-core's default."""
+    """The shim must write to `.pagespeak-run.json`, not pw-core's default."""
     src = tmp_path / "doc.pdf"
     src.write_bytes(b"fake pdf bytes")
     out = tmp_path / "out"

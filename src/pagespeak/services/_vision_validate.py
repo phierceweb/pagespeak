@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from pf_core.llm.parse import truncated_from_usage
-from pf_core.llm.validate import (
+from pw_core.llm.parse import truncated_from_usage
+from pw_core.llm.validate import (
     ValidationResult,
     ValidationSignal,
     cross_field_validator,
@@ -17,7 +17,7 @@ from pf_core.llm.validate import (
     parse_and_validate,
     register,
 )
-from pf_core.log import get_logger
+from pw_foundation.log import get_logger
 
 logger = get_logger(__name__)
 
@@ -58,7 +58,7 @@ def _vision_response_complete(parsed: Any, *, context: dict[str, Any]) -> list[V
 
 
 def ensure_registered() -> None:
-    """Idempotent — pf-core's registry is global and tests clear it."""
+    """Idempotent — pw-core's registry is global and tests clear it."""
     if has_pipeline("vision"):
         return
     register("vision", cross_field=[_VALIDATOR], schema_version=_SCHEMA_VERSION)

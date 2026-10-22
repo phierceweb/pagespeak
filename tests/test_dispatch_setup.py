@@ -28,7 +28,7 @@ def _converted_dir(base: Path, *, version: str) -> Path:
 
 def test_baseline_is_taken_before_invalidation_deletes_sections(tmp_path: Path) -> None:
     """The auto-baseline exists to preserve the previous version's output across
-    a destructive re-run. Invalidating first removes `sections/`, and pf-core
+    a destructive re-run. Invalidating first removes `sections/`, and pw-core
     skips a snapshot whose sections are gone — so the one run that needs the
     backup is exactly the run that never gets one."""
     import pagespeak

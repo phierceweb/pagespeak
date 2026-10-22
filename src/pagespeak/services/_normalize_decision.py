@@ -31,8 +31,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from pf_core.log import get_logger
-from pf_core.utils.env import resolve_str
+from pw_foundation.log import get_logger
+from pw_foundation.utils.env import resolve_str
 
 from ._heading_normalize import (
     NormalizeMode,

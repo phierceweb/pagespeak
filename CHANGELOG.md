@@ -2,6 +2,11 @@
 
 Notable changes to pagespeak, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## 0.19.0
+
+### Changed
+- Requires `pw-foundation ~=1.0` and `pw-core ~=0.27.0`, the renamed and split `pf-core`.
+
 ## 0.18.0
 
 ### Fixed

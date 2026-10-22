@@ -20,7 +20,7 @@ jobs:
       - name: mypy strict
         run: mypy src
       - name: structural gate
-        run: python -m pf_core.guards
+        run: python -m pw_foundation.guards
 
   # CI never installs the torch-heavy extras, so resolve every extra together
   # here — a dependency conflict in one would otherwise ship unseen.

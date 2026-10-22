@@ -7,7 +7,7 @@ whether each heading is real; the levels it arrives with are preserved.
 
 from __future__ import annotations
 
-from pf_core.llm.prompts import render_spec
+from pw_core.llm.prompts import render_spec
 
 from ._loader import load_pagespeak_spec
 

@@ -30,7 +30,7 @@ agents:
 @pytest.fixture
 def _routed(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     """Point the router at a config with distinctive model names."""
-    from pf_core.llm.router import clear_cache
+    from pw_core.llm.router import clear_cache
 
     cfg = tmp_path / "router.yaml"
     cfg.write_text(_YAML, encoding="utf-8")
@@ -56,7 +56,7 @@ def test_help_survives_an_unreadable_router(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """A broken config must not break `--help`."""
-    from pf_core.llm.router import clear_cache
+    from pw_core.llm.router import clear_cache
 
     bad = tmp_path / "broken.yaml"
     bad.write_text("{{{ not yaml", encoding="utf-8")

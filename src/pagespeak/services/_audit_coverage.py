@@ -16,7 +16,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from pf_core.utils.env import resolve_int
+from pw_foundation.utils.env import resolve_int
 
 from ._audit_checks import AuditFinding
 

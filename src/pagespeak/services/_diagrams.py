@@ -16,8 +16,8 @@ import contextvars
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from pf_core.log import get_logger
-from pf_core.utils.env import resolve_int
+from pw_foundation.log import get_logger
+from pw_foundation.utils.env import resolve_int
 
 from ..models._models import Diagram, IngestResult
 from ._vision_backends import (
@@ -88,7 +88,7 @@ def _resolve_concurrency(concurrency: int | None) -> int:
     """Pick the per-image worker pool size. Explicit arg > env var > default 6.
 
     Empty / non-numeric env var values fall back to the default with a
-    structured `env_var_malformed` warning (via `pf_core.utils.env`) so
+    structured `env_var_malformed` warning (via `pw_foundation.utils.env`) so
     a typo doesn't accidentally serialize the pass. Result is clamped to
     `>= 1` so an explicit `0` / negative arg doesn't deadlock the pool.
     """
@@ -301,7 +301,7 @@ def gather_diagrams(
 
     log_every = max(10, total // 20)
 
-    # Submit each worker under a fresh context copy so pf-core's ContextVar
+    # Submit each worker under a fresh context copy so pw-core's ContextVar
     # recording window stays visible (workers append to the shared window
     # list). Fresh copy per submit — one Context can't be entered concurrently.
     with ThreadPoolExecutor(max_workers=workers) as ex:

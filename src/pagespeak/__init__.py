@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import os as _os
 
-from pf_core.log import setup_logging as _setup_logging
+from pw_foundation.log import setup_logging as _setup_logging
 
-# Configure pf-core's structlog bridge BEFORE the sub-imports: their get_logger
+# Configure pw-foundation's structlog bridge BEFORE the sub-imports: their get_logger
 # calls lazy-init setup_logging (first caller wins), so bind the `pagespeak`
 # root here. Library users may call setup_logging() before importing.
 _setup_logging(
@@ -14,7 +14,7 @@ _setup_logging(
     app_logger_name="pagespeak",
 )
 
-# Router-config bootstrap: importing the seam points pf-core's model router
+# Router-config bootstrap: importing the seam points pw-core's model router
 # at the packaged model_router.yaml when neither MODEL_ROUTER_CONFIG nor a
 # cwd config/ exists (wheel installs). Package-init placement guarantees it
 # runs before any caller resolves a model.
@@ -39,7 +39,7 @@ from .services._heading_normalize import (  # noqa: E402
 )
 from .services._rerun import RERUN_STAGES  # noqa: E402
 
-__version__ = "0.18.0"
+__version__ = "0.19.0"
 __all__ = [
     "ChunkState",
     "CleanupLevel",

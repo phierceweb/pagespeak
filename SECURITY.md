@@ -42,12 +42,12 @@ pagespeak's own handling of these inputs has three limits:
 
 ### Remote image fetching is SSRF-guarded (on by default)
 
-HTML conversion downloads remote `<img>` URLs so the vision pass can see the figures (`PAGESPEAK_DOWNLOAD_REMOTE_IMAGES=1`, the default). Because the source HTML may be untrusted, the fetch runs through pf-core's guarded fetch core (`pf_core.fetch`), which **accepts only `http`/`https` URLs, refuses any URL that resolves to a private, loopback, link-local, reserved, multicast, or unspecified address, fails closed on hosts it cannot resolve, and re-checks every redirect hop** — so a document cannot simply name `localhost`, a private-network host, or a cloud metadata endpoint (e.g. `169.254.169.254`) and have it fetched. Each response is also size-capped (`PAGESPEAK_REMOTE_IMAGE_MAX_BYTES`): an oversized figure is abandoned mid-read and its ref left remote.
+HTML conversion downloads remote `<img>` URLs so the vision pass can see the figures (`PAGESPEAK_DOWNLOAD_REMOTE_IMAGES=1`, the default). Because the source HTML may be untrusted, the fetch runs through pw-core's guarded fetch core (`pw_core.fetch`), which **accepts only `http`/`https` URLs, refuses any URL that resolves to a private, loopback, link-local, reserved, multicast, or unspecified address, fails closed on hosts it cannot resolve, and re-checks every redirect hop** — so a document cannot simply name `localhost`, a private-network host, or a cloud metadata endpoint (e.g. `169.254.169.254`) and have it fetched. Each response is also size-capped (`PAGESPEAK_REMOTE_IMAGE_MAX_BYTES`): an oversized figure is abandoned mid-read and its ref left remote.
 
 **The check is not DNS-rebinding-proof.** It validates the addresses a host resolves to *at check time*; the HTTP client resolves the host again when it connects, and pagespeak does not pin the connection to the vetted addresses. A hostile host with a short-TTL record that alternates between a public and an internal address can therefore still be reached. Convert untrusted HTML with network isolation, or set `PAGESPEAK_DOWNLOAD_REMOTE_IMAGES=0`.
 
 - Set `PAGESPEAK_DOWNLOAD_REMOTE_IMAGES=0` to disable remote fetching entirely.
-- The address check has a deliberate opt-out: pf-core's `URL_FETCH_ALLOW_PRIVATE=1` allows non-public targets (for operators who intentionally fetch internal hosts). Do not set it while converting untrusted documents — the scheme check still applies, but nothing else does.
+- The address check has a deliberate opt-out: pw-core's `URL_FETCH_ALLOW_PRIVATE=1` allows non-public targets (for operators who intentionally fetch internal hosts). Do not set it while converting untrusted documents — the scheme check still applies, but nothing else does.
 
 ### API keys and secrets
 

@@ -140,7 +140,7 @@ def main() -> None:
     try:
         init_db()
     except Exception as exc:
-        from pf_core.log import get_logger
+        from pw_foundation.log import get_logger
 
         get_logger(__name__).warning(
             "pagespeak_db_init_failed error=%r — LLM call tracking disabled this run", exc

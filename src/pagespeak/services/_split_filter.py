@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from pf_core.log import get_logger
+from pw_foundation.log import get_logger
 
 from ._heading_sanity import is_toc_phantom_heading
 from ._split_parse import _PAGE_ANCHOR_LINE_RE, _Collision, _Section

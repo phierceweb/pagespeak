@@ -7,7 +7,7 @@ from importlib import metadata
 from pathlib import Path
 from typing import Any
 
-from pf_core.log import get_logger
+from pw_foundation.log import get_logger
 
 from ..models._models import IngestResult
 from ..services._image_refs import ImageRef, replace_image_refs

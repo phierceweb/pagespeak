@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import pf_core.db.connection as conn_mod
+import pw_core.db.connection as conn_mod
 from fastapi.testclient import TestClient
 
 from pagespeak.web import create_app
@@ -192,7 +192,7 @@ def test_partial_phase_strip_renders(monkeypatch, tmp_path):
 
 def test_partial_job_status_renders(monkeypatch, tmp_path):
     client, conv = _client(monkeypatch, tmp_path)
-    from pf_core.jobs import JobRepo
+    from pw_core.jobs import JobRepo
 
     from pagespeak.web._jobs import CONVERSION_KIND
 

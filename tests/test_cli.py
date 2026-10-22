@@ -22,7 +22,7 @@ def _plain(output: str) -> str:
     validation error becomes an ANSI-colored, box-bordered, 80-col-wrapped
     panel — a naive substring check then fails because rich split the
     message across a box border. Normalizing before the assert makes these
-    checks CI-robust (mirrors pf-core's own fix).
+    checks CI-robust (mirrors pw-core's own fix).
     """
     return re.sub(r"\s+", " ", _RICH_DECORATION_RE.sub(" ", output))
 
@@ -142,17 +142,17 @@ def test_cli_convert_passes_pdf_backend_to_to_markdown(tmp_path: Path) -> None:
 
 
 def test_pagespeak_logger_has_console_handler_attached() -> None:
-    """After importing pagespeak, the `pagespeak` logger root has pf-core's
+    """After importing pagespeak, the `pagespeak` logger root has pw-foundation's
     structlog console handler attached. Bootstrapping runs in
     `pagespeak/__init__.py` (which fires before
     any service module's top-level `logger = get_logger(__name__)` would
-    lazily trigger pf-core's `setup_logging` with the wrong app_logger_name).
+    lazily trigger pw-foundation's `setup_logging` with the wrong app_logger_name).
     """
     pagespeak_logger = logging.getLogger("pagespeak")
     # Configured DEBUG so children propagate everything; handler does
-    # the actual level filtering (see pf-core's setup_logging).
+    # the actual level filtering (see pw-foundation's setup_logging).
     assert pagespeak_logger.level == logging.DEBUG
-    assert pagespeak_logger.handlers, "expected pf-core's StreamHandler"
+    assert pagespeak_logger.handlers, "expected pw-foundation's StreamHandler"
 
     # A pagespeak module-level logger should inherit through propagation —
     # no own handler, propagate=True, parent='pagespeak'.

@@ -26,8 +26,8 @@ from __future__ import annotations
 
 import re
 
-from pf_core.log import get_logger
-from pf_core.utils.env import resolve_int
+from pw_foundation.log import get_logger
+from pw_foundation.utils.env import resolve_int
 
 from ._fences import fence_flags
 
@@ -45,7 +45,7 @@ _ORPHAN_H1_RATIO_THRESHOLD_ENV_VAR = "PAGESPEAK_ORPHAN_H1_RATIO_THRESHOLD"
 
 def _orphan_h1_ratio_threshold() -> int:
     """Read `PAGESPEAK_ORPHAN_H1_RATIO_THRESHOLD` at call time; fall back
-    to default. Pf-core's `resolve_int` emits an `env_var_malformed`
+    to default. pw-foundation's `resolve_int` emits an `env_var_malformed`
     warning + uses default on a non-integer value.
     """
     n: int = resolve_int(

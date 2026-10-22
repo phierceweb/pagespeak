@@ -24,7 +24,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from pf_core.log import get_logger
+from pw_foundation.log import get_logger
 
 from ..services._fences import fence_flags
 

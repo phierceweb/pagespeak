@@ -1,13 +1,13 @@
-"""Pagespeak DB configuration — thin wrapper over pf-core's connection helpers.
+"""Pagespeak DB configuration — thin wrapper over pw-core's connection helpers.
 
 All LLM call tracking writes to whatever DB the standard `DATABASE_URL`
 env var points at — SQLite by default (file in `~/.pagespeak/`),
 Postgres or MySQL by setting `DATABASE_URL=postgresql://...` or
-`mysql+pymysql://...`. pf-core's SQLAlchemy abstraction handles all
+`mysql+pymysql://...`. pw-core's SQLAlchemy abstraction handles all
 three transparently.
 
 `init_db()` is idempotent: safe to call multiple times. It creates
-pf-core's tracking schema (`llm_runs`, `llm_models`, `llm_agent_types`,
+pw-core's tracking schema (`llm_runs`, `llm_models`, `llm_agent_types`,
 `llm_prompts`, `llm_run_payloads`, `llm_run_configs`,
 `llm_run_outcomes`, `llm_run_metrics`, plus related tables) if absent.
 Pagespeak's CLI entry point calls it once from `cli.main()`.
@@ -24,10 +24,10 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pf_core.db.connection import (
-    get_engine as _pf_get_engine,
+from pw_core.db.connection import (
+    get_engine as _pw_get_engine,
 )
-from pf_core.log import get_logger
+from pw_foundation.log import get_logger
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Engine
@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 # Module-level flag — `_agent_runtime._write_run_row()` checks this
-# before attempting any pf-core tracking write. Library consumers that
+# before attempting any pw-core tracking write. Library consumers that
 # never call `init_db()` get tracking-as-no-op for free.
 _initialized = False
 
@@ -88,16 +88,16 @@ def _redact_db_url(url: str) -> str:
 def get_engine() -> Engine:
     """Return the SQLAlchemy engine for the configured DB URL.
 
-    Delegates to `pf_core.db.connection.get_engine`, which caches the
-    engine per-process. Call `pf_core.db.connection.reset_engine()`
+    Delegates to `pw_core.db.connection.get_engine`, which caches the
+    engine per-process. Call `pw_core.db.connection.reset_engine()`
     between tests that switch URLs.
     """
-    engine: Engine = _pf_get_engine(resolve_db_url())
+    engine: Engine = _pw_get_engine(resolve_db_url())
     return engine
 
 
 def init_db() -> None:
-    """Create pf-core's tracking schema if absent. Idempotent.
+    """Create pw-core's tracking schema if absent. Idempotent.
 
     Called once from `cli.main()` at CLI startup. Library consumers
     that want tracking enabled should call this before their first
@@ -107,7 +107,7 @@ def init_db() -> None:
     global _initialized
     if _initialized:
         return
-    from pf_core.llm.tracking import metadata
+    from pw_core.llm.tracking import metadata
 
     engine = get_engine()
     metadata.create_all(engine)

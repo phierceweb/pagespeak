@@ -23,7 +23,7 @@ def _doc_name(job: dict[str, Any]) -> str:
 
 @router.get("/queue", response_class=HTMLResponse)
 async def queue(request: Request) -> HTMLResponse:
-    from pf_core.jobs import JobRepo
+    from pw_core.jobs import JobRepo
 
     from pagespeak.web._jobs import CONVERSION_KIND
 
@@ -55,7 +55,7 @@ async def actions(request: Request, dir_name: str) -> HTMLResponse:
 def render_job_status(request: Request, job_id: int) -> HTMLResponse:
     """Live status line for one job — shared by the run endpoint (initial
     render into #run-result) and the /job/{id} self-poll."""
-    from pf_core.jobs import JobRepo
+    from pw_core.jobs import JobRepo
 
     job = JobRepo().get(job_id)
     if job is None:
@@ -135,7 +135,7 @@ async def llm(request: Request, dir_name: str) -> HTMLResponse:
     if conv is None:
         return HTMLResponse("")
 
-    from pf_core.jobs import JobRepo
+    from pw_core.jobs import JobRepo
 
     from pagespeak.web._jobs import CONVERSION_KIND
 
@@ -161,7 +161,7 @@ def _runs_for_job(job_id: int) -> dict[str, float | int]:
     # job_detail's runs_summary aggregates count + total_cost in SQL, so it
     # stays accurate even when a job has thousands of LLM runs (a big vision
     # pass) — unlike summing a capped list_runs() page.
-    from pf_core.web.llm_admin.queries import job_detail
+    from pw_core.web.llm_admin.queries import job_detail
 
     detail = job_detail(job_id) or {}
     summary = detail.get("runs_summary") or {}

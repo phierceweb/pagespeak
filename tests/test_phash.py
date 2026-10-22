@@ -1,4 +1,4 @@
-"""pagespeak's phash shim relies on pf-core's format allowlist for untrusted images."""
+"""pagespeak's phash shim relies on pw-core's format allowlist for untrusted images."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ def _write_psd(path: Path) -> None:
 
 
 def test_compute_phash_refuses_psd_named_png(tmp_path: Path) -> None:
-    """A PSD inside a document never reaches Pillow's PSD decoder (pf-core 0.24.1 floor)."""
+    """A PSD inside a document never reaches Pillow's PSD decoder."""
     target = tmp_path / "image1.png"
     _write_psd(target)
     with pytest.raises(UnidentifiedImageError):

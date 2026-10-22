@@ -118,7 +118,7 @@ def test_env_var_default_is_five() -> None:
 
 
 def test_invalid_env_value_falls_back_to_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Malformed env values should not crash — pf-core's resolve_int warns + defaults."""
+    """Malformed env values should not crash — pw-foundation's resolve_int warns + defaults."""
     monkeypatch.setenv("PAGESPEAK_FLAT_H1_THRESHOLD", "not-an-int")
     assert _flat_h1_threshold() == _FLAT_H1_THRESHOLD_DEFAULT
 

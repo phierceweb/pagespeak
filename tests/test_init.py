@@ -48,5 +48,5 @@ def test_changelog_newest_section_matches_version() -> None:
 
 
 def test_python_is_312_plus() -> None:
-    """`requires-python >= 3.12` — pf-core 0.20 sets the floor."""
+    """`requires-python >= 3.12` — pw-foundation and pw-core set the floor."""
     assert sys.version_info >= (3, 12)

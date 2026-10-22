@@ -1,6 +1,6 @@
-"""Tests for `pagespeak.prompts._loader` — spec loading via pf-core.
+"""Tests for `pagespeak.prompts._loader` — spec loading via pw-core.
 
-`load_pagespeak_spec` delegates to `pf_core.llm.prompts.load_prompt`; these
+`load_pagespeak_spec` delegates to `pw_core.llm.prompts.load_prompt`; these
 tests pin pagespeak's contract: the env var name (`PAGESPEAK_PROMPTS_DIR`),
 the CWD `config/prompts/` override location, and the bundled fallback.
 

@@ -20,7 +20,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from pf_core.utils.slugify import slugify
+from pw_foundation.utils.slugify import slugify
 
 from ._run_record import file_sha256, read_run_record
 
@@ -51,7 +51,7 @@ def clean_source_label(stem: str) -> str:
 
 
 def source_id_from_name(name: str) -> str:
-    """Stable machine slug of a source filename (pf-core ``slugify`` of
+    """Stable machine slug of a source filename (pw-foundation ``slugify`` of
     the stem). The cross-conversion join key for one source work (stays
     constant however the out-dir is named)."""
     stem = Path(name).stem if name else ""

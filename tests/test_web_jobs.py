@@ -11,7 +11,7 @@ from pagespeak.web._jobs import (
 
 
 def test_register_is_idempotent():
-    from pf_core.jobs import clear_registry, get_kind
+    from pw_core.jobs import clear_registry, get_kind
 
     clear_registry()
     register_conversion_kind()

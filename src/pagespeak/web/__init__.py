@@ -30,10 +30,10 @@ def create_app(*, start_worker: bool = True) -> FastAPI:
         start_worker: Start the in-process conversion worker on startup.
             Tests pass ``False``.
     """
-    from pf_core.web.app_factory import create_app as pf_create_app
-    from pf_core.web.health import health_router
-    from pf_core.web.llm_admin import make_admin_router
-    from pf_core.web.templates import setup_templates
+    from pw_core.web.app_factory import create_app as pw_create_app
+    from pw_core.web.health import health_router
+    from pw_core.web.llm_admin import make_admin_router
+    from pw_core.web.templates import setup_templates
 
     cfg = load_config()
     init_web_db()
@@ -53,7 +53,7 @@ def create_app(*, start_worker: bool = True) -> FastAPI:
             if handle is not None:
                 stop_workers(handle)
 
-    _raw: Any = pf_create_app(
+    _raw: Any = pw_create_app(
         title="pagespeak console",
         version=__version__,
         static_dir=_STATIC,
@@ -73,8 +73,8 @@ def create_app(*, start_worker: bool = True) -> FastAPI:
 
     app.include_router(health_router())
     # templates=None → admin uses its own packaged templates dir.
-    # allow_unauthenticated → localhost dev console; pf-core >=0.2.3 requires
-    # the explicit opt-in to mount an admin with auth_dep=None.
+    # allow_unauthenticated → localhost dev console; pw-core requires the
+    # explicit opt-in to mount an admin with auth_dep=None.
     app.include_router(
         make_admin_router(
             auth_dep=None,

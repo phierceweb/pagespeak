@@ -8,10 +8,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from pf_core.log import get_logger
-from pf_core.pipeline.sequencer import Phase as SequencedPhase
-from pf_core.pipeline.sequencer import run_pipeline
-from pf_core.utils.io import atomic_write_text
+from pw_core.pipeline.sequencer import Phase as SequencedPhase
+from pw_core.pipeline.sequencer import run_pipeline
+from pw_foundation.log import get_logger
+from pw_foundation.utils.io import atomic_write_text
 
 from ..backends._docx_dispatch import DEFAULT_DOCX_BACKEND, DocxBackendName
 from ..backends._pdf_dispatch import DEFAULT_PDF_BACKEND, PdfBackendName

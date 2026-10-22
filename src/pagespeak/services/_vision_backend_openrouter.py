@@ -20,7 +20,7 @@ from ._vision_media import _media_type
 from ._vision_parse import _build_diagram
 
 if TYPE_CHECKING:
-    from pf_core.clients.openrouter import OpenRouterClient
+    from pw_core.clients.openrouter import OpenRouterClient
 
 
 class OpenRouterVisionBackend:
@@ -31,8 +31,8 @@ class OpenRouterVisionBackend:
     pagespeak's vision pass to ride the same auth + invoicing lane.
 
     Currently the transport layer is
-    `pf_core.clients.openrouter.OpenRouterClient`. Pagespeak retains the
-    multimodal content-block construction; pf-core owns the HTTP call.
+    `pw_core.clients.openrouter.OpenRouterClient`. Pagespeak retains the
+    multimodal content-block construction; pw-core owns the HTTP call.
 
     Trade-offs:
         - ~5-10% markup on credits vs direct Anthropic API
@@ -67,8 +67,8 @@ class OpenRouterVisionBackend:
         if model is not None:
             self._model = model
         else:
-            from pf_core.exceptions import ConfigurationError
-            from pf_core.llm.router import get_agent_config
+            from pw_core.llm.router import get_agent_config
+            from pw_foundation.exceptions import ConfigurationError
 
             try:
                 cfg = get_agent_config("vision", backend="openrouter")
@@ -82,9 +82,9 @@ class OpenRouterVisionBackend:
                     "OpenRouter backend requires an API key. Set "
                     "OPENROUTER_API_KEY or pass `api_key=` to the constructor."
                 )
-            from pf_core.clients.openrouter import OpenRouterClient as _OpenRouterClient
+            from pw_core.clients.openrouter import OpenRouterClient as _OpenRouterClient
 
-            # `retry=1` (pf-core — cross-client parity). pf-core
+            # `retry=1` (pw-core — cross-client parity). pw-core
             # retries `httpx.TimeoutException`, status 429 (rate limit),
             # and status 5xx; does NOT retry other 4xx (caller errors
             # that won't get better on retry — preserves API budget).
@@ -95,7 +95,7 @@ class OpenRouterVisionBackend:
         self._client = client
 
     def preflight_check(self) -> None:
-        """Smoke-test OpenRouter auth + connectivity via pf-core's
+        """Smoke-test OpenRouter auth + connectivity via pw-core's
         `OpenRouterClient.preflight()`. Hits the cheap
         `GET /models` endpoint instead of burning a vision call. Raises
         `OpenRouterError` (an `AppError`) with `OPENROUTER_API_KEY`

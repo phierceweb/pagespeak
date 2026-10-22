@@ -1,6 +1,6 @@
-"""pagespeak invalidate subcommand — pf-core shim.
+"""pagespeak invalidate subcommand — pw-core shim.
 
-A thin binding over `pf_core.cli.subcommands.make_invalidate_subcommand`:
+A thin binding over `pw_core.cli.subcommands.make_invalidate_subcommand`:
 binds pagespeak's stage registry + run-record filename and delegates
 command registration to the factory.
 """
@@ -8,7 +8,7 @@ command registration to the factory.
 from __future__ import annotations
 
 import typer
-from pf_core.cli.subcommands import make_invalidate_subcommand
+from pw_core.cli.subcommands import make_invalidate_subcommand
 
 from ..services._rerun import PAGESPEAK_REGISTRY
 

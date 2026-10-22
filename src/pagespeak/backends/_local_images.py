@@ -16,8 +16,8 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from pf_core.log import get_logger
-from pf_core.utils.env import resolve_bool
+from pw_foundation.log import get_logger
+from pw_foundation.utils.env import resolve_bool
 
 from ..services._image_refs import ImageRef, replace_image_refs
 

@@ -22,7 +22,7 @@ Testing and benchmarking against other retrieval stacks and answering LLMs remai
 
 ## Related projects
 
-pagespeak is built on my open-source framework [pf-core](https://github.com/phierceweb/pf-core), which handles both AI-assisted development and AI model cost routing and tracking (via a SQLite, Postgres, or MySQL database — cost tracking is optional). Through pf-core, model calls can be routed into a local Claude Code subscription to avoid paying for API calls. And once documents are converted and indexed in QMD, Claude Code can query them directly through [QMD's Claude Code plugin](https://github.com/tobi/qmd).
+pagespeak is built on my open-source framework [pw-core](https://github.com/phierceweb/pw-core), which handles both AI-assisted development and AI model cost routing and tracking (via a SQLite, Postgres, or MySQL database — cost tracking is optional). Through pw-core, model calls can be routed into a local Claude Code subscription to avoid paying for API calls. And once documents are converted and indexed in QMD, Claude Code can query them directly through [QMD's Claude Code plugin](https://github.com/tobi/qmd).
 
 Note: I'm developing a companion project [pagespring](https://github.com/phierceweb/pagespring) — a polite acquisition front-end that fetches only publicly available documentation and normalizes it into clean, convertible files (nothing behind logins or paywalls, nothing re-published). Its output is built for pagespeak conversion. If it covers manual types you're interested in, give it a try. If not, send a request or contribute to the project for new types.
 
@@ -45,7 +45,7 @@ pip install pagespeak[tophat]               # adds the Top Hat quiz-export backe
 pip install pagespeak[web]                  # localhost web console (FastAPI + uvicorn)
 ```
 
-Pagespeak builds on [`pf-core`](https://github.com/phierceweb/pf-core) ([PyPI](https://pypi.org/project/pf-core/)) for its LLM clients (Anthropic / Claude Code / OpenRouter), structured logging, pipeline manifest helpers, CLI subcommand factories, and atomic-write utilities. `pf-core[tracking,llm]` is installed with it as a direct dependency — no separate install step required.
+Pagespeak builds on [`pw-foundation`](https://github.com/phierceweb/pw-foundation) for structured logging and atomic-write utilities, and on [`pw-core`](https://github.com/phierceweb/pw-core) ([PyPI](https://pypi.org/project/pw-core/)) for its LLM clients (Anthropic / Claude Code / OpenRouter), pipeline manifest helpers and CLI subcommand factories. Both are installed with it as direct dependencies (`pw-foundation`, `pw-core[tracking,llm]`) — no separate install step required.
 
 ## Quickstart
 

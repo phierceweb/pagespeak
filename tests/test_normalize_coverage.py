@@ -66,7 +66,7 @@ def test_threshold_reads_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_malformed_env_falls_back_to_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    """pf-core's resolve_int warns and falls back rather than crashing."""
+    """pw-foundation's resolve_int warns and falls back rather than crashing."""
     monkeypatch.setenv("PAGESPEAK_NORMALIZE_MIN_COVERAGE_PCT", "not-a-number")
     assert min_coverage_pct() == MIN_COVERAGE_PCT_DEFAULT
 

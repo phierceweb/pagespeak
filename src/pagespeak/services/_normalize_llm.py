@@ -14,8 +14,8 @@ import re
 from collections import Counter
 from typing import TYPE_CHECKING
 
-from pf_core.log import get_logger
-from pf_core.utils.env import resolve_int
+from pw_foundation.log import get_logger
+from pw_foundation.utils.env import resolve_int
 
 from ..prompts._heading_normalize import (
     HEADING_NORMALIZE_PROMPT_VERSION as NORMALIZE_PROMPT_VERSION,
@@ -160,7 +160,7 @@ def _resolve_max_input_tokens(
     if isinstance(override, int) and override > 0:
         return override
 
-    from pf_core.exceptions import ConfigurationError
+    from pw_foundation.exceptions import ConfigurationError
 
     from .._agent_runtime import agent_option
 
@@ -377,7 +377,7 @@ def _resolve_model(model: str | None, *, mode: NormalizeMode) -> str:
     DEFAULT_NORMALIZE_MODEL` collapses both `None` (YAML unset) and `""`
     (YAML set to empty string) to the default.
     """
-    from pf_core.llm.router import get_agent_config
+    from pw_core.llm.router import get_agent_config
 
     agent_slug = _AGENT_SLUG_FOR_MODE.get(mode, "heading_normalize")
     cfg = get_agent_config(agent_slug, model_override=model)

@@ -6,7 +6,7 @@ can reach: flat-source exports publish every article as a sibling `# `.
 
 from __future__ import annotations
 
-from pf_core.log import get_logger
+from pw_foundation.log import get_logger
 
 from ._enumerated_nest import nest_enumerated_item_runs
 from ._flat_source_demote import demote_flat_h1_runs

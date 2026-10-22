@@ -1,6 +1,6 @@
 """Baseline snapshots — preserve a result for later comparison.
 
-Thin shim over `pf_core.pipeline.baseline`. A baseline copies the result
+Thin shim over `pw_core.pipeline.baseline`. A baseline copies the result
 artifacts (consolidated md, sections, INDEX.md, run record) from a live
 output dir into a labeled subdirectory under
 `<output_dir>/.baselines/<label>/`. Cache files (raw.md, vision-cache,
@@ -25,17 +25,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pf_core.pipeline.baseline import (
+from pw_core.pipeline.baseline import (
     BaselineConfig,
     BaselineRecord,
 )
-from pf_core.pipeline.baseline import (
+from pw_core.pipeline.baseline import (
     auto_snapshot_on_version_change as _auto_snapshot_on_version_change,
 )
-from pf_core.pipeline.baseline import (
+from pw_core.pipeline.baseline import (
     list_baselines as _list_baselines,
 )
-from pf_core.pipeline.baseline import (
+from pw_core.pipeline.baseline import (
     save_baseline as _save_baseline,
 )
 
@@ -67,7 +67,7 @@ def auto_snapshot_on_version_change(
     when the previous run.json's version differs from `current_version`.
 
     Failures are swallowed at this shim layer so a partially-mocked
-    pf-core internal can't kill the calling pipeline — matches the
+    pw-core internal can't kill the calling pipeline — matches the
     documented contract.
     """
     try:
@@ -77,7 +77,7 @@ def auto_snapshot_on_version_change(
             config=PAGESPEAK_BASELINE_CONFIG,
         )
     except (OSError, ValueError):
-        # Defense in depth — pf-core already catches these internally,
+        # Defense in depth — pw-core already catches these internally,
         # but tests patch `save_baseline` to raise arbitrary errors.
         return None
 

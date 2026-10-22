@@ -29,7 +29,7 @@ import contextlib
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from pf_core.log import get_logger
+from pw_foundation.log import get_logger
 
 from ..models._models import IngestResult
 from ._docling_headings import (

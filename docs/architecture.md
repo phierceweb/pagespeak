@@ -25,7 +25,7 @@
                                                   │
                        ┌──────────────────────────▼───────────────────────────┐
                        │  Phase pipeline: a list of Phase objects run by      │
-                       │  pf-core's sequencer (pf_core.pipeline.sequencer).   │
+                       │  pw-core's sequencer (pw_core.pipeline.sequencer).   │
                        │  Each phase reads its input checkpoint, writes its   │
                        │  output one.                                         │
                        │                                                      │
@@ -68,7 +68,7 @@ Modules are organized into role-based subpackages. All public symbols are re-exp
 | `backends/_docx_dispatch.py` | DOCX backend selection (`markitdown` vs `python-docx`) — mirrors `backends/_pdf_dispatch.py`. | — |
 | `backends/_archive.py` | Zip reads with a decompressed-size cap (`PAGESPEAK_MAX_ARCHIVE_BYTES`, counted as bytes inflate): `copy_member()` for office/EPUB media, `extract_zip()` for Canvas exports (refuses a member path outside the folder, skips symlinks). | — |
 | `backends/_docx.py` | MarkItDown wrapper + `zipfile` image extraction for office formats; dispatches EPUB → `_extract_epub_media` and HTML → `_remote_images.download_remote_images`. | yes — `markitdown` only on first non-PDF call |
-| `backends/_remote_images.py` | HTML ingest: download remote `<img>` URLs into `images/<name>` + retarget refs so the vision pass sees them (`download_remote_images`). Thin policy wrapper — the download / naming / retarget / SSRF mechanics are `pf_core.fetch.images.localize_images`; this module owns the `PAGESPEAK_*` knobs (passed in as explicit kwargs) and the pipeline entry points. On by default; gated by `PAGESPEAK_DOWNLOAD_REMOTE_IMAGES`. See `docs/format-support.md` § HTML. | `pf_core.fetch` (core dep) |
+| `backends/_remote_images.py` | HTML ingest: download remote `<img>` URLs into `images/<name>` + retarget refs so the vision pass sees them (`download_remote_images`). Thin policy wrapper — the download / naming / retarget / SSRF mechanics are `pw_core.fetch.images.localize_images`; this module owns the `PAGESPEAK_*` knobs (passed in as explicit kwargs) and the pipeline entry points. On by default; gated by `PAGESPEAK_DOWNLOAD_REMOTE_IMAGES`. See `docs/format-support.md` § HTML. | `pw_core.fetch` (core dep) |
 | `backends/_local_images.py` | The local half of the same gap: copy sibling-image refs (an HTML bundle's `images/` dir next to the source) into `<out>/images/` + retarget non-canonical refs (`localize_local_images_in_markdown`). Traversal-guarded; on by default; gated by `PAGESPEAK_COPY_LOCAL_IMAGES`. | — |
 | `backends/_markdown.py` | Markdown / plain-text passthrough — `convert_markdown()` reads a `.md`/`.markdown` source **verbatim** into `raw.md` (no MarkItDown round-trip, which would re-emit lists/headings lossily). No image extraction; remote refs are localized later in the cleanup phase. Lets an upstream ingester hand off clean markdown. See `docs/format-support.md` § Markdown. | — |
 | `backends/_docx_table.py` | GFM table rendering for the python-docx backend. `render_table()` converts Word tables to `\|` rows + `<br>`-joined multi-para cells; called by `_docx_structured.py`. | yes |
@@ -97,7 +97,7 @@ Versioned LLM-facing prompts: each YAML (`diagram.yaml`, `heading_normalize.yaml
 
 | Module | Responsibility | Lazy import? |
 |---|---|---|
-| `prompts/_loader.py` | `load_pagespeak_spec()` — prompt-spec loading via pf-core's `load_prompt` (override chain: `$PAGESPEAK_PROMPTS_DIR` → CWD `config/prompts/` → bundled default). Shared by all per-agent stub modules. | — |
+| `prompts/_loader.py` | `load_pagespeak_spec()` — prompt-spec loading via pw-core's `load_prompt` (override chain: `$PAGESPEAK_PROMPTS_DIR` → CWD `config/prompts/` → bundled default). Shared by all per-agent stub modules. | — |
 | `prompts/_diagram.py` | Diagram-extraction prompt — renders `diagram.yaml`; exports `DIAGRAM_PROMPT` / `DIAGRAM_PROMPT_VERSION`. | — |
 | `prompts/_heading_normalize.py` | Heading-normalize (`llm` mode) prompt — renders `heading_normalize.yaml`. | — |
 | `prompts/_heading_normalize_full.py` | Heading-normalize `llm_full` prompt — renders `heading_normalize_full.yaml`. | — |
@@ -214,7 +214,7 @@ Optional layer, behind the `pagespeak[web]` extra (FastAPI + uvicorn + jinja2). 
 
 | Module | Responsibility | Lazy import? |
 |---|---|---|
-| `web/__init__.py` | `create_app()` — app factory; mounts `pf_core.web.llm_admin` + routers. | yes — `fastapi` only when the extra is installed |
+| `web/__init__.py` | `create_app()` — app factory; mounts `pw_core.web.llm_admin` + routers. | yes — `fastapi` only when the extra is installed |
 | `web/__main__.py` | `python -m pagespeak.web` — run the console under uvicorn. | — |
 | `web/_config.py` | `WebConfig` — reads `PAGESPEAK_CONVERSIONS_DIR` / `PAGESPEAK_WEB_HOST` / `PAGESPEAK_WEB_PORT` / `PAGESPEAK_WEB_CONCURRENCY`. | — |
 | `web/_command.py` | Builds the `pagespeak convert` argv + per-job paths for the worker subprocess. | — |
@@ -223,9 +223,9 @@ Optional layer, behind the `pagespeak[web]` extra (FastAPI + uvicorn + jinja2). 
 | `web/_upload.py` | `upload_target` / `save_upload` — an upload lands in `conversions/in/` only as a plain file name, never through a staged symlink or folder, streamed to a temp file under the size cap and swapped in when complete. | — |
 | `web/_scan.py` | `conversions/in` + `conversions/out` scanner and reconciler → Conversion list/detail. Reuses `orchestrators._dispatch.resolve_dir_mode_stem` to extract the checkpoint stem. | — |
 | `web/_cost.py` | Cache-miss pre-flight: counts images in `images/` vs phash entries in `.vision-cache/`; produces a grounded cost estimate for the confirm dialog. | — |
-| `web/_jobs.py` | Registers the `pagespeak_convert` pf_core job kind (inputs/outputs schema); `options_from_form` turns the run form into its options. | — |
+| `web/_jobs.py` | Registers the `pagespeak_convert` pw_core job kind (inputs/outputs schema); `options_from_form` turns the run form into its options. | — |
 | `web/_reader.py` | `reread_on_reader_change` — a run choosing another PDF reader than the one behind `raw.md` gets `--rerun-from ingest` (refused with workers > 1). | — |
-| `web/_worker.py` | In-process background worker: `JobRepo.claim_next(kinds=["pagespeak_convert"])` → phase-driver subprocess loop (`pagespeak convert <out_dir> --from P --stop-after P <options>`). Passes `PAGESPEAK_JOB_ID` env so pf_core attributes LLM rows to the job. | — |
+| `web/_worker.py` | In-process background worker: `JobRepo.claim_next(kinds=["pagespeak_convert"])` → phase-driver subprocess loop (`pagespeak convert <out_dir> --from P --stop-after P <options>`). Passes `PAGESPEAK_JOB_ID` env so pw_core attributes LLM rows to the job. | — |
 | `web/api/pages.py` | HTML routes: home/queue, new-conversion form, detail cockpit. | — |
 | `web/api/actions.py` | Action routes: submit job, cancel, retry, upload source file. | — |
 | `web/api/partials.py` | HTMX partial routes: live queue table, phase strip, log tail. | — |
@@ -237,8 +237,8 @@ Optional layer, behind the `pagespeak[web]` extra (FastAPI + uvicorn + jinja2). 
 | Module | Responsibility |
 |---|---|
 | `__init__.py` | Re-exports public API: `to_markdown`, `ingest`, `chunk`, dataclasses, type aliases. |
-| `_agent_runtime.py` | Thin seam over pf-core's LLM stack: `invoke_agent` (routes via `pf_core.llm.router`, records via `tracked_messages_call`), `agent_option`, recording re-exports, and the packaged-`model_router.yaml` bootstrap. |
-| `_db.py` | Pagespeak DB configuration — thin wrapper over pf-core's connection helpers (`DATABASE_URL`). |
+| `_agent_runtime.py` | Thin seam over pw-core's LLM stack: `invoke_agent` (routes via `pw_core.llm.router`, records via `tracked_messages_call`), `agent_option`, recording re-exports, and the packaged-`model_router.yaml` bootstrap. |
+| `_db.py` | Pagespeak DB configuration — thin wrapper over pw-core's connection helpers (`DATABASE_URL`). |
 
 Lazy imports matter: a consumer that only ever processes DOCX never pays the cost of installing or importing torch / surya.
 
@@ -246,7 +246,7 @@ Lazy imports matter: a consumer that only ever processes DOCX never pays the cos
 
 1. **Ingest phase** (`orchestrators/_ingest.py`) reads the file extension — canonical suffix sets `PDF_SUFFIXES`, `MARKITDOWN_SUFFIXES`, and `MARKDOWN_SUFFIXES` live in `_convert_source.py` — and routes to `backends/_pdf_dispatch.py` (Marker or Docling), `backends/_docx.py` (MarkItDown), or `backends/_markdown.py` (verbatim passthrough for `.md`/`.markdown`). Unknown extensions raise `ValueError`. With `workers=1` (default), a single backend call processes the full document. With `workers>1` (PDF only), a `ProcessPoolExecutor` runs Marker on N-page chunks in parallel; `_chunk_rewrite.py` prefixes each chunk's image basenames with the page-range and absolutizes page-anchor IDs before concatenation. Either way the phase concludes by writing `<stem>.raw.md` + `images/` as a checkpoint.
 2. **MarkItDown side-effect.** For office zip formats (DOCX/PPTX/XLSX), `_docx.py` extracts everything under `word/media/`, `ppt/media/`, or `xl/media/` into `output_dir/images/`. For EPUB it pulls embedded images out of the zip by extension; for HTML (where images are remote `<img>` URLs) it downloads each one via `_remote_images.py` and retargets the ref to `images/<name>` — both so the vision pass has local files to process. Local sibling refs (a saved-webpage bundle's `images/` dir next to the source) are copied into `output_dir/images/` by `_local_images.py` at the end of ingest (and again idempotently at cleanup for resume paths). If MarkItDown's markdown lacks image refs but images were extracted, an "Extracted Images" section is appended so the diagram pass has anchors.
-3. **Phase pipeline — sequential, deterministic.** `to_markdown()` builds a `PipelineContext` and calls `pf_core.pipeline.sequencer.run_pipeline()` over the ordered `Phase` list from `orchestrators/_phases.build_phases()` (resume freshness is injected as a `skip_fresh` closure over each phase's `is_fresh`). Each phase reads its input checkpoint and writes its output checkpoint, so the sequencer can run any contiguous slice — `--from <phase>` (begin there, hydrating from the on-disk checkpoint), `--stop-after <phase>` (halt after), `--from X --stop-after X` (exactly one phase). The default run executes every phase in this order, which preserves correctness:
+3. **Phase pipeline — sequential, deterministic.** `to_markdown()` builds a `PipelineContext` and calls `pw_core.pipeline.sequencer.run_pipeline()` over the ordered `Phase` list from `orchestrators/_phases.build_phases()` (resume freshness is injected as a `skip_fresh` closure over each phase's `is_fresh`). Each phase reads its input checkpoint and writes its output checkpoint, so the sequencer can run any contiguous slice — `--from <phase>` (begin there, hydrating from the on-disk checkpoint), `--stop-after <phase>` (halt after), `--from X --stop-after X` (exactly one phase). The default run executes every phase in this order, which preserves correctness:
    - **Cleanup** (`services/_cleanup.py`) — begins with an outline reconstruction pre-pass (`services/_outline.promote_outline`) that converts Word multilevel-list indentation to heading/list structure; then per-line normalizations; numbered headings run through `_heading_sanity.demote_prose_heading` to undo wrong promotions. Snapshot to `<stem>.cleaned.md`.
    - **Strip decoration refs** (`services/_decorations.py`) — runs at the start of the cleanup phase, before the line transforms: perceptual-hash clustering identifies repeated page headers / footer logos. A clustered ref carrying alt text degrades to an italic caption; a description-less one is removed only when the image is a near-exact duplicate.
    - **Gather + apply normalize** (`services/_heading_normalize.py`, opt-in) — heuristic computation OR one LLM call. Snapshot to `<stem>.normalized.md`.

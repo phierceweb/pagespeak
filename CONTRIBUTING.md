@@ -60,7 +60,7 @@ The essentials:
 - Modern Python 3.12+ syntax — `X | None`, lowercase `dict`/`list`/`tuple`,
   `from __future__ import annotations`.
 - Type hints on every public signature; Google-style docstrings on public APIs.
-- Structured logging via `pf_core.log.get_logger(__name__)` — never a bare
+- Structured logging via `pw_foundation.log.get_logger(__name__)` — never a bare
   `print` outside the CLI layer.
 - Catch specific exceptions; never `except Exception: pass`.
 - LLM-facing prompts are versioned YAML under `src/pagespeak/prompts/` — bump the

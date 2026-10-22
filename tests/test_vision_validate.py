@@ -9,8 +9,8 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _fresh_registry():
-    """pf-core's validator registry is global; keep tests independent."""
-    from pf_core.llm.validate import clear_registry
+    """pw-core's validator registry is global; keep tests independent."""
+    from pw_core.llm.validate import clear_registry
 
     clear_registry()
     yield
@@ -81,7 +81,7 @@ def test_unparseable_response_reports_a_parse_signal() -> None:
 
 
 def test_registration_is_idempotent() -> None:
-    from pf_core.llm.validate import has_pipeline
+    from pw_core.llm.validate import has_pipeline
 
     from pagespeak.services._vision_validate import ensure_registered
 

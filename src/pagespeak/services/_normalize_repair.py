@@ -19,7 +19,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 
-from pf_core.log import get_logger
+from pw_foundation.log import get_logger
 
 from ._cleanup_diagnose import (
     lock_lettered_subsection_runs_pass,

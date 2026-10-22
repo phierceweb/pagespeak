@@ -10,7 +10,7 @@ guidance + the rendered user template with the supplied headings block.
 
 from __future__ import annotations
 
-from pf_core.llm.prompts import render_spec
+from pw_core.llm.prompts import render_spec
 
 from ._loader import load_pagespeak_spec
 

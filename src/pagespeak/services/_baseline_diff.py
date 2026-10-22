@@ -1,6 +1,6 @@
 """Baseline diff — compare a saved baseline against the live output.
 
-Thin shim over `pf_core.pipeline.baseline_diff`. Returns a structured
+Thin shim over `pw_core.pipeline.baseline_diff`. Returns a structured
 `DiffReport` covering:
 
 1. Run-record field-level diff (dotted paths into `.pagespeak-run.json`).
@@ -22,14 +22,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pf_core.pipeline.baseline_diff import (
+from pw_core.pipeline.baseline_diff import (
     DiffReport,
     LineCountDelta,
     RunRecordDelta,
     SectionRename,
     SectionSetDelta,
 )
-from pf_core.pipeline.baseline_diff import (
+from pw_core.pipeline.baseline_diff import (
     diff_baseline as _diff_baseline,
 )
 

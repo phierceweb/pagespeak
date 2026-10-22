@@ -30,7 +30,7 @@ from pagespeak.services._diagrams import (
 
 
 def _mock_anthropic_client(payload: dict) -> MagicMock:
-    """Mock pf-core AnthropicClient with a canned chat() response."""
+    """Mock pw-core AnthropicClient with a canned chat() response."""
     client = MagicMock()
     client.chat.return_value = (
         json.dumps(payload),
@@ -241,7 +241,7 @@ def test_inject_preserve_alt_empty_alt_stays_empty_with_mermaid() -> None:
 
 
 def test_anthropic_backend_analyze_calls_client(fake_image: Path) -> None:
-    """The pf-core AnthropicClient's chat() is called with the resolved
+    """The pw-core AnthropicClient's chat() is called with the resolved
     model and a multimodal Anthropic-format message list."""
     client = _mock_anthropic_client(
         {
@@ -279,10 +279,10 @@ def test_anthropic_backend_raises_when_api_key_missing(monkeypatch: pytest.Monke
 
 def test_anthropic_backend_uses_env_var_api_key(fake_image: Path) -> None:
     """When no `client` is injected, the backend reads `ANTHROPIC_API_KEY`
-    from env and builds a pf-core AnthropicClient with it."""
+    from env and builds a pw-core AnthropicClient with it."""
     with (
         patch.dict("os.environ", {"ANTHROPIC_API_KEY": "env-key"}),
-        patch("pf_core.clients.anthropic.AnthropicClient") as MockClient,
+        patch("pw_core.clients.anthropic.AnthropicClient") as MockClient,
     ):
         instance = MockClient.return_value
         instance.chat.return_value = (
@@ -298,7 +298,7 @@ def test_anthropic_backend_uses_env_var_api_key(fake_image: Path) -> None:
 
 
 def _mock_claude_client(content: str) -> MagicMock:
-    """Mock pf-core ClaudeCodeClient with a canned chat() response."""
+    """Mock pw-core ClaudeCodeClient with a canned chat() response."""
     client = MagicMock()
     client.chat.return_value = (content, {"prompt_tokens": 0, "completion_tokens": 0})
     return client
@@ -326,7 +326,7 @@ def test_claude_code_backend_passes_explicit_model_when_unset(
     """Cost-protection regression: with no `model=` arg and no env var
     override, the backend MUST pass an explicit, non-empty `model`
     kwarg to `client.chat()` (resolved from `config/model_router.yaml`).
-    Without an explicit model, pf-core's ClaudeCodeClient lets the
+    Without an explicit model, pw-core's ClaudeCodeClient lets the
     active session decide — on Claude Max that's Sonnet/Opus, and a
     1000-image vision pass quietly burns a day's premium usage.
 
@@ -377,7 +377,7 @@ def test_claude_code_backend_explicit_model_wins(
 def test_claude_code_backend_passes_model_flag(fake_image: Path) -> None:
     """The resolved model must propagate to `client.chat(model=...)` so
     users can downgrade from their default (often Opus) to Haiku for
-    cheap batch vision passes. pf-core's ClaudeCodeClient.chat() then
+    cheap batch vision passes. pw-core's ClaudeCodeClient.chat() then
     threads it through as `claude --print --model X`."""
     client = _mock_claude_client(json.dumps({"is_diagram": False, "caption": "x", "mermaid": None}))
     backend = ClaudeCodeVisionBackend(
@@ -526,10 +526,10 @@ def test_claude_code_backend_raises_when_binary_missing() -> None:
 
 
 def test_claude_code_backend_raises_on_subprocess_failure(fake_image: Path) -> None:
-    """When pf-core's ClaudeCodeClient.chat() raises (subprocess exit-1
-    after pf-core's internal retry loop has exhausted its attempts), the
+    """When pw-core's ClaudeCodeClient.chat() raises (subprocess exit-1
+    after pw-core's internal retry loop has exhausted its attempts), the
     backend wraps it in a RuntimeError preserving the contract."""
-    from pf_core.exceptions import AppError
+    from pw_foundation.exceptions import AppError
 
     client = MagicMock()
     err = AppError(
@@ -570,9 +570,9 @@ def test_claude_code_backend_failure_message_includes_stdout_and_stderr(
     AND stderr (truncated) and the resolved model. The earlier message
     only carried `stderr[:200]`, which on quota-style failures was
     typically empty — leaving the user with no diagnostic information.
-    pf-core's ClaudeCodeError carries `stderr_head` in context; the
+    pw-core's ClaudeCodeError carries `stderr_head` in context; the
     AppError message itself carries the rest (subprocess stdout)."""
-    from pf_core.exceptions import AppError
+    from pw_foundation.exceptions import AppError
 
     client = MagicMock()
     client.chat.side_effect = AppError(
@@ -588,39 +588,39 @@ def test_claude_code_backend_failure_message_includes_stdout_and_stderr(
     assert "usage exceeded" in msg  # from context.stderr_head
 
 
-def test_claude_code_backend_constructs_pf_core_client_with_retry_1(
+def test_claude_code_backend_constructs_pw_core_client_with_retry_1(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Contract test (pf-core retry adoption): when pagespeak builds its
+    """Contract test (pw-core retry adoption): when pagespeak builds its
     own `ClaudeCodeClient` (caller didn't inject one), it must pass
-    `retry=1` so pf-core retries transient failures internally — the
-    earlier retry-once behavior now lives inside pf-core. Without
+    `retry=1` so pw-core retries transient failures internally — the
+    earlier retry-once behavior now lives inside pw-core. Without
     `retry=1` we silently lose resilience against rate-limit windows
     and momentary auth refreshes."""
     monkeypatch.setattr(
         "pagespeak.services._vision_backends.shutil.which", lambda _: "/fake/claude"
     )
-    with patch("pf_core.clients.claude_code.ClaudeCodeClient") as ctor:
+    with patch("pw_core.clients.claude_code.ClaudeCodeClient") as ctor:
         ctor.return_value = MagicMock()
         ClaudeCodeVisionBackend(model="m")
     assert ctor.call_count == 1
     kwargs = ctor.call_args.kwargs
     assert kwargs.get("retry") == 1, (
-        f"pagespeak must construct pf-core's ClaudeCodeClient with retry=1; got kwargs={kwargs}"
+        f"pagespeak must construct pw-core's ClaudeCodeClient with retry=1; got kwargs={kwargs}"
     )
 
 
 def test_claude_code_backend_client_can_read_the_image(monkeypatch: pytest.MonkeyPatch) -> None:
     """The prompt has the model Read the image file, so the argv must name the
-    Read tool: without it pf-core 0.23 loads no tools and the model captions an
+    Read tool: without it pw-core's client loads no tools and the model captions an
     image it never saw."""
     monkeypatch.setattr(
         "pagespeak.services._vision_backends.shutil.which", lambda _: "/fake/claude"
     )
-    monkeypatch.setattr("pf_core.clients.claude_code.shutil.which", lambda _: "/fake/claude")
+    monkeypatch.setattr("pw_core.clients.claude_code.shutil.which", lambda _: "/fake/claude")
     envelope = {"result": "ok", "is_error": False, "stop_reason": "end_turn"}
     run = MagicMock(return_value=MagicMock(returncode=0, stdout=json.dumps(envelope), stderr=""))
-    monkeypatch.setattr("pf_core.clients.claude_code.subprocess.run", run)
+    monkeypatch.setattr("pw_core.clients.claude_code.subprocess.run", run)
     ClaudeCodeVisionBackend(model="m").preflight_check()
     cmd = run.call_args.args[0]
     assert "--tools" in cmd, cmd
@@ -701,8 +701,8 @@ def test_gather_diagrams_emits_zero_failures_summary(
 
 
 def test_claude_code_preflight_check_delegates_to_client_preflight() -> None:
-    """preflight_check is a 1-liner over pf-core's ClaudeCodeClient.preflight().
-    The pf-core method handles the chat-call internals, error formatting,
+    """preflight_check is a 1-liner over pw-core's ClaudeCodeClient.preflight().
+    The pw-core method handles the chat-call internals, error formatting,
     and the `/login` remediation message. Pagespeak's job is just to call it."""
     client = MagicMock()
     backend = ClaudeCodeVisionBackend(claude_bin="/fake/claude", model="m", client=client)
@@ -710,11 +710,11 @@ def test_claude_code_preflight_check_delegates_to_client_preflight() -> None:
     client.preflight.assert_called_once_with()
 
 
-def test_claude_code_preflight_check_propagates_pf_core_errors() -> None:
-    """pf-core's ClaudeCodeClient.preflight() raises ClaudeCodeError with an
+def test_claude_code_preflight_check_propagates_pw_core_errors() -> None:
+    """pw-core's ClaudeCodeClient.preflight() raises ClaudeCodeError with an
     actionable `/login` remediation message. Pagespeak's preflight_check lets
     the error propagate unchanged — it's already the right shape."""
-    from pf_core.exceptions import AppError
+    from pw_foundation.exceptions import AppError
 
     client = MagicMock()
     client.preflight.side_effect = AppError(
@@ -820,7 +820,7 @@ def test_build_backend_factory_openrouter() -> None:
 
 
 def _mock_openrouter_client(payload: dict) -> MagicMock:
-    """Mock pf-core OpenRouterClient with a canned chat() response."""
+    """Mock pw-core OpenRouterClient with a canned chat() response."""
     client = MagicMock()
     client.chat.return_value = (json.dumps(payload), {"prompt_tokens": 0, "completion_tokens": 0})
     return client
@@ -836,10 +836,10 @@ def test_openrouter_backend_raises_when_api_key_missing() -> None:
 
 def test_openrouter_backend_uses_env_var_api_key(fake_image: Path) -> None:
     """When no `client` is injected, the backend reads `OPENROUTER_API_KEY`
-    from env and builds a pf-core OpenRouterClient with it."""
+    from env and builds a pw-core OpenRouterClient with it."""
     with (
         patch.dict("os.environ", {"OPENROUTER_API_KEY": "env-key"}),
-        patch("pf_core.clients.openrouter.OpenRouterClient") as MockClient,
+        patch("pw_core.clients.openrouter.OpenRouterClient") as MockClient,
     ):
         instance = MockClient.return_value
         instance.chat.return_value = (
@@ -866,7 +866,7 @@ def test_openrouter_backend_constructs_openai_style_image_payload(
 
 
 def test_openrouter_backend_uses_yaml_model_when_arg_unset(fake_image: Path) -> None:
-    """Model resolution goes through pf-core's `get_agent_config` —
+    """Model resolution goes through pw-core's `get_agent_config` —
     YAML at `config/model_router.yaml` (`agents.vision.backends.openrouter.model`)
     wins. Repo YAML pins `google/gemini-2.5-flash` for openrouter, so an
     OpenRouterVisionBackend with no explicit `model=` picks that up.
@@ -887,7 +887,7 @@ def test_openrouter_backend_fails_fast_when_config_missing(
     when the operator chose an explicit path). The constructor still resolves
     its cost-protection `DEFAULT_MODEL`, so the object builds config-less;
     the loud failure happens on the actual call."""
-    from pf_core.exceptions import ConfigurationError
+    from pw_foundation.exceptions import ConfigurationError
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("MODEL_ROUTER_CONFIG", str(tmp_path / "missing.yaml"))
@@ -936,7 +936,7 @@ def test_gather_diagrams_workers_join_recording_window(fake_image: Path, tmp_pat
     the drain (and thus from `.pagespeak-run.json`)."""
     import shutil
 
-    from pf_core.llm.recording import (
+    from pw_core.llm.recording import (
         begin_call_recording,
         end_call_recording,
         record_call,
@@ -1467,43 +1467,43 @@ def test_gather_then_inject_matches_enrich_output(tmp_path: Path) -> None:
 # --- cross-client parity: retry=1 + preflight on Anthropic + OpenRouter ----
 
 
-def test_anthropic_backend_constructs_pf_core_client_with_retry_1() -> None:
-    """Contract test (pf-core retry adoption): when pagespeak builds its
+def test_anthropic_backend_constructs_pw_core_client_with_retry_1() -> None:
+    """Contract test (pw-core retry adoption): when pagespeak builds its
     own `AnthropicClient` (caller didn't inject one), it must pass
-    `retry=1` so pf-core retries transient SDK failures internally.
+    `retry=1` so pw-core retries transient SDK failures internally.
     Cross-client parity with the ClaudeCode adoption."""
     with (
         patch.dict("os.environ", {"ANTHROPIC_API_KEY": "k"}),
-        patch("pf_core.clients.anthropic.AnthropicClient") as ctor,
+        patch("pw_core.clients.anthropic.AnthropicClient") as ctor,
     ):
         ctor.return_value = MagicMock()
         AnthropicVisionBackend(model="m")
     assert ctor.call_count == 1
     kwargs = ctor.call_args.kwargs
     assert kwargs.get("retry") == 1, (
-        f"pagespeak must construct pf-core's AnthropicClient with retry=1; got kwargs={kwargs}"
+        f"pagespeak must construct pw-core's AnthropicClient with retry=1; got kwargs={kwargs}"
     )
 
 
-def test_openrouter_backend_constructs_pf_core_client_with_retry_1() -> None:
-    """Contract test (pf-core retry adoption): when pagespeak builds its
+def test_openrouter_backend_constructs_pw_core_client_with_retry_1() -> None:
+    """Contract test (pw-core retry adoption): when pagespeak builds its
     own `OpenRouterClient` (caller didn't inject one), it must pass
-    `retry=1` so pf-core retries 429 / 5xx / timeout internally."""
+    `retry=1` so pw-core retries 429 / 5xx / timeout internally."""
     with (
         patch.dict("os.environ", {"OPENROUTER_API_KEY": "k"}),
-        patch("pf_core.clients.openrouter.OpenRouterClient") as ctor,
+        patch("pw_core.clients.openrouter.OpenRouterClient") as ctor,
     ):
         ctor.return_value = MagicMock()
         OpenRouterVisionBackend()
     assert ctor.call_count == 1
     kwargs = ctor.call_args.kwargs
     assert kwargs.get("retry") == 1, (
-        f"pagespeak must construct pf-core's OpenRouterClient with retry=1; got kwargs={kwargs}"
+        f"pagespeak must construct pw-core's OpenRouterClient with retry=1; got kwargs={kwargs}"
     )
 
 
 def test_anthropic_preflight_check_delegates_to_client_preflight() -> None:
-    """`AnthropicVisionBackend.preflight_check` is a 1-liner over pf-core's
+    """`AnthropicVisionBackend.preflight_check` is a 1-liner over pw-core's
     `AnthropicClient.preflight()`. Direct delegation — no
     pagespeak-side error transformation."""
     client = MagicMock()
@@ -1513,7 +1513,7 @@ def test_anthropic_preflight_check_delegates_to_client_preflight() -> None:
 
 
 def test_openrouter_preflight_check_delegates_to_client_preflight() -> None:
-    """`OpenRouterVisionBackend.preflight_check` is a 1-liner over pf-core's
+    """`OpenRouterVisionBackend.preflight_check` is a 1-liner over pw-core's
     `OpenRouterClient.preflight()`. Direct delegation."""
     client = MagicMock()
     backend = OpenRouterVisionBackend(api_key="k", client=client, model="m")
@@ -1521,12 +1521,12 @@ def test_openrouter_preflight_check_delegates_to_client_preflight() -> None:
     client.preflight.assert_called_once_with()
 
 
-def test_anthropic_preflight_check_propagates_pf_core_errors() -> None:
-    """pf-core's `AnthropicClient.preflight()` raises `AnthropicError` (an
+def test_anthropic_preflight_check_propagates_pw_core_errors() -> None:
+    """pw-core's `AnthropicClient.preflight()` raises `AnthropicError` (an
     `AppError`) with `ANTHROPIC_API_KEY` remediation on 401/403. Pagespeak's
     preflight_check propagates without wrapping — `gather_diagrams` aborts
     the batch before any per-image call fires."""
-    from pf_core.exceptions import AppError
+    from pw_foundation.exceptions import AppError
 
     client = MagicMock()
     client.preflight.side_effect = AppError(
@@ -1540,10 +1540,10 @@ def test_anthropic_preflight_check_propagates_pf_core_errors() -> None:
     assert "ANTHROPIC_API_KEY" in str(exc_info.value)
 
 
-def test_openrouter_preflight_check_propagates_pf_core_errors() -> None:
-    """pf-core's `OpenRouterClient.preflight()` raises `OpenRouterError` on
+def test_openrouter_preflight_check_propagates_pw_core_errors() -> None:
+    """pw-core's `OpenRouterClient.preflight()` raises `OpenRouterError` on
     401/403 / 5xx / network. Pagespeak's preflight_check propagates."""
-    from pf_core.exceptions import AppError
+    from pw_foundation.exceptions import AppError
 
     client = MagicMock()
     client.preflight.side_effect = AppError(
@@ -1577,7 +1577,7 @@ def test_vision_claude_code_timeout_reads_env_var(
 def test_vision_claude_code_timeout_falls_back_on_invalid_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Malformed env falls back via pf_core.resolve_int (warning covered there)."""
+    """Malformed env falls back via pw-foundation's resolve_int (warning covered there)."""
     monkeypatch.setenv("PAGESPEAK_VISION_CLAUDE_CODE_TIMEOUT_S", "not-an-int")
     assert _claude_code_timeout_s() == CLAUDE_CODE_TIMEOUT_S_DEFAULT
 

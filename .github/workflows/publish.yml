@@ -24,7 +24,7 @@ jobs:
       - run: ruff check src tests
       - run: ruff format --check src tests
       - run: mypy src
-      - run: python -m pf_core.guards
+      - run: python -m pw_foundation.guards
       - name: every extra resolves together
         timeout-minutes: 15
         run: |

@@ -1,12 +1,12 @@
-"""Per-task LLM call seam over pf-core's router, tracked calls, and recording.
+"""Per-task LLM call seam over pw-core's router, tracked calls, and recording.
 
 Every LLM-calling site goes through `invoke_agent(slug, …)`: it resolves
-backend + model via `pf_core.llm.router`, acquires the backend client, and
+backend + model via `pw_core.llm.router`, acquires the backend client, and
 runs the call through `tracked_messages_call` (which writes the `llm_runs`
 row when tracking is on, registers the versioned prompt, and appends a
 per-call summary to the recording window).
 
-`begin_call_recording` / `end_call_recording` re-export pf-core's
+`begin_call_recording` / `end_call_recording` re-export pw-core's
 ContextVar-based window. Pool fan-outs must submit workers through
 `contextvars.copy_context()` so the window stays visible — see the vision
 pool in `services._diagrams`.
@@ -20,12 +20,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
-from pf_core.llm.recording import begin_call_recording as begin_call_recording
-from pf_core.llm.recording import end_call_recording as end_call_recording
-from pf_core.llm.recording import record_call as _record_call
-from pf_core.llm.router import get_agent_block, get_agent_config
-from pf_core.llm.router import resolve_backend as _pf_resolve_backend
-from pf_core.log import get_logger
+from pw_core.llm.recording import begin_call_recording as begin_call_recording
+from pw_core.llm.recording import end_call_recording as end_call_recording
+from pw_core.llm.recording import record_call as _record_call
+from pw_core.llm.router import get_agent_block, get_agent_config
+from pw_core.llm.router import resolve_backend as _pw_resolve_backend
+from pw_foundation.log import get_logger
 
 logger = get_logger(__name__)
 
@@ -50,7 +50,7 @@ _NON_CHAT_KEYS: frozenset[str] = frozenset({"max_input_tokens"})
 
 
 def _ensure_router_config() -> None:
-    """Wheel installs have no cwd ``config/`` — point pf-core's router at
+    """Wheel installs have no cwd ``config/`` — point pw-core's router at
     the packaged model_router.yaml unless the operator already chose one
     (``MODEL_ROUTER_CONFIG`` env or a cwd ``config/model_router.yaml``).
     Runs at import (via ``pagespeak/__init__``) and at each seam entry."""
@@ -82,13 +82,13 @@ def _job_id_from_env() -> int | None:
 def resolve_backend(slug: str, *, backend: Backend | None = None) -> Backend:
     """Active backend for ``slug``, narrowed to pagespeak's ``Backend`` literal.
 
-    Resolution is pf-core's precedence: ``backend=`` kwarg >
+    Resolution is pw-core's precedence: ``backend=`` kwarg >
     ``PAGESPEAK_<SLUG>_BACKEND`` env (via the YAML's ``env_prefix``) > the
     YAML's top-level ``default_client``. An env value naming an undeclared
     backend falls through to the default instead of raising.
     """
     _ensure_router_config()
-    resolved = _pf_resolve_backend(slug, backend=backend)
+    resolved = _pw_resolve_backend(slug, backend=backend)
     if resolved not in _VALID_BACKENDS:
         raise ValueError(f"unknown backend {resolved!r} for {slug!r}; valid: {_VALID_BACKENDS}")
     return resolved
@@ -106,25 +106,25 @@ def agent_option(slug: str, key: str) -> Any:
 
 
 def _get_client_for_backend(backend: str) -> Any:
-    """Return the pf-core client singleton for the given backend.
+    """Return the pw-core client singleton for the given backend.
 
     Imported lazily so consumers that never use a backend don't need
     its driver / API key configured.
     """
     if backend == "claude_code":
-        from pf_core.clients import claude_code
-        from pf_core.utils.env import resolve_int
+        from pw_core.clients import claude_code
+        from pw_foundation.utils.env import resolve_int
 
-        # Pass the timeout explicitly: pf-core's per-model singleton caches the
+        # Pass the timeout explicitly: pw-core's per-model singleton caches the
         # first call's args, and its own default is 600s — env bumps would be lost.
         timeout_s: int = resolve_int(None, "PAGESPEAK_CLAUDE_CODE_TIMEOUT_S", default=1800)
         return claude_code.get_client(timeout=timeout_s)
     if backend == "openrouter":
-        from pf_core.clients import openrouter
+        from pw_core.clients import openrouter
 
         return openrouter.get_client()
     if backend == "anthropic":
-        from pf_core.clients import anthropic
+        from pw_core.clients import anthropic
 
         return anthropic.get_client()
     raise ValueError(f"unhandled backend: {backend!r}")
@@ -143,7 +143,7 @@ def invoke_agent(
 ) -> AgentResult:
     """Single LLM-call seam for all pagespeak tasks.
 
-    Returns an :class:`AgentResult`. ``run_id`` is the pf-core
+    Returns an :class:`AgentResult`. ``run_id`` is the pw-core
     ``llm_runs.id`` if the DB is initialized; ``None`` otherwise.
     Errors from the underlying client are re-raised after a
     ``status='failed'`` row is written.
@@ -209,7 +209,7 @@ def invoke_agent(
             )
         return AgentResult(content=content, run_id=None, usage=usage)
 
-    from pf_core.llm.tracked import tracked_messages_call
+    from pw_core.llm.tracked import tracked_messages_call
 
     content, call_usage, run_id = tracked_messages_call(
         client=client,

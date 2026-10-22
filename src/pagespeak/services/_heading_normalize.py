@@ -26,9 +26,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from pf_core.llm.safe_apply import GatherResult, safe_apply
-from pf_core.log import get_logger
-from pf_core.utils.io import atomic_write_json
+from pw_core.llm.safe_apply import GatherResult, safe_apply
+from pw_foundation.log import get_logger
+from pw_foundation.utils.io import atomic_write_json
 
 from ..prompts._heading_normalize import (
     HEADING_NORMALIZE_PROMPT_VERSION as NORMALIZE_PROMPT_VERSION,
@@ -158,7 +158,7 @@ def _apply_normalization(md: str, headings: list[_HeadingRecord], levels: dict[i
 @dataclass(frozen=True)
 class NormalizeData:
     """Output of `gather_normalize_levels`. Thin wrapper around
-    `pf_core.llm.safe_apply.GatherResult[dict[int, int]]` (the plan:
+    `pw_core.llm.safe_apply.GatherResult[dict[int, int]]` (the plan:
     1-based heading index → new level 1..6) plus pagespeak-specific
     metadata about whether the gather filtered to structural headings
     (apply must use the same filter to align indices).

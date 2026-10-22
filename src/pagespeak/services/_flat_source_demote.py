@@ -16,8 +16,8 @@ from __future__ import annotations
 
 import re
 
-from pf_core.log import get_logger
-from pf_core.utils.env import resolve_int
+from pw_foundation.log import get_logger
+from pw_foundation.utils.env import resolve_int
 
 from ._fences import fence_flags
 
@@ -32,7 +32,7 @@ _FLAT_H1_THRESHOLD_ENV_VAR = "PAGESPEAK_FLAT_H1_THRESHOLD"
 def _flat_h1_threshold() -> int:
     """Read `PAGESPEAK_FLAT_H1_THRESHOLD` at call time; fall back to default.
 
-    Uses pf-core's `resolve_int` so a malformed env value emits a structured
+    Uses pw-foundation's `resolve_int` so a malformed env value emits a structured
     `env_var_malformed` warning and falls back to the default instead of
     crashing.
     """

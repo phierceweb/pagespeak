@@ -2,10 +2,10 @@
 
 The full diff behavior (run-record field deltas, section add/remove,
 rename detection via body hash + Levenshtein, line-count rollup,
-sort order, unknown-label error) is exercised in pf-core's
+sort order, unknown-label error) is exercised in pw-core's
 `test_pipeline_baseline_diff.py`. This module keeps the pagespeak
 binding: `diff_baseline` reads/compares `.pagespeak-run.json` (not
-pf-core's default `run.json`) and returns the structured `DiffReport`
+pw-core's default `run.json`) and returns the structured `DiffReport`
 re-exported via the shim.
 """
 
@@ -62,7 +62,7 @@ def test_diff_baseline_reads_pagespeak_run_record(tmp_path: Path) -> None:
 
 
 def test_diff_report_dataclass_re_exported() -> None:
-    """The shim re-exports `DiffReport` from pf-core so existing
+    """The shim re-exports `DiffReport` from pw-core so existing
     `from pagespeak.services._baseline import DiffReport` imports keep
     working. Construct one to confirm the schema is intact."""
     from pagespeak.services._baseline import (

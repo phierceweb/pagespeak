@@ -25,9 +25,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from pf_core.log import get_logger
-from pf_core.utils.env import resolve_positive_int
-from pf_core.utils.io import atomic_write_text
+from pw_foundation.log import get_logger
+from pw_foundation.utils.env import resolve_positive_int
+from pw_foundation.utils.io import atomic_write_text
 
 from ..backends._pdf_dispatch import DEFAULT_PDF_BACKEND, PdfBackendName
 from ..models._pipeline import ChunkState, Manifest
@@ -46,7 +46,7 @@ def resolve_chunk_pages(explicit: int | None = None) -> int:
     Operational tunable (env-configurable) — larger chunks
     mean fewer Marker model-loads (~30s each), smaller chunks mean
     finer-grained resume. Memory-bound: each worker holds its chunk in
-    RAM. Delegates to `pf_core.utils.env.resolve_positive_int`: an
+    RAM. Delegates to `pw_foundation.utils.env.resolve_positive_int`: an
     explicit `< 1` raises `ValueError`; a malformed or out-of-range env
     value warns and falls back to the default.
     """
@@ -58,7 +58,7 @@ def resolve_chunk_pages(explicit: int | None = None) -> int:
 def resolve_workers(explicit: int | None = None) -> int:
     """Pick worker count: explicit param > env var > default 4.
 
-    Delegates to `pf_core.utils.env.resolve_positive_int`. An explicit
+    Delegates to `pw_foundation.utils.env.resolve_positive_int`. An explicit
     `< 1` raises `ValueError` (caller bug — fail fast). A malformed env
     var emits a structured `env_var_malformed` warning and falls back to
     the default; an out-of-range env value (e.g. `"-3"` that parses but

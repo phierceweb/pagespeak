@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import pf_core.db.connection as conn_mod
+import pw_core.db.connection as conn_mod
 from fastapi.testclient import TestClient
 
 from pagespeak.web import create_app
@@ -74,7 +74,7 @@ def test_run_diagrams_off_creates_pending_job(monkeypatch, tmp_path):
     (conv / "in" / "Doc.pdf").write_text("x", encoding="utf-8")
     r = client.post("/api/run/doc", data={"diagrams": "false"}, follow_redirects=False)
     assert r.status_code in (200, 303)
-    from pf_core.jobs import JobRepo
+    from pw_core.jobs import JobRepo
 
     jobs = JobRepo().find(kind="pagespeak_convert")
     assert len(jobs) == 1
@@ -102,7 +102,7 @@ def test_run_cache_only_without_diagrams_is_dropped(monkeypatch, tmp_path):
         data={"diagrams": "false", "vision_cache_only": "true"},
         follow_redirects=False,
     )
-    from pf_core.jobs import JobRepo
+    from pw_core.jobs import JobRepo
 
     jobs = JobRepo().find(kind="pagespeak_convert")
     assert len(jobs) == 1
@@ -123,7 +123,7 @@ def test_run_live_vision_needs_confirm(monkeypatch, tmp_path):
     )
     assert r.status_code == 200
     assert "confirm" in r.text.lower()
-    from pf_core.jobs import JobRepo
+    from pw_core.jobs import JobRepo
 
     assert JobRepo().find(kind="pagespeak_convert") == []
 
@@ -202,7 +202,7 @@ def test_run_live_vision_confirmed_creates_job(monkeypatch, tmp_path):
         follow_redirects=False,
     )
     assert r.status_code in (200, 303)
-    from pf_core.jobs import JobRepo
+    from pw_core.jobs import JobRepo
 
     assert len(JobRepo().find(kind="pagespeak_convert")) == 1
 
@@ -222,7 +222,7 @@ def _read_before(conv, ingest_flags):
 
 
 def _queued_options():
-    from pf_core.jobs import JobRepo
+    from pw_core.jobs import JobRepo
 
     jobs = JobRepo().find(kind="pagespeak_convert")
     assert len(jobs) == 1
@@ -266,7 +266,7 @@ def test_reader_change_counts_images_as_unknown(monkeypatch, tmp_path):
 
 def test_reader_change_with_several_workers_is_refused(monkeypatch, tmp_path):
     """A multi-worker run cannot re-ingest; it would resume the chunks already read."""
-    from pf_core.jobs import JobRepo
+    from pw_core.jobs import JobRepo
 
     client, conv = _client(monkeypatch, tmp_path)
     _read_before(conv, {"pdf_backend": "marker"})
