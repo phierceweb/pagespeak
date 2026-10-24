@@ -6,8 +6,8 @@ semantic headings at depth ≥ N (e.g. `## Quick Start`) — designed for produc
 manuals.
 
 Module layout: heading-line parsing → `_split_heading.py`, section-tree
-parsing → `_split_parse.py`, file/path writing → `_split_write.py`,
-section-set filtering → `_split_filter.py`. This module keeps the
+parsing → `_split_parse.py`, file paths → `_split_paths.py`, file writing →
+`_split_write.py`, section-set filtering → `_split_filter.py`. This module keeps the
 `split_into_sections` orchestrator + `DEFAULT_MIN_BODY_CHARS`, and re-exports
 `_Section` / `_parse_numbered_heading` / `_detect_fallback_min_level` /
 `_build_breadcrumb` so the public + test surface is unchanged.

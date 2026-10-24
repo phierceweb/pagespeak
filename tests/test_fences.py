@@ -151,11 +151,13 @@ _FENCED_LINES = [
     "# S K E L E T A L",
     "# 1984",
     "## Notes Notes",
+    "# Second Real 12",  # TOC-entry shape with a real heading twin in the doc
 ]
 
 _SWEEP_MODULES = [
     "_cleanup",
     "_cleanup_structure",
+    "_cleanup_front_matter",
     "_fragments",
     "_listish_headings",
     "_enumerated_nest",

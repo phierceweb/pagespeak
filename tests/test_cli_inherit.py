@@ -428,3 +428,20 @@ def test_an_explicit_size_target_still_packs(tmp_path: Path, make_run_record) ->
     result = runner.invoke(app, ["convert", str(out), "--no-diagrams", "--split-target-kb", "32"])
     assert result.exit_code == 0, result.output
     assert len(_section_files(out)) == 1
+
+
+def test_convert_inherits_recorded_backend_kwargs(
+    tmp_path: Path, monkeypatch, make_run_record
+) -> None:
+    captured = _capture_to_markdown(monkeypatch)
+    kwargs = {"IgnoreTextProcessor_max_streak": 100000}
+    out = _recorded_out_dir(tmp_path, make_run_record, {"pdf_backend_kwargs": kwargs})
+    result = runner.invoke(app, ["convert", str(out)])
+    assert result.exit_code == 0, result.output
+    assert captured["pdf_backend_kwargs"] == kwargs
+
+    result = runner.invoke(
+        app, ["convert", str(out), "--pdf-backend-kwargs", '{"IgnoreTextProcessor_max_streak": 3}']
+    )
+    assert result.exit_code == 0, result.output
+    assert captured["pdf_backend_kwargs"] == {"IgnoreTextProcessor_max_streak": 3}

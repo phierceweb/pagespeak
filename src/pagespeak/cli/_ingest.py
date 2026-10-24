@@ -9,8 +9,10 @@ from typing import Any, cast
 import typer
 
 from ..backends._docx_dispatch import DocxBackendName
-from ..orchestrators._chunk import resolve_cli_workers
+from ..orchestrators._chunk_sizing import resolve_cli_workers
 from ..orchestrators._ingest import PartialIngestError, ingest
+from ._backend_kwargs import HELP as BACKEND_KWARGS_HELP
+from ._backend_kwargs import parse_backend_kwargs
 
 
 def register(
@@ -50,6 +52,9 @@ def register(
             "--heading-hierarchy/--no-heading-hierarchy",
             help="Docling PDF only. Infer heading levels from PDF bookmarks / section numbering / font style instead of Docling's flat default. Requires docling>=2.109.",
         ),
+        pdf_backend_kwargs: str | None = typer.Option(
+            None, "--pdf-backend-kwargs", help=BACKEND_KWARGS_HELP
+        ),
         docx_backend: str = typer.Option(
             "markitdown",
             "--docx-backend",
@@ -88,6 +93,7 @@ def register(
             False, "--force", help="Discard manifest + chunks; re-ingest from scratch."
         ),
     ) -> None:
+        backend_kwargs = parse_backend_kwargs(pdf_backend_kwargs)
         try:
             kwargs: dict[str, Any] = {
                 "output_dir": output_dir,
@@ -99,6 +105,7 @@ def register(
                     chunk_unsafe=pdf_backend == "tophat",
                 ),
                 "pdf_backend": pdf_backend,
+                "pdf_backend_kwargs": backend_kwargs,
                 "heading_hierarchy": heading_hierarchy,
                 "docx_backend": cast(DocxBackendName, docx_backend),
                 "docx_outline_heading_depth": docx_outline_heading_depth,

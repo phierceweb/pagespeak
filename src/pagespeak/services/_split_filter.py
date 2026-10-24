@@ -3,7 +3,7 @@ selection (with chapter-shell preservation), and on-disk filename-collision
 dedup.
 
 Imports `_Section` / `_Collision` from `_split_parse` and
-`_section_output_path` from `_split_write`; the orchestrator calls into here.
+`_section_output_path` from `_split_paths`; the orchestrator calls into here.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from pw_foundation.log import get_logger
 
 from ._heading_sanity import is_toc_phantom_heading
 from ._split_parse import _PAGE_ANCHOR_LINE_RE, _Collision, _Section
-from ._split_write import _section_output_path
+from ._split_paths import _section_output_path
 
 logger = get_logger(__name__)
 

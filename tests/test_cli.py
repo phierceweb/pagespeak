@@ -361,3 +361,11 @@ def test_cli_vision_cache_only_conflicts_with_no_diagrams(tmp_path: Path) -> Non
     )
     assert result.exit_code != 0
     assert "vision-cache-only" in result.output
+
+
+def test_cli_version_prints_the_installed_version() -> None:
+    from pagespeak import __version__
+
+    result = runner.invoke(app, ["--version"])
+    assert result.exit_code == 0
+    assert result.output.strip() == f"pagespeak {__version__}"

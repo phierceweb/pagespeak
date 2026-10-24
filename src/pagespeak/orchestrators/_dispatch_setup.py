@@ -1,9 +1,9 @@
 """`to_markdown` setup helpers: preset/flag resolution + dir-mode input.
 
-The preset/default resolution, the dir-mode stem/input resolution, and
-the run-timestamp helper. `_dispatch` re-exports `resolve_dir_mode_stem`
-(the CLI imports it) and uses the rest internally. Self-contained: no
-dependency back on `_dispatch`.
+The preset/default resolution, the chunked-route flag guard, the dir-mode
+stem/input resolution, and the run-timestamp helper. `_dispatch` re-exports
+`resolve_dir_mode_stem` (the CLI imports it) and uses the rest internally.
+Self-contained: no dependency back on `_dispatch`.
 """
 
 from __future__ import annotations
@@ -72,6 +72,7 @@ def resolved_flags_from_ctx(ctx: PipelineContext) -> dict[str, Any]:
         "decoration_threshold": ctx.decoration_threshold,
         "decoration_hamming_distance": ctx.decoration_hamming_distance,
         "pdf_backend": ctx.pdf_backend,
+        "pdf_backend_kwargs": ctx.pdf_backend_kwargs,
         "heading_hierarchy": ctx.heading_hierarchy,
         "repair_tables": ctx.repair_tables,
         "docx_backend": ctx.docx_backend,
@@ -84,6 +85,28 @@ def resolved_flags_from_ctx(ctx: PipelineContext) -> dict[str, Any]:
         "source_type": ctx.source_type,
         "source_label": ctx.source_label,
     }
+
+
+def check_chunked_route(out: Path | None, *, rerun_from: str | None, repair_tables: bool) -> Path:
+    """Refuse what the `workers > 1` route cannot honour; return its output dir."""
+    if out is None:
+        raise ValueError("workers > 1 requires output_dir to be specified")
+    if rerun_from is not None:
+        # The re-entry invalidates in dir-mode, which for `ingest` deletes
+        # the raw.md/images/chunks this branch just spent the backend on.
+        raise ValueError(
+            "rerun_from is not supported on the chunked path (workers > 1). "
+            "Re-run the chunked ingest with `pagespeak ingest --force`, then "
+            "`pagespeak convert <output_dir> --rerun-from <stage>`."
+        )
+    if repair_tables:
+        # The re-entry's source is the concatenated raw.md, not the PDF the
+        # repair reads, so the pass would no-op instead of running.
+        raise ValueError(
+            "repair_tables is not supported on the chunked path (workers > 1). "
+            "Use workers=1, or run `pagespeak repair-tables` on the output dir."
+        )
+    return out
 
 
 def _apply_preset_and_defaults(

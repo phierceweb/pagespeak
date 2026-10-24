@@ -13,7 +13,7 @@ from pagespeak.services._split import (
     split_into_sections,
 )
 from pagespeak.services._split_parse import _parse_sections
-from pagespeak.services._split_write import _sanitize_crumb, _sanitize_filename
+from pagespeak.services._split_write import _sanitize_crumb
 
 
 def test_splits_at_each_numbered_heading(tmp_path: Path) -> None:
@@ -507,44 +507,19 @@ def test_breadcrumb_root_sanitized_in_output(tmp_path: Path) -> None:
 
 def test_breadcrumb_ancestor_crumb_sanitized(tmp_path: Path) -> None:
     """An ANCESTOR section whose title carries a pipe must not leak a raw `|`
-    into the breadcrumb — a multilingual-manual failure: a product-name chapter
-    heading `Sample Device | Wireless Monitor Set`. Covers the crumb LABEL and the
+    into the breadcrumb, e.g. a product-name chapter heading
+    `Widget 3 | Parts Tray`. Covers the crumb LABEL and the
     link TARGET (the on-disk filename)."""
     md = (
-        "# Sample Device | Wireless Monitor Set\n"
+        "# Widget 3 | Parts Tray\n"
         "Chapter intro long enough to keep this as its own section file here.\n"
         "## Delivery Includes\n"
         "Body content comfortably over the cutoff so the child is kept too.\n"
     )
-    split_into_sections(md, tmp_path, min_level=1, min_body_chars=0, doc_title="Sample Device Spec")
+    split_into_sections(md, tmp_path, min_level=1, min_body_chars=0, doc_title="Widget 3 Spec")
     child = (tmp_path / "delivery-includes.md").read_text()
     crumb = next(ln for ln in child.splitlines() if ln.startswith("> ↑"))
     assert "|" not in crumb  # neither the ancestor label NOR its link target leaks a pipe
-
-
-def test_sanitize_filename_strips_markdown_breakers() -> None:
-    """Filenames feed breadcrumb / Subsections link TARGETS, so pipes + brackets
-    must be stripped there too (not just `/ \\ : * ? " < >`)."""
-    out = _sanitize_filename("Sample Device | Wireless Monitor Set [v2]")
-    assert "|" not in out
-    assert "[" not in out and "]" not in out
-
-
-def test_sanitize_filename_punctuation_only_falls_back() -> None:
-    """A degenerate heading (`## #`, `## ·`) sanitizes to a stem with no word
-    content — `#.md` / `·.md`. Downstream indexers (QMD `handelize`) reject a
-    filename with no valid content, so fall back to a generic stem."""
-    assert _sanitize_filename("#") == "section.md"
-    assert _sanitize_filename("·") == "section.md"
-    assert _sanitize_filename("***") == "section.md"
-    assert _sanitize_filename("   ") == "section.md"
-
-
-def test_sanitize_filename_keeps_non_latin_word_content() -> None:
-    """CJK / Cyrillic section names are valid content (Unicode word chars) and
-    must NOT be clobbered by the punctuation-only fallback."""
-    assert _sanitize_filename("产品注册") == "产品注册.md"
-    assert _sanitize_filename("Благодарность") == "благодарность.md"
 
 
 def test_nav_link_targets_are_slugs(tmp_path: Path) -> None:

@@ -122,6 +122,24 @@ def test_convert_pdf_accepts_marker_1(tmp_path: Path, monkeypatch: pytest.Monkey
     assert result.markdown == "body"  # type: ignore[attr-defined]
 
 
+def test_convert_pdf_runs_the_keep_sole_copy_text_remover(tmp_path: Path) -> None:
+    pytest.importorskip("marker")
+    from marker.converters.pdf import PdfConverter
+
+    pdf_path = tmp_path / "doc.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4\n")
+    PdfCls, models_fn, text_fn = _patch_marker()
+    PdfCls.default_processors = PdfConverter.default_processors
+    with (
+        patch("marker.converters.pdf.PdfConverter", PdfCls),
+        patch("marker.models.create_model_dict", models_fn),
+        patch("marker.output.text_from_rendered", text_fn),
+    ):
+        convert_pdf(pdf_path)
+    names = PdfCls.call_args.kwargs["processor_list"]
+    assert "pagespeak.backends._marker_ignoretext.IgnoreTextProcessor" in names
+
+
 def test_convert_pdf_no_extras_passes_none_config(tmp_path: Path) -> None:
     pdf_path = tmp_path / "doc.pdf"
     pdf_path.write_bytes(b"%PDF-1.4\n")
@@ -239,6 +257,8 @@ def test_convert_pdf_translates_sandbox_permission_error(tmp_path: Path) -> None
     pytest.importorskip("marker")
 
     class _FakeConverter:
+        default_processors: tuple[type, ...] = ()
+
         def __init__(self, **_kwargs: object) -> None:
             pass
 
@@ -261,6 +281,8 @@ def test_convert_pdf_unrelated_permission_error_passes_through(tmp_path: Path) -
     pytest.importorskip("marker")
 
     class _FakeConverter:
+        default_processors: tuple[type, ...] = ()
+
         def __init__(self, **_kwargs: object) -> None:
             pass
 

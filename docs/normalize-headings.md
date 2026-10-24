@@ -31,6 +31,12 @@ Both `llm_full` and `llm_dehead` can mark a heading as not-a-heading (the level-
 
 The `llm` and `llm_full` modes ask for one line per heading. When a response levels fewer than `PAGESPEAK_NORMALIZE_MIN_COVERAGE_PCT` (default 90) percent of the headings it was given, it is **not applied**: every heading keeps its extracted level, and `heading_normalize_low_coverage` names the shortfall. Applying it would re-level a few headings and leave the rest where the extractor put them — a tree inconsistent with itself. The usual cause is a very large document whose response was cut off. A drop the guards above refuse still counts as answered. The response stays cached, so a plain re-run skips it again rather than re-send the whole payload; the warning says `source=cache` on such a replay (`source=llm` for a fresh answer) and names `--rerun-from normalize`, which asks again. `llm_dehead` is exempt: an absent verdict there means keep.
 
+### A long heading list is asked in chunks
+
+Past about 2,000 headings the model answers a few hundred and stops. A list longer than `PAGESPEAK_NORMALIZE_CHUNK_HEADINGS` (default 1,500) is asked in chunks of at most that many headings (logged as `heading_normalize_chunked`). Each cut moves back, up to half a chunk, onto a heading at the shallowest level that recurs — a lone title above its chapters doesn't count — so a chapter stays in one chunk. Each chunk after the first opens on the previous chunk's last headings, already judged: a tenth of the chunk size, at least 3 and at most 50. A chunk size below 4 is ignored (the default applies). Their new answers are ignored — the model may read a chunk's first heading as the document's title — and, in the leveling modes, the median shift between the two answers for them moves the chunk's levels onto the previous chunk's scale; a chunk with no shared heading levelled in both is kept as answered and logged as `heading_normalize_chunk_unaligned`. An answer for an index outside its chunk is ignored. In `llm` / `llm_full` every chunk is checked for coverage on its own, and one short answer refuses the whole document, as above; in every mode a failed call for any chunk leaves the whole document as extracted. The guards then run once over the stitched map, so a heading that ends one chunk is still seen as the parent of the next chunk's first.
+
+Each chunk is cached in a file of its own. A cached whole-list answer replays, refused or not, so a run that only re-does later stages makes no call; `--rerun-from normalize` clears it, and the next run asks again in chunks.
+
 Short non-prose margin-code fragments (`EN`, `FR`) that a backend promoted to headings are demoted in cleanup (`services/_fragments.py`) before normalize runs, so normalize sees a cleaner heading set.
 
 Residual heading slips this pass leaves (or introduces) are cleaned up **after** it by the `$0` deterministic **repair** stage (`services/_normalize_repair.py`, writes `<stem>.repaired.md`), which runs immediately after normalize (before the structure and vision stages) — see [pipeline-repair.md](pipeline-repair.md). Repair is the cheap deterministic counterpart to this (sometimes paid) LLM pass: freeze the LLM output, iterate repair for free.
@@ -152,7 +158,7 @@ LLM-mode cache key is derived from:
 - The model name
 - The prompt version (bumped by `services._heading_normalize.NORMALIZE_PROMPT_VERSION`)
 
-Anything that changes the heading list (re-running Marker on a modified PDF, switching cleanup levels) busts the cache. Anything that changes the model busts the cache. Editing the prompt and bumping the version busts the cache.
+Anything that changes the heading list (re-running Marker on a modified PDF, switching cleanup levels) busts the cache. Anything that changes the model busts the cache. Editing the prompt and bumping the version busts the cache. A chunked list caches one file per chunk, keyed the same way on that chunk's headings, so changing `PAGESPEAK_NORMALIZE_CHUNK_HEADINGS` asks again.
 
 Cache files are atomic (tmp + rename) and never partial. Manually delete the cache directory to force a fresh LLM call.
 

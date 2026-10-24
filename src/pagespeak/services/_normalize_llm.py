@@ -60,7 +60,7 @@ _BODY_GUARD_MAX_RECURRENCE_ENV_VAR = "PAGESPEAK_DEHEAD_GUARD_MAX_RECURRENCE"
 
 DEFAULT_NORMALIZE_MODEL = "claude-haiku-4-5-20251001"
 
-# Must match the slugs `_heading_normalize` passes to `invoke_agent`: this
+# Must match the slugs `_normalize_llm_gather` passes to `invoke_agent`: this
 # model goes in as `model_override`, which outranks the agent block's own.
 _AGENT_SLUG_FOR_MODE = {
     "llm": "heading_normalize",
@@ -305,10 +305,12 @@ def _build_dehead_prompt_with_gate(
     headings: list[_HeadingRecord],
     *,
     max_input_tokens: int | None,
+    anchors: list[str] | None = None,
 ) -> tuple[str, bool]:
     """`_build_llm_full_prompt_with_gate`'s sibling for the de-headify prompt."""
     threshold = _resolve_max_input_tokens(max_input_tokens, agent="heading_normalize_dehead")
-    anchors = _extract_body_anchors(md, headings)
+    if anchors is None:
+        anchors = _extract_body_anchors(md, headings)
     prompt = _build_prompt_dehead(headings, anchors, include_anchors=True)
     estimate = _estimate_tokens(prompt)
     logger.info(
@@ -389,16 +391,19 @@ def _build_llm_full_prompt_with_gate(
     headings: list[_HeadingRecord],
     *,
     max_input_tokens: int | None,
+    anchors: list[str] | None = None,
 ) -> tuple[str, bool]:
     """Build the `llm_full` prompt with token-budget gating.
 
     Returns `(prompt_text, anchors_were_included)`. If the assembled
     prompt-with-anchors exceeds the resolved token budget, retries with
     anchors dropped (which always fits — headings alone are small) and
-    logs the fallback.
+    logs the fallback. `anchors`: a chunk's slice of the whole list's, so
+    its last heading's body stops at the next chunk's first heading.
     """
     threshold = _resolve_max_input_tokens(max_input_tokens)
-    anchors = _extract_body_anchors(md, headings)
+    if anchors is None:
+        anchors = _extract_body_anchors(md, headings)
     prompt = _build_prompt_full(headings, anchors, include_anchors=True)
     estimate = _estimate_tokens(prompt)
     logger.info(

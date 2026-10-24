@@ -70,8 +70,11 @@ def _run_marker(path: Path, config: dict[str, object]) -> tuple[str, dict[str, A
             "PDF support requires marker-pdf. Install with: pip install pagespeak[pdf]"
         ) from e
 
+    from ._marker_ignoretext import marker_processor_list
+
     converter = PdfConverter(
         artifact_dict=create_model_dict(),
+        processor_list=marker_processor_list(PdfConverter.default_processors),
         config=config or None,
     )
     try:

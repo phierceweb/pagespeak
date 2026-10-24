@@ -510,9 +510,10 @@ def test_chunked_ingest_stamps_the_hierarchy_marker(tmp_path, monkeypatch):
     )
 
     class _Chunk:
-        page_range, status = "0-9", "completed"
+        page_range, status, raw_md = "0-9", "completed", "chunks/0-9/raw.md"
 
     class _Manifest:
+        output_dir = out
         chunks = [_Chunk()]
         shelved: list[object] = []
 

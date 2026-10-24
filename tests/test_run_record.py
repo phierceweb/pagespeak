@@ -425,3 +425,88 @@ def test_write_run_record_carries_the_ingest_block_forward(tmp_path: Path) -> No
         "heading_hierarchy": True,
         "cleanup": "basic",
     }
+
+
+def test_write_run_record_stores_backend_kwargs_json_safe(tmp_path: Path) -> None:
+    """A library caller's backend kwargs may hold values JSON cannot encode; the
+    record still writes, with those values as their repr."""
+    src = tmp_path / "doc.pdf"
+    src.write_bytes(b"fake pdf bytes")
+    kwargs = {"cache_dir": Path("/x"), "max_streak": 3}
+    write_run_record(
+        tmp_path,
+        version="0.1.0",
+        preset=None,
+        resolved_flags={"pdf_backend_kwargs": kwargs},
+        input_path=src,
+        started_at="2026-05-10T00:00:00Z",
+        finished_at="2026-05-10T00:00:30Z",
+        section_count=None,
+        image_count=0,
+        ingest_flags={"pdf_backend_kwargs": kwargs},
+    )
+    record = read_run_record(tmp_path)
+    assert record is not None
+    expected = {"cache_dir": repr(Path("/x")), "max_streak": 3}
+    assert record["resolved_flags"]["pdf_backend_kwargs"] == expected
+    assert record["ingest_flags"]["pdf_backend_kwargs"] == expected
+
+
+def test_json_safe_handles_object_keys_and_orders_sets() -> None:
+    from pagespeak.services._run_record import json_safe
+
+    assert json_safe({(1, 2): "x", Path("/k"): 1}) == {"(1, 2)": "x", repr(Path("/k")): 1}
+    assert json_safe({"modes": {"zeta", "alpha", "mid"}}) == {"modes": ["alpha", "mid", "zeta"]}
+
+
+def test_json_safe_orders_any_set_and_reaches_into_lists() -> None:
+    """Thirty strings iterate unsorted under any hash seed; a set or tuple nested
+    in a list is encoded too; non-string keys read as JSON writes them."""
+    from pagespeak.services._run_record import json_safe
+
+    names = {f"w{n:02d}" for n in range(30)}
+    assert json_safe({"s": names})["s"] == sorted(names)
+    assert json_safe({"a": [{"z", "y"}, (1, 2)]}) == {"a": [["y", "z"], [1, 2]]}
+    assert json_safe({True: 1, None: 2, 3: 3}) == {"true": 1, "null": 2, "3": 3}
+
+
+def test_json_safe_records_a_non_finite_number_as_text() -> None:
+    """`NaN` is not JSON; the record stays readable by any JSON reader."""
+    import json
+
+    from pagespeak.services._run_record import json_safe
+
+    safe = json_safe({"x": float("nan"), "y": float("inf")})
+    assert safe == {"x": "nan", "y": "inf"}
+    json.loads(json.dumps(safe, allow_nan=False))
+
+
+class _Service:
+    pass
+
+
+def test_json_safe_records_equal_objects_alike() -> None:
+    """An object's repr carries its memory address; two runs passing the same kind
+    of object must record the same kwargs, or resume refuses every time."""
+    from pagespeak.services._run_record import json_safe
+
+    assert json_safe({"svc": _Service()}) == json_safe({"svc": _Service()})
+    assert " at 0x" not in json_safe({"svc": _Service()})["svc"]
+
+
+def test_json_safe_warns_when_two_keys_record_alike(caplog) -> None:
+    from pagespeak.services._run_record import json_safe
+
+    with caplog.at_level("WARNING"):
+        assert json_safe({1: "int", "1": "str"}) == {"1": "str"}
+    assert "run_record_key_collision" in caplog.text
+
+
+def test_json_safe_records_what_json_cannot_hold_as_text() -> None:
+    from pagespeak.services._run_record import json_safe
+
+    assert json_safe({"n": 10**5000})["n"].startswith("<int of ")
+    deep: object = 1
+    for _ in range(5000):
+        deep = [deep]
+    assert json_safe({"d": deep}) == "<nested too deep to record>"

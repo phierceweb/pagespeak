@@ -8,54 +8,8 @@ import pytest
 
 from pagespeak.orchestrators._ingest import (
     PartialIngestError,
-    assert_ingest_complete,
     ingest,
 )
-
-
-def _write_manifest(out: Path, chunks: list[tuple[str, str]]) -> None:
-    import json
-
-    out.mkdir(parents=True, exist_ok=True)
-    (out / "manifest.json").write_text(
-        json.dumps(
-            {"version": 3, "chunks": [{"page_range": pr, "status": st} for pr, st in chunks]}
-        ),
-        encoding="utf-8",
-    )
-
-
-def test_assert_ingest_complete_refuses_incomplete_chunks(tmp_path, caplog):
-    """Nothing downstream reads chunk status, so this is the only stop between a
-    failed chunk and a document silently missing those pages."""
-    out = tmp_path / "out"
-    _write_manifest(out, [("0-49", "completed"), ("50-99", "failed")])
-    (out / "doc.raw.md").write_text("half\n", encoding="utf-8")
-
-    with pytest.raises(PartialIngestError) as excinfo:
-        assert_ingest_complete(out)
-    assert excinfo.value.failed_page_ranges == ["50-99"]
-
-    # A killed run leaves `in_progress`, which is equally incomplete.
-    _write_manifest(out, [("0-49", "completed"), ("50-99", "in_progress")])
-    with pytest.raises(PartialIngestError):
-        assert_ingest_complete(out)
-
-    # Opt-in downgrades to a warning.
-    caplog.clear()
-    with caplog.at_level("WARNING"):
-        assert_ingest_complete(out, allow_partial=True)
-    assert "ingest_incomplete_accepted" in caplog.text
-
-
-def test_assert_ingest_complete_passes_when_nothing_to_flag(tmp_path):
-    out = tmp_path / "out"
-    out.mkdir()
-    assert_ingest_complete(out)  # no manifest → not a chunked run
-    assert_ingest_complete(None)  # library call with no output dir
-
-    _write_manifest(out, [("0-49", "completed"), ("50-99", "completed")])
-    assert_ingest_complete(out)
 
 
 def test_ingest_single_process_writes_raw_md_and_images(tmp_path, monkeypatch):
@@ -351,7 +305,6 @@ def test_ingest_chunked_raises_partial_error_on_some_failed_chunks(tmp_path, mon
     retry the failed chunks only."""
     from pagespeak.models._pipeline import ChunkState, Manifest
     from pagespeak.orchestrators import _ingest
-    from pagespeak.orchestrators._ingest import PartialIngestError
 
     src = tmp_path / "doc.pdf"
     src.write_bytes(b"%PDF-fake")
@@ -466,3 +419,30 @@ def test_ingest_rejects_legacy_doc_format(tmp_path):
     src.write_bytes(b"\xd0\xcf\x11\xe0")  # OLE2 (legacy Office) magic
     with pytest.raises(ValueError, match="Unsupported format"):
         ingest(src, output_dir=tmp_path / "out", workers=1)
+
+
+def test_ingest_records_pdf_backend_kwargs(tmp_path, monkeypatch):
+    """A re-ingest reads the record; kwargs left out of it were silently dropped."""
+    from pagespeak.backends import _pdf_dispatch
+    from pagespeak.models._models import IngestResult
+    from pagespeak.services._run_record import read_run_record
+
+    seen: dict[str, object] = {}
+
+    def fake_convert(*a, **k):
+        seen.update(k)
+        return IngestResult(markdown="# Doc\n", images=[], source_format="pdf")
+
+    monkeypatch.setattr(_pdf_dispatch, "convert", fake_convert)
+    src = tmp_path / "doc.pdf"
+    src.write_bytes(b"%PDF-fake")
+    out = tmp_path / "out"
+    kwargs = {"IgnoreTextProcessor_max_streak": 100000}
+
+    ingest(src, output_dir=out, workers=1, pdf_backend_kwargs=kwargs)
+
+    assert seen["backend_kwargs"] == kwargs
+    record = read_run_record(out)
+    assert record is not None
+    assert record["ingest_flags"]["pdf_backend_kwargs"] == kwargs
+    assert record["resolved_flags"]["pdf_backend_kwargs"] == kwargs

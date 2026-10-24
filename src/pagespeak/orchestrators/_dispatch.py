@@ -10,8 +10,6 @@ from typing import Any
 
 from pw_core.pipeline.sequencer import Phase as SequencedPhase
 from pw_core.pipeline.sequencer import run_pipeline
-from pw_foundation.log import get_logger
-from pw_foundation.utils.io import atomic_write_text
 
 from ..backends._docx_dispatch import DEFAULT_DOCX_BACKEND, DocxBackendName
 from ..backends._pdf_dispatch import DEFAULT_PDF_BACKEND, PdfBackendName
@@ -21,11 +19,12 @@ from ..services._cleanup import CleanupLevel, CrossRefs
 from ..services._diagrams import VisionBackendName
 from ..services._normalize_decision import NormalizeModeOption
 from ._context import PipelineContext
+from ._dispatch_finish import write_final_outputs
 from ._dispatch_setup import (
     _apply_preset_and_defaults,
     _now_utc_iso,
+    check_chunked_route,
     prepare_output_dir,
-    resolved_flags_from_ctx,
 )
 from ._dispatch_setup import (
     resolve_dir_mode_stem as resolve_dir_mode_stem,
@@ -34,8 +33,6 @@ from ._ingest import PDF_SUFFIXES as _PDF_SUFFIXES
 from ._ingest import ingest as _ingest_orchestrator
 from ._phase import Phase
 from ._phases import build_phases
-
-logger = get_logger(__name__)
 
 
 def to_markdown(
@@ -207,23 +204,7 @@ def to_markdown(
     # workers > 1 routes the backend phase through ingest's chunked
     # path, then re-enters this function in directory-mode for Phase 3.
     if workers > 1 and not src_arg.is_dir() and not _qti_mode:
-        if out is None:
-            raise ValueError("workers > 1 requires output_dir to be specified")
-        if rerun_from is not None:
-            # The re-entry invalidates in dir-mode, which for `ingest` deletes
-            # the raw.md/images/chunks this branch just spent the backend on.
-            raise ValueError(
-                "rerun_from is not supported on the chunked path (workers > 1). "
-                "Re-run the chunked ingest with `pagespeak ingest --force`, then "
-                "`pagespeak convert <output_dir> --rerun-from <stage>`."
-            )
-        if repair_tables:
-            # The re-entry's source is the concatenated raw.md, not the PDF the
-            # repair reads, so the pass would no-op instead of running.
-            raise ValueError(
-                "repair_tables is not supported on the chunked path (workers > 1). "
-                "Use workers=1, or run `pagespeak repair-tables` on the output dir."
-            )
+        out = check_chunked_route(out, rerun_from=rerun_from, repair_tables=repair_tables)
         _ingest_orchestrator(
             input_path=src,
             output_dir=out,
@@ -439,53 +420,24 @@ def to_markdown(
     if ctx.result is None:  # ingest phase always sets it
         raise RuntimeError("pipeline produced no result")
     result = ctx.result
-    section_count = ctx.section_count
 
     # Drain even when `out is None`, or the accumulator leaks into the next call.
     from .._agent_runtime import end_call_recording
 
     llm_call_records = end_call_recording()
 
-    # Stamp the resolved config into <output>/.pagespeak-run.json so re-run drift
-    # is a one-line diff. Write failures are non-fatal.
     if out is not None:
-        from .. import __version__
-        from ..services._provenance import persistable_source_identity
-        from ..services._run_record import summarize_llm_calls, write_run_record
-
-        # Written by the library so every consumer gets it. An earlier stop leaves
-        # result.markdown as an intermediate checkpoint — writing that would
-        # clobber the real final document.
-        if stop_after in (None, "vision", "split"):
-            atomic_write_text(out / f"{effective_stem}.md", result.markdown)
-
-        finished_at = _now_utc_iso()
-        resolved_flags = resolved_flags_from_ctx(ctx)
-        # The run record SHA-256s the input as a file. A QTI export can be a
-        # directory — record its manifest (a stable per-export fingerprint).
-        record_input = src
-        if _qti_mode and src.is_dir():
-            record_input = src / "imsmanifest.xml"
-        # Resolve BEFORE writing: dir-mode reads the prior record to carry the
-        # original source identity forward (this run's `input` is a checkpoint).
-        source_identity = (
-            None if _qti_mode else persistable_source_identity(src, out, dir_mode=_dir_mode)
+        write_final_outputs(
+            ctx,
+            result,
+            src=src,
+            out=out,
+            effective_stem=effective_stem,
+            dir_mode=_dir_mode,
+            qti_mode=_qti_mode,
+            preset=preset,
+            stop_after=stop_after,
+            started_at=started_at,
+            llm_call_records=llm_call_records,
         )
-        try:
-            write_run_record(
-                out,
-                version=__version__,
-                preset=preset,
-                resolved_flags=resolved_flags,
-                input_path=record_input,
-                started_at=started_at,
-                finished_at=finished_at,
-                section_count=section_count,
-                image_count=len(result.images),
-                llm_calls=summarize_llm_calls(llm_call_records),
-                source_identity=source_identity,
-            )
-        except OSError as e:
-            logger.warning("run_record_write_failed path=%s error=%s", out, e)
-
     return result

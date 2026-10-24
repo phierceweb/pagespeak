@@ -11,19 +11,21 @@ import pytest
 from pagespeak.services._heading_normalize import (
     NormalizeData,
     _apply_normalization,
-    _build_prompt,
-    _cache_key,
     _extract_headings,
     _HeadingRecord,
     _heuristic_level_for,
     _is_structural_heading,
-    _parse_response,
-    _resolve_model,
     _select_structural_headings,
     _strip_marker_pollution,
     apply_normalization,
     gather_normalize_levels,
     normalize_heading_levels,
+)
+from pagespeak.services._normalize_llm import (
+    _build_prompt,
+    _cache_key,
+    _parse_response,
+    _resolve_model,
 )
 
 
@@ -939,7 +941,7 @@ def test_resolve_max_input_tokens_default_when_yaml_absent(
 
 
 def test_build_llm_full_prompt_with_gate_under_threshold_keeps_anchors() -> None:
-    from pagespeak.services._heading_normalize import _build_llm_full_prompt_with_gate
+    from pagespeak.services._normalize_llm import _build_llm_full_prompt_with_gate
 
     md = "# A\nshort body.\n# B\nanother short body.\n"
     headings = _extract_headings(md)
@@ -952,7 +954,7 @@ def test_build_llm_full_prompt_with_gate_under_threshold_keeps_anchors() -> None
 def test_build_llm_full_prompt_with_gate_over_threshold_drops_anchors() -> None:
     """Force the gate to fire by setting a tiny threshold. Output should
     NOT include the body anchors (fallback to headings-only)."""
-    from pagespeak.services._heading_normalize import _build_llm_full_prompt_with_gate
+    from pagespeak.services._normalize_llm import _build_llm_full_prompt_with_gate
 
     md = "# A\n" + ("x" * 800) + "\n# B\n" + ("y" * 800) + "\n"
     headings = _extract_headings(md)

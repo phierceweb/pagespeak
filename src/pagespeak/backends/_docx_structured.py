@@ -18,9 +18,16 @@ from docx.text.paragraph import Paragraph
 from pw_foundation.log import get_logger
 
 from ..models._models import IngestResult
-from ..utils._alt import flatten_alt
+from ._docx_images import _emit_images
 from ._docx_numbering import ORDERED_DEFAULT, WordNumbering, build_level_defs
 from ._docx_numpr import paragraph_numbering
+from ._docx_para import (
+    _doc_has_heading,
+    _heading_level,
+    _indent_depth,
+    _para_left_twips,
+    _para_style,
+)
 from ._docx_quality import (
     demote_nonsection_h1,
     emit_heading,
@@ -30,42 +37,6 @@ from ._docx_runs import render_runs
 from ._docx_walk import iter_body
 
 logger = get_logger(__name__)
-
-# Only a genuine `Heading N` paragraph style. Word's `Title` is the
-# document-title style, NOT a section heading — it can appear on outline
-# paragraphs as noise, and real Title-marked sections are always also at
-# outline ilvl0 (which is the heading signal that covers them).
-_HEADING_STYLE_RE = re.compile(r"^heading\s*([1-9])$", re.IGNORECASE)
-
-
-def _heading_level(style_name: str | None) -> int | None:
-    if not style_name:
-        return None
-    m = _HEADING_STYLE_RE.match(style_name.strip())
-    if not m:
-        return None
-    return min(int(m.group(1)), 6)
-
-
-def _para_style(paragraph: Any) -> Any:
-    try:
-        return paragraph.style
-    except (KeyError, ValueError):
-        return None
-
-
-def _doc_has_heading(document: Any) -> bool:
-    """True if the body contains any real heading (numbered outline or
-    ``Heading*`` style). Title promotion only fires when one exists."""
-    for item in iter_body(document):
-        if item.kind == "table":
-            continue
-        style = _para_style(item.obj)
-        if _heading_level(style.name if style else None) is not None:
-            return True
-        if paragraph_numbering(item.obj, style) is not None:
-            return True
-    return False
 
 
 def _count_table_numbering(table: Any, numbering: WordNumbering) -> None:
@@ -78,85 +49,6 @@ def _count_table_numbering(table: Any, numbering: WordNumbering) -> None:
         num = paragraph_numbering(para, _para_style(para))
         if num is not None:
             numbering.advance(num.num_id, num.ilvl)
-
-
-def _para_left_twips(paragraph: Any) -> int | None:
-    """The paragraph's OWN left indent in twips (``w:pPr/w:ind/@w:left``)
-    — the direct override Word stores. ``None`` when absent (caller
-    falls back to the numbering-level indent, then to ilvl)."""
-    ppr = paragraph._p.pPr
-    if ppr is None:
-        return None
-    ind = ppr.find(qn("w:ind"))
-    if ind is None:
-        return None
-    left = ind.get(qn("w:left"))
-    if left is None:
-        return None
-    try:
-        return int(left)
-    except ValueError:
-        return None
-
-
-def _indent_depth(stack: list[int], left_twips: int) -> int:
-    """Relative markdown nesting depth from RESOLVED LEFT INDENT — the
-    dimension Word actually lays the visual outline out by (consistent
-    across numIds, unlike per-numId ``ilvl``). Monotonic stack of
-    indents: shallower pops, deeper pushes, equal is a sibling.
-    Mutates ``stack``; returns the new depth (``len(stack) - 1``)."""
-    while len(stack) > 1 and left_twips < stack[-1]:
-        stack.pop()
-    if not stack or left_twips > stack[-1]:
-        stack.append(left_twips)
-    else:  # equal (sibling) — or the single base level
-        stack[-1] = left_twips
-    return len(stack) - 1
-
-
-def _add_image_ref(
-    rid: str | None,
-    paragraph: Any,
-    rels: Any,
-    images_dir: Path,
-    refs: list[str],
-) -> None:
-    if not rid or rid not in rels:
-        return
-    part = rels[rid].target_part
-    images_dir.mkdir(parents=True, exist_ok=True)
-    target = images_dir / Path(part.partname).name
-    stem, suffix = target.stem, target.suffix
-    n = 2
-    while target.exists() and target.read_bytes() != part.blob:
-        target = images_dir / f"{stem}-{n}{suffix}"
-        n += 1
-    if not target.exists():
-        target.write_bytes(part.blob)
-    alt = ""
-    for docpr in paragraph._p.iter(qn("wp:docPr")):
-        alt = docpr.get("descr") or docpr.get("title") or ""
-        if alt:
-            break
-    refs.append(f"![{flatten_alt(alt)}](images/{target.name})")
-
-
-_VML_IMAGEDATA = "{urn:schemas-microsoft-com:vml}imagedata"
-
-
-def _emit_images(paragraph: Any, output_dir: Path | None) -> list[str]:
-    """Positional ``![alt](images/..)`` refs for inline drawings/pict in
-    this paragraph; image bytes written under output_dir/images/."""
-    if output_dir is None:
-        return []
-    refs: list[str] = []
-    rels = paragraph.part.rels
-    images_dir = output_dir / "images"
-    for blip in paragraph._p.iter(qn("a:blip")):
-        _add_image_ref(blip.get(qn("r:embed")), paragraph, rels, images_dir, refs)
-    for imgdata in paragraph._p.iter(_VML_IMAGEDATA):
-        _add_image_ref(imgdata.get(qn("r:id")), paragraph, rels, images_dir, refs)
-    return refs
 
 
 def render_markdown(

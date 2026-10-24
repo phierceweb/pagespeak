@@ -15,10 +15,9 @@ from pagespeak.cli import app
 
 runner = CliRunner()
 
-_MEGA = "<br>".join(["Alpha Profile", "Oracle", ".aaa", "Beta File", "Redis", ".bbb"] * 8)
-_GRID = (
-    "| Profile | Database | Ext |\n| --- | --- | --- |\n"
-    "| Alpha Profile | Oracle | .aaa |\n| Beta File | Redis | .bbb |\n"
+_MEGA = "<br>".join(["Alpha Profile", "Brass", ".aaa", "Beta File", "Steel", ".bbb"] * 8)
+_GRID = "| Profile | Material | Ext |\n| --- | --- | --- |\n" + (
+    "| Alpha Profile | Brass | .aaa |\n| Beta File | Steel | .bbb |\n" * 8
 )
 
 
@@ -44,8 +43,8 @@ def test_repair_tables_splices_and_patches(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert "repaired 1/1" in result.output
     patched = (out / "mydoc.raw.md").read_text()
-    assert "Profile<br>Oracle" not in patched  # blob gone
-    assert "| Alpha Profile | Oracle | .aaa |" in patched  # grid in
+    assert "Profile<br>Brass" not in patched  # blob gone
+    assert "| Alpha Profile | Brass | .aaa |" in patched  # grid in
 
 
 def test_repair_tables_splices_a_split_table(tmp_path: Path) -> None:

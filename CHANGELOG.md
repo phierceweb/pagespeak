@@ -2,6 +2,26 @@
 
 Notable changes to pagespeak, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## 0.20.0
+
+### Added
+- **`pagespeak --version`** prints the installed version.
+- **`--pdf-backend-kwargs` on `convert` and `ingest`**: PDF backend pipeline options as a JSON object. The kwargs, from the flag or `to_markdown(pdf_backend_kwargs=…)`, are recorded in `.pagespeak-run.json` (`resolved_flags` and `ingest_flags`) and inherited by a later `convert` into the same output dir, so `--rerun-from ingest` re-reads with them. Resuming from a `raw.md` read with other kwargs stops with an error. A value JSON cannot encode is recorded as its repr, without a memory address. The flag rejects `NaN`, an infinite number and a key given twice.
+- **Heading normalize asks a long heading list in chunks.** A list longer than `PAGESPEAK_NORMALIZE_CHUNK_HEADINGS` (default 1,500) is asked in chunks, cut at a top-level heading where one is near, and the answers stitched. Each chunk after the first repeats the previous chunk's last headings (3 to 50): their answers are ignored, and they put the chunk's levels on the previous chunk's scale. In `llm` / `llm_full`, one chunk answering too few headings refuses the whole document; in every mode, so does a failed call for any chunk. A cached whole-list answer replays, refused or not; `--rerun-from normalize` clears it and asks again, in chunks.
+- **`audit` check `lost_table_column`** (with `--text-coverage`): a one-column table, or one whose first column is empty on at least 85% of its rows, flagged when its stretch of the source page holds wording that reached the file nowhere.
+
+### Fixed
+- **Marker's repeated-text remover keeps the first copy of a text found nowhere else in the document.** A section title printed atop each page of its section stays above its content, as does a running header or footer with no other copy (kept once per document). Copies are matched as Marker matches them, so two titles a character apart count as one text. A text with another copy, and a page number, are dropped. `--pdf-backend-kwargs '{"IgnoreTextProcessor_keep_sole_copy": false}'` turns this off. Re-ingest (`--rerun-from ingest`) to apply it to an existing conversion.
+- **`repair-tables` keeps Marker's table unless Docling's grid holds every token of it, as many times** (the whole table, not only the collapsed cell): words in any script, whole numbers with an attached sign or comparison (`7.4`, `-5`, `< 5`), and symbols (`✓`, `$`, `%`). Markup is not counted: HTML tags with quoted attributes, entities, the target of a link to a page anchor or URL, `_` / `*` emphasis, thousands separators, a LaTeX span's `$`, braces and formatting commands, and a few LaTeX symbols, which read as the symbol (`\times` is `×`). A word a hyphen split at a line break counts whole when Docling's grid has it whole. The outcome is `loses-words`, naming the missing tokens (logged as `table_repair_kept_marker`).
+- **`repair-tables` keeps Marker's tables when Docling's table also holds at least half of a neighbouring Marker table's body**: Docling read the two as one. The outcome is `absorbs-table`.
+- **`repair-tables` finds a split table whose key and value wrap together**: a parenthetical second key line beside a value that picks up mid-sentence.
+- **A chunked ingest reports the pages of a chunk that did not finish, or whose markdown is gone**, as it does a failed chunk's (`PartialIngestError`, CLI exit 2); `raw.md` holds the rest.
+- **Heading normalize ignores an answer for an index past the heading list**, and does not count it toward the coverage check.
+- **A code comment shaped like a table-of-contents entry (`# Setup 12` inside a fenced block) keeps its `#`**, and a fenced comment does not count as the heading a TOC entry points at.
+
+### Changed
+- `pagespeak[pdf]` requires `marker-pdf>=1.10,<2` and declares `rapidfuzz`.
+
 ## 0.19.0
 
 ### Changed

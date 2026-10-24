@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pagespeak"
-version = "0.19.0"
+version = "0.20.0"
 description = "Convert PDF, Word, and other documents into retrieval-ready markdown — one document or a whole corpus, diagrams turned to Mermaid."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -45,7 +45,9 @@ dependencies = [
 [project.optional-dependencies]
 pdf = [
     # <2: Marker 2.0 converted only a document's first pages under pagespeak, exit 0.
-    "marker-pdf>=0.2.0,<2",
+    # >=1.10: backends/_marker_ignoretext.py subclasses Marker's processor internals.
+    "marker-pdf>=1.10,<2",
+    "rapidfuzz>=3,<4",
     "pypdfium2",
 ]
 pdf-docling = [

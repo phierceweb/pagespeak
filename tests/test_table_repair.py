@@ -7,13 +7,12 @@ page-ingest and PDF page-locate I/O injected as fakes (no real Docling / PDF).
 
 from __future__ import annotations
 
+import pytest
+
 import pagespeak.services._table_repair as _tr
 from pagespeak.services._table_repair import (
     RepairRecord,
-    _markdown_table_blocks,
-    _table_overlap,
     find_collapsed_cells,
-    match_table,
     repair_collapsed_tables,
     repair_tables_in_markdown,
 )
@@ -21,26 +20,28 @@ from pagespeak.services._table_repair import (
 # A collapse shape: a 3-col table jammed into one mega-cell.
 _MEGA = "<br>".join(
     [
-        "Data Pump Export Profile",
-        "Oracle",
-        ".nbakora",
-        "Data View Profile",
-        "Redis",
-        ".ndvredis",
-        "ER Diagram File",
-        "MySQL, Oracle, PostgreSQL, SQLite, SQL Server and MariaDB",
-        ".ned",
+        "Gear Housing Shell Part",
+        "Brass",
+        ".wghsp",
+        "Spring Clip Mount",
+        "Steel",
+        ".wscm",
+        "Pivot Arm Bracket",
+        "Brass, Steel, Copper, Nickel, Zinc Alloy and Tin",
+        ".wpa",
     ]
     * 5  # 45 segments -> 44 <br>, above the 30 mega-cell threshold
 )
 
-# The clean Docling grid for the same table.
+# The clean Docling grid for the same table: every cell the mega-cell holds.
 _DOCLING_GRID = (
-    "| Profile Type | Database | Extension |\n"
-    "| --- | --- | --- |\n"
-    "| Data Pump Export Profile | Oracle | .nbakora |\n"
-    "| Data View Profile | Redis | .ndvredis |\n"
-    "| ER Diagram File | MySQL, Oracle, PostgreSQL, SQLite, SQL Server and MariaDB | .ned |\n"
+    "| Widget Type | Material | Suffix |\n| --- | --- | --- |\n"
+    + (
+        "| Gear Housing Shell Part | Brass | .wghsp |\n"
+        "| Spring Clip Mount | Steel | .wscm |\n"
+        "| Pivot Arm Bracket | Brass, Steel, Copper, Nickel, Zinc Alloy and Tin | .wpa |\n"
+    )
+    * 5
 )
 
 
@@ -53,7 +54,7 @@ def test_find_collapsed_cells_flags_megacell() -> None:
     assert len(cells) == 1
     assert cells[0].line_index == 2  # 0-based
     assert cells[0].br_count >= 30
-    assert "Data Pump Export Profile" in cells[0].cell_text
+    assert "Gear Housing Shell Part" in cells[0].cell_text
 
 
 def test_find_collapsed_cells_keeps_escaped_pipe_inside_the_cell() -> None:
@@ -127,95 +128,6 @@ def test_find_split_tables_flags_wrapped_key() -> None:
     assert "Materialized Views" in blocks[0].text
 
 
-# ── _markdown_table_blocks ──────────────────────────────────────────────────
-
-
-def test_table_blocks_finds_contiguous_pipe_lines() -> None:
-    text = "prose\n| a | b |\n| --- | --- |\n| 1 | 2 |\nmore prose\n| x | y |\n| --- | --- |\n"
-    blocks = _markdown_table_blocks(text)
-    assert len(blocks) == 2
-    assert blocks[0].start == 1 and blocks[0].end == 3  # inclusive line range
-    assert "| a | b |" in blocks[0].text
-
-
-def test_table_blocks_treats_empty_rows_as_part_of_block() -> None:
-    text = f"| {_MEGA} |  |  |\n| --- | --- | --- |\n|  |  |  |\n|  |  |  |\n"
-    blocks = _markdown_table_blocks(text)
-    assert len(blocks) == 1
-    assert blocks[0].end == 3
-
-
-# ── _table_overlap / match_table ────────────────────────────────────────────
-
-
-def test_overlap_high_for_same_content() -> None:
-    assert _table_overlap(_MEGA, _DOCLING_GRID) > 0.8
-
-
-def test_overlap_low_for_unrelated() -> None:
-    assert _table_overlap(_MEGA, "| Color | Hex |\n| --- | --- |\n| Red | #f00 |\n") < 0.3
-
-
-def test_match_table_picks_best_overlap() -> None:
-    docling_md = (
-        "## Page\n\nSome intro text.\n\n"
-        "| Unrelated | Junk |\n| --- | --- |\n| a | b |\n\n"
-        f"{_DOCLING_GRID}\n"
-    )
-    matched = match_table(_MEGA, docling_md)
-    assert matched is not None
-    assert ".nbakora" in matched and "Profile Type" in matched
-
-
-def test_match_table_none_when_no_overlap() -> None:
-    docling_md = "| Color | Hex |\n| --- | --- |\n| Red | #f00 |\n"
-    assert match_table(_MEGA, docling_md) is None
-
-
-def test_match_table_skips_docling_that_is_also_collapsed() -> None:
-    """If Docling ALSO collapsed the table (>=30 <br> in a cell), don't splice
-    a no-better table — return None so the orchestrator skips it."""
-    collapsed_docling = f"| {_MEGA} |  |\n| --- | --- |\n"
-    assert match_table(_MEGA, collapsed_docling) is None
-
-
-def test_match_table_rejects_candidate_that_drops_a_distinctive_row() -> None:
-    """Docling can silently OMIT a row when re-extracting a table. A candidate
-    that drops a substantial value the original had must be REJECTED (no-match),
-    not spliced in — a lost row is worse than the ugly-but-complete original.
-    Regression: a whole row was lost while token overlap stayed high (one
-    dropped row barely moves the set overlap)."""
-    original = (
-        "| Control | Function |\n| --- | --- |\n"
-        "|  | MASTER level control adjusts the overall power amplification |\n"
-        "|  | MIC IN XLR connector accepts low impedance dynamic microphone signals |\n"
-        "|  | POWER switch energises the unit and lights the status indicator |\n"
-    )
-    dropped_mic_in = (
-        "| Control | Function |\n| --- | --- |\n"
-        "|  | MASTER level control adjusts the overall power amplification |\n"
-        "|  | POWER switch energises the unit and lights the status indicator |\n"
-    )
-    assert match_table(original, dropped_mic_in) is None
-
-
-def test_match_table_accepts_candidate_that_preserves_every_value() -> None:
-    """The content guard must NOT reject a good repair: a Docling table that
-    merges the split rows but keeps every distinctive value still matches."""
-    original = (
-        "| Key | Value |\n| --- | --- |\n"
-        "| Alpha | the quick brown vixen leaps gracefully over |\n"
-        "|  | the drowsy slumbering hound this morning |\n"
-    )
-    merged = (
-        "| Key | Value |\n| --- | --- |\n"
-        "| Alpha | the quick brown vixen leaps gracefully over the drowsy slumbering hound this morning |\n"
-    )
-    matched = match_table(original, merged)
-    assert matched is not None
-    assert "quick brown vixen" in matched
-
-
 # ── repair_collapsed_tables (orchestrator, injected I/O) ────────────────────
 
 
@@ -232,8 +144,8 @@ def test_repair_splices_clean_grid() -> None:
     repaired, records = repair_collapsed_tables(
         text, locate_pages=_fake_locate, docling_page_ingest=_fake_docling
     )
-    assert "Profile<br>Oracle" not in repaired  # <br> blob gone
-    assert "| Data Pump Export Profile | Oracle | .nbakora |" in repaired  # grid in
+    assert "Profile<br>Brass" not in repaired  # <br> blob gone
+    assert "| Gear Housing Shell Part | Brass | .wghsp |" in repaired  # grid in
     assert "# Doc" in repaired and "tail" in repaired  # surrounding preserved
     assert len(records) == 1 and records[0].status == "repaired"
 
@@ -267,13 +179,12 @@ def test_repair_one_splice_per_block_with_two_megacells() -> None:
     text = f"# Doc\n\n| {_MEGA} |  |  |\n| --- | --- | --- |\n| {_MEGA} |  |  |\n\ntail\n"
     cells = find_collapsed_cells(text)
     assert len(cells) == 2  # both rows flagged, same block
+    both = _DOCLING_GRID + _DOCLING_GRID.split("\n", 2)[2]  # the cells of both mega-cells
     repaired, records = repair_collapsed_tables(
-        text, locate_pages=_fake_locate, docling_page_ingest=_fake_docling
+        text, locate_pages=_fake_locate, docling_page_ingest=lambda _p: f"page\n\n{both}\n"
     )
-    grid_row = (
-        "| ER Diagram File | MySQL, Oracle, PostgreSQL, SQLite, SQL Server and MariaDB | .ned |"
-    )
-    assert repaired.count(grid_row) == 1  # spliced once, not duplicated
+    grid_row = "| Pivot Arm Bracket | Brass, Steel, Copper, Nickel, Zinc Alloy and Tin | .wpa |"
+    assert repaired.count(grid_row) == 10  # spliced once, not duplicated
     assert "<br>" not in repaired  # both mega-cells gone
     assert "# Doc" in repaired and "tail" in repaired  # surrounding preserved
     assert [r.status for r in records] == ["repaired", "repaired"]
@@ -307,7 +218,7 @@ def test_repair_searches_later_candidate_page_for_the_match() -> None:
         locate_pages=lambda _c: [0, 1],
         docling_page_ingest=lambda p: by_page[p],
     )
-    assert "| Data Pump Export Profile | Oracle | .nbakora |" in repaired  # spliced
+    assert "| Gear Housing Shell Part | Brass | .wghsp |" in repaired  # spliced
     assert "<br>" not in repaired
     assert records[0].status == "repaired"
     assert records[0].page == 1  # matched on the SECOND candidate, not the first
@@ -371,7 +282,7 @@ def test_repair_split_tables_dedupes_docling_per_page() -> None:
     def _docling(p: int) -> str:
         ingests.append(p)
         return (
-            "| A | B |\n| --- | --- |\n| x | wrapped one more |\n"
+            "| A | B |\n| --- | --- |\n| x | wrapped one more |\n\n"
             "| C | D |\n| --- | --- |\n| y | wrapped two extra |\n"
         )
 
@@ -456,7 +367,7 @@ def test_repair_tables_in_markdown_splices_with_real_wiring(monkeypatch) -> None
     monkeypatch.setattr(_tr, "docling_page_md", lambda _pdf, _page: f"page\n\n{_DOCLING_GRID}\n")
     md = f"# Doc\n\n| {_MEGA} |  |  |\n| --- | --- | --- |\n|  |  |  |\n"
     out, records = repair_tables_in_markdown(md, "whatever.pdf")
-    assert "| Data Pump Export Profile | Oracle | .nbakora |" in out
+    assert "| Gear Housing Shell Part | Brass | .wghsp |" in out
     assert "<br>" not in out
     assert records and records[0].status == "repaired"
 
@@ -480,3 +391,159 @@ def test_repair_record_is_frozen() -> None:
     except AttributeError:
         return
     raise AssertionError("RepairRecord must be frozen")
+
+
+# ── a splice must keep every word of the Marker table it replaces ───────────
+
+
+def test_collapsed_splice_keeping_a_row_of_its_own_out_is_refused() -> None:
+    """The splice replaces the whole Marker table, so a line in a row of its own
+    (outside the mega-cell the match is judged on) counts too."""
+    text = f"| {_MEGA} |  |  |\n| --- | --- | --- |\n| Note: widgets need a spare fuse |  |  |\n"
+    repaired, records = repair_collapsed_tables(
+        text, locate_pages=_fake_locate, docling_page_ingest=_fake_docling
+    )
+    assert repaired == text
+    assert records[0].status == "loses-words"
+    assert records[0].lost == ("a", "fuse", "need", "note", "spare", "widgets")
+
+
+def test_split_splice_losing_a_short_value_is_refused() -> None:
+    from pagespeak.services._table_repair import repair_split_tables
+
+    text = (
+        "| Lens | Description |\n| --- | --- |\n"
+        "| Panorama | The broadest field |\n|  | of view. |\n"
+        "| Beta only |  |\n"
+    )
+    docling = "| Lens | Description |\n| --- | --- |\n| Panorama | The broadest field of view. |\n"
+    repaired, records = repair_split_tables(
+        text, locate_pages=lambda _s: [3], docling_page_ingest=lambda _p: docling
+    )
+    assert repaired == text
+    assert [(r.status, r.lost) for r in records] == [("loses-words", ("beta", "only"))]
+
+
+def test_find_split_tables_flags_a_row_where_both_columns_wrap() -> None:
+    """Key and value both run onto a second line: the continuation row carries
+    text in every cell, but its value picks up mid-sentence (lower case, the
+    cell above unfinished). A trailing empty column changes nothing."""
+    from pagespeak.services._table_repair import find_split_tables
+
+    text = (
+        "| Control | Description |  |\n|---|---|--|\n"
+        "| Power switch | Toggles the widget on and off, and keeps |  |\n"
+        "| (lid side) | the last setting in memory. |  |\n"
+        "| Input knob | Boosts the widget signal before |  |\n"
+        "| (top edge) | the equalizer. |  |\n"
+    )
+    assert len(find_split_tables(text)) == 1
+
+
+def test_find_split_tables_ignores_lower_case_values_in_finished_rows() -> None:
+    from pagespeak.services._table_repair import find_split_tables
+
+    text = (
+        "| Setting | State |\n|---|---|\n| Power | on |\n| Beep | off |\n"
+        "| Note | Sounds a tone. |\n| Hint | see the manual for details |\n"
+    )
+    assert find_split_tables(text) == []
+
+
+def test_split_splice_dropping_one_character_values_is_refused() -> None:
+    from pagespeak.services._table_repair import repair_split_tables
+
+    text = (
+        "| Control | Setting |\n| --- | --- |\n"
+        "| Power switch | Toggles the widget on |\n|  | and off |\n"
+        "| Channels | 2 |\n| Inputs | 4 |\n| Mode | A |\n"
+    )
+    docling = (
+        "| Control | Setting |\n| --- | --- |\n| Power switch | Toggles the widget on and off |\n"
+        "| Channels | |\n| Inputs | |\n| Mode | |\n"
+    )
+    repaired, records = repair_split_tables(
+        text, locate_pages=lambda _s: [3], docling_page_ingest=lambda _p: docling
+    )
+    assert repaired == text
+    assert [(r.status, r.lost) for r in records] == [("loses-words", ("2", "4", "a"))]
+
+
+def test_both_wrapped_needs_a_parenthetical_key() -> None:
+    from pagespeak.services._table_repair import find_split_tables
+
+    text = (
+        "| Control | Description |\n|---|---|\n"
+        "| Power switch | Toggles the widget on and off, and keeps |\n"
+        "| Rear panel | the last setting in memory. |\n"
+    )
+    assert find_split_tables(text) == []
+
+
+def test_both_wrapped_needs_an_unfinished_cell_above() -> None:
+    from pagespeak.services._table_repair import find_split_tables
+
+    text = (
+        "| Control | Description |\n|---|---|\n"
+        "| Power switch | Toggles the widget on and off. |\n"
+        "| (lid side) | keeps the last setting in memory. |\n"
+    )
+    assert find_split_tables(text) == []
+
+
+@pytest.mark.parametrize(
+    "continuation",
+    ["| (lid side) | The last setting in memory. |", "| (lid side) | memory |"],
+)
+def test_both_wrapped_needs_a_lower_case_value_of_two_words(continuation: str) -> None:
+    from pagespeak.services._table_repair import find_split_tables
+
+    text = (
+        "| Control | Description |\n|---|---|\n"
+        f"| Power switch | Toggles the widget on and off, and keeps |\n{continuation}\n"
+    )
+    assert find_split_tables(text) == []
+
+
+def test_a_docling_table_holding_two_marker_tables_is_not_spliced() -> None:
+    """Docling read the two blocks Marker split one table into as one table:
+    splicing it over the first would print the second's rows twice."""
+    from pagespeak.services._table_repair import repair_split_tables
+
+    text = (
+        "| Control | Use |\n| --- | --- |\n| Power switch | Toggles the widget |\n|  | on and off |\n"
+        "| Input knob | Boosts the widget |\n\nContinued\n\n"
+        "| Control | Use |\n| --- | --- |\n| Mute button | Silences output |\n"
+        "| Tone control | Shapes the treble |\n"
+    )
+    docling = (
+        "| Control | Use |\n| --- | --- |\n| Power switch | Toggles the widget on and off |\n"
+        "| Input knob | Boosts the widget |\n| Mute button | Silences output |\n"
+        "| Tone control | Shapes the treble |\n"
+    )
+    repaired, records = repair_split_tables(
+        text, locate_pages=lambda _s: [5], docling_page_ingest=lambda _p: docling
+    )
+    assert repaired == text
+    assert [r.status for r in records] == ["absorbs-table"]
+
+
+def test_a_docling_table_holding_the_previous_marker_table_is_not_spliced() -> None:
+    from pagespeak.services._table_repair import repair_split_tables
+
+    text = (
+        "| Control | Use |\n| --- | --- |\n| Mute button | Silences output |\n"
+        "| Tone control | Shapes the treble |\n\nContinued\n\n"
+        "| Control | Use |\n| --- | --- |\n| Power switch | Toggles the widget |\n|  | on and off |\n"
+        "| Input knob | Boosts the widget |\n"
+    )
+    docling = (
+        "| Control | Use |\n| --- | --- |\n| Mute button | Silences output |\n"
+        "| Tone control | Shapes the treble |\n| Power switch | Toggles the widget on and off |\n"
+        "| Input knob | Boosts the widget |\n"
+    )
+    repaired, records = repair_split_tables(
+        text, locate_pages=lambda _s: [5], docling_page_ingest=lambda _p: docling
+    )
+    assert repaired == text
+    assert [r.status for r in records] == ["absorbs-table"]

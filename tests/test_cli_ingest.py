@@ -172,7 +172,7 @@ def test_ingest_chunk_pages_defers_to_the_resolver(tmp_path, monkeypatch):
     50 always won, so `ingest()`'s `resolve_chunk_pages` never saw the `None`
     that lets the env value through. Passing no flag must stay `None`."""
     from pagespeak.cli import _ingest as cli_ingest
-    from pagespeak.orchestrators._chunk import resolve_chunk_pages
+    from pagespeak.orchestrators._chunk_sizing import resolve_chunk_pages
 
     captured: dict[str, object] = {}
 

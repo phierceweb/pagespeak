@@ -26,7 +26,8 @@ def register(app: typer.Typer) -> None:
             "unparseable image refs, duplicated junk headings, collapsed code "
             "blocks, formula glyph codes). --text-coverage also compares each "
             "document with its source PDF's text layer to catch body text that "
-            "never arrived. Read-only, $0, no LLM calls. "
+            "never arrived and tables that lost their label column. Read-only, "
+            "$0, no LLM calls. "
             "Audits final artifacts only (skips stage checkpoints and "
             "caches). Exits 1 if any errors are found; warnings alone "
             "exit 0. The report narrows where to read — it does not "
@@ -50,7 +51,9 @@ def register(app: typer.Typer) -> None:
             help=(
                 "Also check each converted document dir against its source PDF's text "
                 "layer (the share of the PDF's distinct words that reached raw.md), "
-                "naming the pages mostly missing. Needs pypdfium2."
+                "naming the pages mostly missing, and flag a table that lost its label "
+                "column when its page has wording that reached the file nowhere. "
+                "Needs pypdfium2."
             ),
         ),
         source: Path | None = typer.Option(
@@ -66,13 +69,7 @@ def register(app: typer.Typer) -> None:
             help="With --text-coverage and no --source: where to auto-locate source PDFs.",
         ),
     ) -> None:
-        if source is not None and not text_coverage:
-            raise typer.BadParameter("--source is only used with --text-coverage")
-        if source is not None and (len(paths) != 1 or not is_document_dir(paths[0])):
-            raise typer.BadParameter(
-                "--source names one PDF, so pass exactly one converted document folder "
-                "(the one holding <stem>.raw.md or the master .md)"
-            )
+        _check_source(source, paths, text_coverage=text_coverage)
         source_for = None
         if text_coverage:
 
@@ -93,3 +90,13 @@ def register(app: typer.Typer) -> None:
         typer.echo(render_report(report, summary_only=summary_only))
         if report.error_count:
             raise typer.Exit(code=1)
+
+
+def _check_source(source: Path | None, paths: list[Path], *, text_coverage: bool) -> None:
+    if source is not None and not text_coverage:
+        raise typer.BadParameter("--source is only used with --text-coverage")
+    if source is not None and (len(paths) != 1 or not is_document_dir(paths[0])):
+        raise typer.BadParameter(
+            "--source names one PDF, so pass exactly one converted document folder "
+            "(the one holding <stem>.raw.md or the master .md)"
+        )

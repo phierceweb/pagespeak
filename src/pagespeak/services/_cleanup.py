@@ -3,10 +3,11 @@
 `cleanup_markdown(text, level)` orchestrates the passes.
 
 Module layout: the per-line transforms live in `_cleanup_transforms.py`, the
-whole-text structural passes in `_cleanup_structure.py`, and the shared regex
-table in `_cleanup_regexes.py`. This module keeps the orchestrator + table
-normalization + the `CleanupLevel` / `CrossRefs` types, and re-exports every
-pass function so the public + test + `_cleanup_diagnose` surface is unchanged.
+whole-text structural passes in `_cleanup_structure.py` and
+`_cleanup_front_matter.py`, and the shared regex table in `_cleanup_regexes.py`.
+This module keeps the orchestrator + table normalization + the `CleanupLevel` /
+`CrossRefs` types, and re-exports every pass function so the public + test +
+`_cleanup_diagnose` surface is unchanged.
 """
 
 from __future__ import annotations
@@ -16,6 +17,15 @@ from typing import Literal
 
 from pw_foundation.log import get_logger
 
+from ._cleanup_front_matter import (
+    demote_front_matter_headings as demote_front_matter_headings,
+)
+from ._cleanup_front_matter import (
+    demote_toc_outline_headings as demote_toc_outline_headings,
+)
+from ._cleanup_front_matter import (
+    demote_toc_phantom_headings as demote_toc_phantom_headings,
+)
 from ._cleanup_html import (
     convert_embedded_html_blocks,
     preformatted_block_flags,
@@ -39,16 +49,7 @@ from ._cleanup_structure import (
     dedupe_consecutive_headings as dedupe_consecutive_headings,
 )
 from ._cleanup_structure import (
-    demote_front_matter_headings as demote_front_matter_headings,
-)
-from ._cleanup_structure import (
     demote_recurring_scaffold_headings as demote_recurring_scaffold_headings,
-)
-from ._cleanup_structure import (
-    demote_toc_outline_headings as demote_toc_outline_headings,
-)
-from ._cleanup_structure import (
-    demote_toc_phantom_headings as demote_toc_phantom_headings,
 )
 from ._cleanup_structure import (
     heading_slug as heading_slug,

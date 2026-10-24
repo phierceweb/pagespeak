@@ -37,6 +37,28 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
+
+def _print_version(value: bool) -> None:
+    if value:
+        from .. import __version__
+
+        typer.echo(f"pagespeak {__version__}")
+        raise typer.Exit()
+
+
+@app.callback()
+def _root(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        callback=_print_version,
+        is_eager=True,
+        help="Print the installed pagespeak version and exit.",
+    ),
+) -> None:
+    pass
+
+
 _VALID_CLEANUP_LEVELS: tuple[str, ...] = ("off", "basic", "aggressive")
 _VALID_CROSS_REFS: tuple[str, ...] = ("keep", "strip", "remap")
 _VALID_VISION_BACKENDS: tuple[str, ...] = ("anthropic", "claude_code", "openrouter")

@@ -1,8 +1,8 @@
 """Shared regex + constant table for the cleanup passes.
 
 A dependency-free leaf so the per-line transforms
-(`_cleanup_transforms.py`) and the structural passes
-(`_cleanup_structure.py`) can both import these without an import cycle back
+(`_cleanup_transforms.py`) and the structural passes (`_cleanup_structure.py`,
+`_cleanup_front_matter.py`) can all import these without an import cycle back
 through `_cleanup`. No logic here — just compiled patterns and the
 empty-section floor.
 """

@@ -87,3 +87,27 @@ def test_unknown_rerun_stage_is_rejected_before_anything_is_touched(tmp_path: Pa
     else:  # pragma: no cover
         raise AssertionError("a bogus stage must raise")
     assert (out / "sections").exists(), "nothing may be deleted before the stage is validated"
+
+
+def test_to_markdown_records_pdf_backend_kwargs(tmp_path: Path, monkeypatch) -> None:
+    from pagespeak import to_markdown
+    from pagespeak.backends import _pdf_dispatch
+    from pagespeak.models._models import IngestResult
+    from pagespeak.services._run_record import read_run_record
+
+    monkeypatch.setattr(
+        _pdf_dispatch,
+        "convert",
+        lambda *a, **k: IngestResult(markdown="# Doc\n", images=[], source_format="pdf"),
+    )
+    src = tmp_path / "doc.pdf"
+    src.write_bytes(b"%PDF-fake")
+    out = tmp_path / "out"
+    kwargs = {"IgnoreTextProcessor_max_streak": 100000}
+
+    to_markdown(src, output_dir=out, diagrams=False, pdf_backend_kwargs=kwargs)
+
+    record = read_run_record(out)
+    assert record is not None
+    assert record["resolved_flags"]["pdf_backend_kwargs"] == kwargs
+    assert record["ingest_flags"]["pdf_backend_kwargs"] == kwargs

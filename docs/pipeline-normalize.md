@@ -12,7 +12,9 @@ Gathers the document's structural heading list, computes a level rewrite, and ap
 | `llm` | one Claude call (~30–60s) | Sends the heading list; handles unusual front-matter / non-numbered chapters. |
 | `llm_full` | one Claude call | Sends headings **plus** body-context anchors so the model reasons from prose. |
 
-`llm` / `llm_full` cache the response at `<outdir>/.heading-normalize-cache/<hash>.json` (content-keyed — self-invalidates when the input changes).
+A heading list longer than `PAGESPEAK_NORMALIZE_CHUNK_HEADINGS` (default 1,500) is asked in chunks, one call each, and the answers stitched — see [normalize-headings.md](normalize-headings.md#a-long-heading-list-is-asked-in-chunks).
+
+`llm` / `llm_full` cache the response at `<outdir>/.heading-normalize-cache/<hash>.json` (content-keyed — self-invalidates when the input changes), one file per chunk.
 
 ## When it runs
 

@@ -31,9 +31,10 @@ from pw_foundation.utils.io import atomic_write_text
 from ..backends._docx_dispatch import DEFAULT_DOCX_BACKEND, DocxBackendName
 from ..backends._pdf_dispatch import DEFAULT_PDF_BACKEND, PdfBackendName
 from ..backends._qti import is_qti_export
-from ..models._pipeline import Manifest, read_chunk_statuses
+from ..models._pipeline import Manifest
 from ._chunk import chunk as chunk_phase
-from ._chunk import count_pages, resolve_chunk_pages
+from ._chunk import count_pages
+from ._chunk_sizing import resolve_chunk_pages
 from ._convert_source import (
     MARKDOWN_SUFFIXES,
     MARKITDOWN_SUFFIXES,
@@ -41,6 +42,7 @@ from ._convert_source import (
     convert_source,
     unsupported_format_error,
 )
+from ._ingest_chunks import PartialIngestError, assemble_chunks, assert_ingest_complete
 
 logger = get_logger(__name__)
 
@@ -118,6 +120,7 @@ def ingest(
     started_at = _now_utc_iso()
     flags: dict[str, Any] = {
         "pdf_backend": pdf_backend,
+        "pdf_backend_kwargs": pdf_backend_kwargs,
         "heading_hierarchy": heading_hierarchy,
         "force_ocr": force_ocr,
         "device": device,
@@ -297,7 +300,7 @@ def _ingest_chunked(
     force: bool,
     max_pages: int | None,
 ) -> Path:
-    """Run the chunked backend path, concat per-chunk markdown, flatten images."""
+    """Run the chunked backend path, then assemble the chunks into raw.md + images/."""
     if force:
         mf_path = Manifest.path_for(out)
         if mf_path.exists():
@@ -319,148 +322,13 @@ def _ingest_chunked(
         pdf_backend_kwargs=pdf_backend_kwargs,
         heading_hierarchy=heading_hierarchy,
     )
-
-    completed_paths = mf.all_chunk_raw_md()
-    failed_page_ranges = [c.page_range for c in mf.chunks if c.status == "failed"]
-    if not completed_paths:
-        raise RuntimeError(
-            f"Chunked ingest produced no completed chunks in {out}. "
-            f"Failed chunks: {len(failed_page_ranges)} of {len(mf.chunks)}. "
-            "Inspect manifest.json for per-chunk error state."
-        )
-
-    # Concat per-chunk markdown in page-range order.
-    parts: list[str] = []
-    for p in completed_paths:
-        if not p.exists():
-            logger.warning("ingest_chunk_md_missing path=%s", p)
-            continue
-        parts.append(p.read_text(encoding="utf-8"))
-    consolidated = "\n\n".join(parts)
-    atomic_write_text(raw_md_path, consolidated)
-    # Stamp provenance from the real PDF, as the single-process path does — a
-    # later phase resolves its source to the checkpoint and cannot ask again.
-    from ..services._hierarchy_trust import record_hierarchy_source, record_structured
-
-    record_hierarchy_source(out, src, pdf_backend=pdf_backend, heading_hierarchy=heading_hierarchy)
-    # Chunked ingest is PDF-only: no backend here reads structure from the format.
-    record_structured(out, authoritative=False)
-
-    # Flatten per-chunk images into <out>/images/. Names are already
-    # page-range-prefixed by `_chunk._run_one_chunk`, so collisions
-    # only happen for byte-identical duplicates — keep the first.
-    flat_dir = out / "images"
-    flat_dir.mkdir(parents=True, exist_ok=True)
-    # A shelved chunk keeps its images under chunks/; a flat copy would reach vision.
-    current = {img.name for img in mf.all_chunk_images()}
-    for shelved in mf.shelved:
-        for rel in shelved.images:
-            if Path(rel).name not in current:
-                (flat_dir / Path(rel).name).unlink(missing_ok=True)
-    # Copy (not move) per-chunk images into the flat dir. Keeping the
-    # `chunks/<range>/images/` originals lets a partial-flatten failure
-    # resume cleanly — `mf.all_chunk_images()` still resolves on re-run.
-    # Disk-space cost is bounded by the doc's image set (single copy in
-    # flat dir + single copy per chunk; no inflation across chunks since
-    # chunk-prefixed basenames are unique).
-    for img in mf.all_chunk_images():
-        if not img.exists():
-            logger.warning("ingest_image_missing path=%s", img)
-            continue
-        target = flat_dir / img.name
-        if target.exists():
-            continue
-        shutil.copy2(img, target)
-
-    logger.info(
-        "ingest_chunked_complete src=%s raw_md=%s chunks=%d images=%d failed=%d",
-        src.name,
-        raw_md_path.name,
-        len(completed_paths),
-        len(mf.all_chunk_images()),
-        len(failed_page_ranges),
-    )
-
-    # raise PartialIngestError when ANY chunks failed. raw.md
-    # is already written from the successful chunks (preserves resume
-    # value), but the caller must know that the output is incomplete.
-    # CLI catches this and exits with code 2; library callers can catch
-    # to access `.raw_md_path` + `.failed_page_ranges` for retry logic.
-    if failed_page_ranges:
-        raise PartialIngestError(
-            raw_md_path=raw_md_path,
-            failed_page_ranges=failed_page_ranges,
-            total_chunks=len(mf.chunks),
-            output_dir=out,
-        )
-
-    return raw_md_path
-
-
-class PartialIngestError(RuntimeError):
-    """Raised when chunked ingest completes with at least one failed chunk.
-
-    The output dir state IS valid for resume: completed chunks are
-    written to `chunks/<range>/`, raw.md contains content from the
-    successful chunks only, and manifest.json records which chunks
-    failed (with error tracebacks). Re-running `pagespeak ingest`
-    without `--force` resumes only the failed chunks.
-
-    Attributes:
-        raw_md_path: The (partial) <stem>.raw.md on disk.
-        failed_page_ranges: List of page-range strings that failed.
-        total_chunks: Total chunks planned (failed + completed).
-        output_dir: The ingest output directory.
-    """
-
-    def __init__(
-        self,
-        *,
-        raw_md_path: Path,
-        failed_page_ranges: list[str],
-        total_chunks: int,
-        output_dir: Path,
-    ) -> None:
-        self.raw_md_path = raw_md_path
-        self.failed_page_ranges = failed_page_ranges
-        self.total_chunks = total_chunks
-        self.output_dir = output_dir
-        completed = total_chunks - len(failed_page_ranges)
-        sample = failed_page_ranges[:5]
-        suffix = "" if len(failed_page_ranges) <= 5 else f" (+{len(failed_page_ranges) - 5} more)"
-        super().__init__(
-            f"Chunked ingest completed with {len(failed_page_ranges)} of "
-            f"{total_chunks} chunks failed (completed: {completed}). "
-            f"Partial raw.md written to {raw_md_path}. "
-            f"Failed page ranges: {sample}{suffix}. "
-            f"Inspect {output_dir}/manifest.json for error details, then "
-            "re-run `pagespeak ingest <input> -o <outdir>` (without --force) "
-            "to retry the failed chunks only."
-        )
-
-
-def assert_ingest_complete(output_dir: Path | None, *, allow_partial: bool = False) -> None:
-    """Refuse to build a document from an out dir whose chunked ingest never finished.
-
-    Nothing downstream reads chunk status — resume keys on the raw.md snapshot — so
-    without this a run whose chunk OOMed yields a document silently missing those
-    pages, at exit 0.
-    """
-    if output_dir is None:
-        return
-    statuses = read_chunk_statuses(output_dir)
-    incomplete = [pr for pr, st in statuses if st != "completed"]
-    if not incomplete:
-        return
-    if allow_partial:
-        logger.warning("ingest_incomplete_accepted output_dir=%s chunks=%s", output_dir, incomplete)
-        return
-    raw = sorted(output_dir.glob("*.raw.md"))
-    raise PartialIngestError(
-        raw_md_path=raw[0] if raw else output_dir,
-        failed_page_ranges=incomplete,
-        total_chunks=len(statuses),
-        output_dir=output_dir,
+    return assemble_chunks(
+        mf,
+        src,
+        out,
+        raw_md_path=raw_md_path,
+        pdf_backend=pdf_backend,
+        heading_hierarchy=heading_hierarchy,
     )
 
 

@@ -7,11 +7,12 @@ can't link descendants to their chapter ancestor. Concrete case:
 `1.1` has no ancestor.
 
 This module orchestrates the gather/apply pass. The deterministic heuristic
-leveling lives in `_normalize_heuristic.py`; the LLM prompt/invoke/cache
-machinery in `_normalize_llm.py`. It re-exports the helpers
-`_normalize_decision` imports (`_select_structural_headings`,
-`_build_prompt_full`, `_estimate_tokens`, `_extract_body_anchors`,
-`_resolve_max_input_tokens`) so that surface is unchanged.
+leveling lives in `_normalize_heuristic.py`; the LLM-mode gather (cache, call,
+guards) in `_normalize_llm_gather.py`, on the prompt/parse helpers in
+`_normalize_llm.py`. It re-exports the helpers `_normalize_decision` imports
+(`_select_structural_headings`, `_build_prompt_full`, `_estimate_tokens`,
+`_extract_body_anchors`, `_resolve_max_input_tokens`) so that surface is
+unchanged.
 
 Caller layer is `_dispatch.to_markdown()`; the call is opt-in via the
 `normalize_headings=True` parameter.
@@ -19,7 +20,6 @@ Caller layer is `_dispatch.to_markdown()`; the call is opt-in via the
 
 from __future__ import annotations
 
-import json
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -28,15 +28,9 @@ from typing import Literal
 
 from pw_core.llm.safe_apply import GatherResult, safe_apply
 from pw_foundation.log import get_logger
-from pw_foundation.utils.io import atomic_write_json
 
-from ..prompts._heading_normalize import (
-    HEADING_NORMALIZE_PROMPT_VERSION as NORMALIZE_PROMPT_VERSION,
-)
-from ..prompts._heading_normalize_dehead import HEADING_NORMALIZE_DEHEAD_PROMPT_VERSION
-from ..prompts._heading_normalize_full import HEADING_NORMALIZE_FULL_PROMPT_VERSION
+from ..prompts._heading_normalize import HEADING_NORMALIZE_PROMPT_VERSION
 from ._cleanup import strip_marker_pollution as _strip_marker_pollution
-from ._normalize_coverage import is_low_coverage
 from ._normalize_heuristic import (
     _heuristic_level_for as _heuristic_level_for,
 )
@@ -53,17 +47,6 @@ from ._normalize_llm import (
     DEFAULT_NORMALIZE_MAX_INPUT_TOKENS as DEFAULT_NORMALIZE_MAX_INPUT_TOKENS,
 )
 from ._normalize_llm import (
-    _build_dehead_prompt_with_gate,
-    _build_llm_full_prompt_with_gate,
-    _build_prompt,
-    _cache_key,
-    _guard_body_drops,
-    _guard_parent_drops,
-    _parse_dehead_response,
-    _parse_response,
-    _resolve_model,
-)
-from ._normalize_llm import (
     _build_prompt_full as _build_prompt_full,
 )
 from ._normalize_llm import (
@@ -75,8 +58,11 @@ from ._normalize_llm import (
 from ._normalize_llm import (
     _resolve_max_input_tokens as _resolve_max_input_tokens,
 )
+from ._normalize_llm_gather import gather_llm_levels
 
 logger = get_logger(__name__)
+
+NORMALIZE_PROMPT_VERSION = HEADING_NORMALIZE_PROMPT_VERSION
 
 NormalizeMode = Literal["heuristic", "llm", "llm_full", "llm_dehead"]
 DEFAULT_NORMALIZE_MODE: NormalizeMode = "heuristic"
@@ -254,160 +240,19 @@ def gather_normalize_levels(
             len(levels),
             len(target_headings),
         )
-        return NormalizeData(
-            gather=GatherResult(
-                target_count=len(target_headings),
-                target_texts=tuple(h.text for h in target_headings),
-                data=levels,
-            ),
-            filter_structural=effective_filter_structural,
+    else:
+        llm_levels = gather_llm_levels(
+            md,
+            target_headings,
+            mode=mode,
+            invoke=invoke,
+            cache_dir=cache_dir,
+            model=model,
+            max_input_tokens=max_input_tokens,
         )
-
-    # === LLM modes ("llm" or "llm_full") =================================
-    resolved_model = _resolve_model(model, mode=mode)
-
-    cache_path: Path | None = None
-    if cache_dir is not None:
-        key = _cache_key(target_headings, resolved_model, mode=mode)
-        cache_path = cache_dir / f"{key}.json"
-
-    response: str | None = None
-    if cache_path is not None and cache_path.exists():
-        try:
-            data = json.loads(cache_path.read_text(encoding="utf-8"))
-            response = data.get("response")
-            logger.info("heading_normalize_cache_hit path=%s", cache_path)
-        except (OSError, ValueError) as e:
-            logger.warning("heading_normalize_cache_read_failed: %s", e)
-            response = None
-    cached = response is not None
-
-    if response is None:
-        if mode == "llm_full":
-            prompt, include_anchors = _build_llm_full_prompt_with_gate(
-                md, target_headings, max_input_tokens=max_input_tokens
-            )
-            prompt_version_for_cache = HEADING_NORMALIZE_FULL_PROMPT_VERSION
-            agent_slug = "heading_normalize_full"
-            # canonical template for `llm_prompts` registration —
-            # the unrendered system text from the YAML (sans the per-call
-            # heading-list substitution).
-            from ..prompts._heading_normalize_full import HEADING_NORMALIZE_FULL_PROMPT
-
-            agent_system_prompt = HEADING_NORMALIZE_FULL_PROMPT
-        elif mode == "llm_dehead":
-            prompt, include_anchors = _build_dehead_prompt_with_gate(
-                md, target_headings, max_input_tokens=max_input_tokens
-            )
-            prompt_version_for_cache = HEADING_NORMALIZE_DEHEAD_PROMPT_VERSION
-            agent_slug = "heading_normalize_dehead"
-            from ..prompts._heading_normalize_dehead import HEADING_NORMALIZE_DEHEAD_PROMPT
-
-            agent_system_prompt = HEADING_NORMALIZE_DEHEAD_PROMPT
-        else:
-            prompt = _build_prompt(target_headings)
-            include_anchors = False  # not applicable
-            prompt_version_for_cache = NORMALIZE_PROMPT_VERSION
-            agent_slug = "heading_normalize"
-            from ..prompts._heading_normalize import HEADING_NORMALIZE_PROMPT
-
-            agent_system_prompt = HEADING_NORMALIZE_PROMPT
-
-        # route through `_agent_runtime.invoke_agent` so the
-        # call captures a tracking row in `llm_runs` (when DB initialized)
-        # and goes through the same model-resolution seam as vision.
-        # The legacy `invoke=` kwarg path is preserved for test injection
-        # — when set, bypasses invoke_agent entirely.
-        try:
-            if invoke is not None:
-                response = invoke(prompt)
-            else:
-                from .._agent_runtime import invoke_agent
-
-                response = invoke_agent(
-                    agent_slug,
-                    messages=[{"role": "user", "content": prompt}],
-                    prompt_version=prompt_version_for_cache,
-                    system_prompt_text=agent_system_prompt,
-                    model_override=resolved_model,
-                    metadata={
-                        "mode": mode,
-                        "heading_count": len(target_headings),
-                        "anchors_included": include_anchors,
-                    },
-                ).content
-        except Exception as e:  # any backend failure is non-fatal
-            logger.warning("heading_normalize_invoke_failed: %s", e)
+        if llm_levels is None:
             return None
-
-        if cache_path is not None:
-            cache_path.parent.mkdir(parents=True, exist_ok=True)
-            atomic_write_json(
-                cache_path,
-                {
-                    "model": resolved_model,
-                    "mode": mode,
-                    "prompt_version": prompt_version_for_cache,
-                    "anchors_included": include_anchors,
-                    "response": response,
-                },
-            )
-
-    levels = _parse_dehead_response(response) if mode == "llm_dehead" else _parse_response(response)
-    answered = len(levels) if levels else 0  # before the guards drop refused verdicts
-    if levels:
-        # Both modes can emit the level-0 sentinel, so both need the guard.
-        levels, body_refused = _guard_body_drops(levels, target_headings, md)
-        if body_refused:
-            logger.warning(
-                "heading_normalize_body_guard_kept count=%d "
-                "(a heading owning its own body is a section boundary)",
-                body_refused,
-            )
-    if mode == "llm_dehead" and levels is not None:
-        # Belt and braces: the parser only emits 0s, but a future prompt
-        # edit must never be able to make this mode re-level a document.
-        levels = {idx: lv for idx, lv in levels.items() if lv == 0}
-        proposed = len(levels)
-        levels = _guard_parent_drops(levels, target_headings)
-        refused = proposed - len(levels)
-        if refused:
-            logger.warning(
-                "heading_normalize_dehead_parents_kept count=%d proposed=%d "
-                "(a heading owning child headings is a real section)",
-                refused,
-                proposed,
-            )
-        logger.info(
-            "heading_normalize_dehead_drops count=%d target=%d",
-            len(levels),
-            len(target_headings),
-        )
-        # An empty verdict map is a legitimate "nothing to drop" — distinct
-        # from the parse failure the shared guard below treats it as.
-        if not levels:
-            return NormalizeData(
-                gather=GatherResult(
-                    target_count=len(target_headings),
-                    target_texts=tuple(h.text for h in target_headings),
-                    data={},
-                ),
-                filter_structural=effective_filter_structural,
-            )
-    if not levels:
-        logger.warning("heading_normalize_no_levels_parsed response_len=%d", len(response))
-        return None
-
-    if mode == "llm_full":
-        logger.info(
-            "heading_normalize_full_rewrites count=%d target=%d",
-            len(levels),
-            len(target_headings),
-        )
-    if mode in ("llm", "llm_full") and is_low_coverage(
-        answered, len(target_headings), mode=mode, cached=cached
-    ):
-        return None
+        levels = llm_levels
 
     return NormalizeData(
         gather=GatherResult(

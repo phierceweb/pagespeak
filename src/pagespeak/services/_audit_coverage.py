@@ -40,22 +40,30 @@ def min_text_coverage_pct() -> int:
     return n
 
 
+def words_in_order(text: str) -> list[str]:
+    return [w for w in _NOISE_RE.sub(" ", text.lower()).split() if len(w) > 1]
+
+
 def _words(text: str) -> set[str]:
-    return {w for w in _NOISE_RE.sub(" ", text.lower()).split() if len(w) > 1}
+    return set(words_in_order(text))
 
 
-def markdown_words(md: str) -> set[str]:
-    """Distinct words of the visible text: alt kept, image and link targets and tags dropped."""
+def visible_text(md: str) -> str:
+    """The text a reader sees: alt kept, image and link targets and tags dropped."""
     text = html.unescape(md)
     text = _IMAGE_RE.sub(lambda m: m.group(0)[2 : m.group(0).index("]")], text)
     text = _TAG_RE.sub(" ", text)
-    text = _LINK_RE.sub(r"\1", text)
-    return _words(text)
+    return _LINK_RE.sub(r"\1", text)
 
 
-def pdf_page_words(pdf: Path) -> list[set[str]] | None:
-    """Distinct words per page of the PDF's text layer; None when the file
-    cannot be opened as a PDF. Needs pypdfium2."""
+def markdown_words(md: str) -> set[str]:
+    """Distinct words of the visible text."""
+    return _words(visible_text(md))
+
+
+def pdf_page_texts(pdf: Path) -> list[str] | None:
+    """Each page's text layer; None when the file cannot be opened as a PDF.
+    Needs pypdfium2."""
     import pypdfium2 as pdfium
 
     try:
@@ -63,15 +71,21 @@ def pdf_page_words(pdf: Path) -> list[set[str]] | None:
     except Exception:  # pdfium raises a bare PdfiumError for a damaged or locked file
         return None
     try:
-        pages: list[set[str]] = []
+        pages: list[str] = []
         for i in range(len(doc)):
             try:
-                pages.append(_words(doc[i].get_textpage().get_text_bounded()))
+                pages.append(doc[i].get_textpage().get_text_bounded())
             except Exception:  # pdfium raises a bare PdfiumError on a damaged page
-                pages.append(set())
+                pages.append("")
         return pages
     finally:
         doc.close()
+
+
+def pdf_page_words(pdf: Path) -> list[set[str]] | None:
+    """Distinct words per page of the PDF's text layer; None when unreadable."""
+    texts = pdf_page_texts(pdf)
+    return None if texts is None else [_words(t) for t in texts]
 
 
 @dataclass(frozen=True)

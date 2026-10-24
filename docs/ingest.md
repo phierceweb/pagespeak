@@ -68,6 +68,7 @@ pagespeak ingest thick-textbook.pdf -o ./out --workers 4 --device cpu
 | `--force-ocr` | off | PDF only — force OCR even on text-bearing PDFs. |
 | `--pdf-backend` | `marker` | `marker` (default), `docling` (pair with `--heading-hierarchy`, else every heading lands at one level), or `tophat`. See [docs/backends.md](backends.md). |
 | `--heading-hierarchy` | off | Docling PDF only. Heading levels from PDF bookmarks → section numbering → font style. Requires `docling>=2.109`. |
+| `--pdf-backend-kwargs` | none | PDF backend pipeline options as a JSON object, passed to the backend as-is. Recorded and inherited like the other ingest settings. See [docs/backends.md](backends.md). |
 | `--docx-backend` | `markitdown` | `markitdown` (default) or `python-docx`. `.docx`-only, single-process. See [docs/docx-backends.md](docx-backends.md). |
 | `--force` | off | Re-run chunks already marked completed in the manifest (chunked path only). |
 
@@ -89,13 +90,13 @@ On the single-process path there is no manifest; resume means the same thing as 
 
 **Changed chunk plan:** a different `--chunk-pages` or `--max-pages` produces different page ranges. Completed chunks from another plan are shelved in the manifest (logged as `chunk_plan_changed` with the ranges): they never reach `raw.md`, so a `--max-pages` trial followed by the full run cannot concatenate overlapping pages, and their flattened copies leave `images/`. A later plan with the same ranges restores them instead of reading those pages again, so a trial after a full run costs only the trial.
 
-**Run record:** `pagespeak ingest` stamps the settings it ran with (`pdf_backend`, `heading_hierarchy`, `force_ocr`, `page_range`, `docx_backend`, `max_pages`, …) into the `ingest_flags` block of `<outdir>/.pagespeak-run.json`, merging into an existing record. A following `pagespeak convert <outdir>` inherits them and carries the source identity forward; a `convert` of the source into the same dir refuses a `--max-pages` trial's `raw.md` instead of building the whole document from its first pages.
+**Run record:** `pagespeak ingest` stamps the settings it ran with (`pdf_backend`, `pdf_backend_kwargs`, `heading_hierarchy`, `force_ocr`, `page_range`, `docx_backend`, `max_pages`, …) into the `ingest_flags` block of `<outdir>/.pagespeak-run.json`, merging into an existing record. A following `pagespeak convert <outdir>` inherits them and carries the source identity forward; a `convert` of the source into the same dir refuses a `--max-pages` trial's `raw.md` instead of building the whole document from its first pages.
 
 **Setting mismatch:** each chunk in the manifest records the backend and the settings that read it (`force_ocr`, the backend kwargs, and `heading_hierarchy` under Docling). Resuming with another backend or other settings refuses with a message naming each difference, instead of mixing chunks read two ways. Pass `--force` to re-run all chunks from scratch.
 
 ### Partial ingest
 
-`pagespeak ingest` exits 2 when a chunk fails, but `<stem>.raw.md` is still written from the chunks that succeeded — it holds part of the document. In the two-command workflow the second command would otherwise accept that partial snapshot and build a finished-looking document missing those pages.
+`pagespeak ingest` exits 2 when a chunk fails, does not finish, or finished with its markdown gone, but `<stem>.raw.md` is still written from the chunks that succeeded — it holds part of the document. In the two-command workflow the second command would otherwise accept that partial snapshot and build a finished-looking document missing those pages.
 
 So `pagespeak convert <outdir>` reads `manifest.json` and **refuses to run while any chunk is `failed` or `in_progress`**, exiting 2 and naming the page ranges. Re-run `pagespeak ingest` (without `--force`) to retry just the failed chunks, then convert.
 

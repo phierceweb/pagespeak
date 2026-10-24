@@ -35,12 +35,14 @@ os.environ.setdefault("HF_HUB_OFFLINE", "1")
 # per-test `pytest.importorskip` instead of this map.
 _OPTIONAL_EXTRA_FOR_MODULE = {
     "test_cost": "fastapi",
-    "test_docx_image_alt": "docx",
+    "test_docx_images": "docx",
     "test_docx_numbering": "docx",
     "test_docx_numpr": "docx",
+    "test_docx_para": "docx",
     "test_docx_structured": "docx",
     "test_docx_table": "docx",
     "test_docx_walk": "docx",
+    "test_marker_ignoretext": "marker",
     "test_pdf_docling": "docling",
     "test_web_actions": "fastapi",
     "test_web_app": "fastapi",

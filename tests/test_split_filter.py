@@ -208,7 +208,7 @@ def _sec(title: str, body: str):
 
 
 def _paths(kept, out, nested=False):
-    from pagespeak.services._split_write import _section_output_path
+    from pagespeak.services._split_paths import _section_output_path
 
     seen: dict[str, list[str]] = {}
     for s in kept:

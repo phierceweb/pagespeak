@@ -19,6 +19,8 @@ preserves the public API.
 from __future__ import annotations
 
 import json
+import math
+import re
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -26,13 +28,17 @@ from typing import Any
 from pw_core.pipeline.run_record import file_sha256
 from pw_core.pipeline.run_record import read_run_record as _read_run_record
 from pw_core.pipeline.run_record import write_run_record as _write_run_record
+from pw_foundation.log import get_logger
 from pw_foundation.utils.io import atomic_write_text
+
+logger = get_logger(__name__)
 
 __all__ = [
     "INGEST_FLAGS_FIELD",
     "INGEST_FLAG_KEYS",
     "RUN_RECORD_FILENAME",
     "file_sha256",
+    "json_safe",
     "read_run_record",
     "record_ingest",
     "summarize_llm_calls",
@@ -49,6 +55,7 @@ INGEST_FLAG_KEYS: tuple[str, ...] = (
     "html_base_url",
     "docx_backend",
     "docx_outline_heading_depth",
+    "pdf_backend_kwargs",
 )
 
 # Record block naming the settings that produced raw.md (INGEST_FLAG_KEYS plus
@@ -56,6 +63,53 @@ INGEST_FLAG_KEYS: tuple[str, ...] = (
 INGEST_FLAGS_FIELD = "ingest_flags"
 
 RUN_RECORD_FILENAME = ".pagespeak-run.json"
+
+_ADDRESS_RE = re.compile(r" at 0x[0-9a-fA-F]+")
+_MAX_INT_BITS = 10_000  # past Python's int-to-text limit (4,300 digits)
+
+
+def json_safe(value: Any) -> Any:
+    """`value` as the record stores it; anything JSON cannot encode becomes its repr
+    (a library caller's backend kwargs may hold a path or an object)."""
+    try:
+        return json.loads(json.dumps(_encodable(value), default=_stable_repr, allow_nan=False))
+    except RecursionError:
+        return "<nested too deep to record>"
+
+
+def _stable_repr(value: Any) -> str:
+    """repr without a memory address, so an equal object records the same way."""
+    return _ADDRESS_RE.sub("", repr(value))
+
+
+def _key(key: Any) -> str:
+    if isinstance(key, str):
+        return key
+    if isinstance(key, int | float | bool) or key is None:
+        return json.dumps(key)
+    return _stable_repr(key)
+
+
+def _encodable(value: Any) -> Any:
+    """Keys as strings and sets in a fixed order, so the same kwargs record (and
+    compare on resume) the same way in every process."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return repr(value)
+    if isinstance(value, int) and value.bit_length() > _MAX_INT_BITS:
+        return f"<int of {value.bit_length()} bits>"
+    if isinstance(value, dict):
+        out: dict[str, Any] = {}
+        for k, v in value.items():
+            key = _key(k)
+            if key in out:
+                logger.warning("run_record_key_collision key=%s (the later value is kept)", key)
+            out[key] = _encodable(v)
+        return out
+    if isinstance(value, list | tuple):
+        return [_encodable(v) for v in value]
+    if isinstance(value, set | frozenset):
+        return sorted((_encodable(v) for v in value), key=_stable_repr)
+    return value
 
 
 def read_run_record(output_dir: Path) -> dict[str, Any] | None:
@@ -179,13 +233,13 @@ def write_run_record(
     if source_identity is not None:
         fields["source_identity"] = source_identity
     if ingest_flags is not None:
-        fields[INGEST_FLAGS_FIELD] = dict(ingest_flags)
+        fields[INGEST_FLAGS_FIELD] = json_safe(dict(ingest_flags))
     extra: dict[str, Any] | None = fields or None
     written: Path = _write_run_record(
         output_dir,
         version=version,
         preset=preset,
-        resolved_flags=resolved_flags,
+        resolved_flags=json_safe(resolved_flags),
         input_path=input_path,
         started_at=started_at,
         finished_at=finished_at,
@@ -230,9 +284,10 @@ def record_ingest(
             ingest_flags=flags,
         )
         return
+    flags = json_safe(dict(flags))
     resolved = record.get("resolved_flags")
     record["resolved_flags"] = {**(resolved if isinstance(resolved, dict) else {}), **flags}
-    record[INGEST_FLAGS_FIELD] = dict(flags)
+    record[INGEST_FLAGS_FIELD] = flags
     record["input"] = input_path.name
     record["input_sha256"] = file_sha256(input_path)
     if source_identity is not None:

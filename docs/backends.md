@@ -92,11 +92,19 @@ These args do the same thing on either backend:
 
 ## Backend-specific surface — `pdf_backend_kwargs`
 
-Anything past the common surface is reachable via `pdf_backend_kwargs`, a dict forwarded to the active backend's pipeline-options object.
+Anything past the common surface is reachable via `pdf_backend_kwargs`, a dict forwarded to the active backend's pipeline-options object. On the CLI it is `--pdf-backend-kwargs` with a JSON object, on `convert` and `ingest`:
+
+```bash
+pagespeak convert manual.pdf -o out/manual --pdf-backend-kwargs '{"IgnoreTextProcessor_max_streak": 100000}'
+```
+
+The kwargs are part of the ingest settings: `.pagespeak-run.json` records them in `resolved_flags` and `ingest_flags`, a later `convert` into the same output dir inherits them (so `--rerun-from ingest` re-reads with them), and resuming from a `raw.md` read with other kwargs is refused. A value JSON cannot encode is recorded as its `repr`.
 
 ### Marker
 
 `pdf_backend_kwargs` is merged into Marker's `PdfConverter(config=…)`. Anything Marker accepts in that dict works.
+
+pagespeak runs Marker with its own repeated-text remover in place of Marker's. Marker's drops a page's first or last block when its text recurs across pages (`IgnoreTextProcessor_max_streak`, `IgnoreTextProcessor_common_element_threshold`), which takes running headers away — and with them a section title printed atop each page of its section, every copy, so the section's content lands under the one before. pagespeak's keeps the first copy of any text the remover would leave nowhere else in the document: such a title survives once, and so does a running header or footer whose text appears nowhere else (one stray line per document). A text with a copy elsewhere, and a page number, are dropped as Marker drops them. Copies are matched with Marker's own fuzzy match, so two titles a character apart (`Chapter 1 Overview`, `Chapter 2 Overview`) count as one text and only the first keeps a copy. Marker's own `IgnoreTextProcessor_*` keys still apply; `IgnoreTextProcessor_keep_sole_copy: false` restores Marker's behavior.
 
 ```python
 to_markdown(

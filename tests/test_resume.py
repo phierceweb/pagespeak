@@ -456,3 +456,45 @@ def test_rerun_from_ingest_preserves_vision_cache(tmp_path: Path, monkeypatch) -
     to_markdown(src, output_dir=out, diagrams=False, rerun_from="ingest")
 
     assert fake.exists(), "vision-cache must survive --rerun-from ingest"
+
+
+def test_raw_resume_refuses_different_backend_kwargs(tmp_path: Path) -> None:
+    """Marker kwargs change what raw.md holds (a repeated title kept or deleted)."""
+    src, out = _pdf_raw_checkpoint(tmp_path, None)
+    _write_record(
+        out,
+        {
+            "resolved_flags": {"pdf_backend": "marker"},
+            "ingest_flags": {
+                "pdf_backend": "marker",
+                "pdf_backend_kwargs": {"IgnoreTextProcessor_max_streak": 100000},
+            },
+        },
+    )
+    with pytest.raises(ValueError, match="pdf_backend_kwargs"):
+        _convert_without_backend(src, out, pdf_backend="marker")
+
+
+class _Service:
+    pass
+
+
+def test_raw_resume_accepts_the_same_kind_of_object_in_backend_kwargs(tmp_path: Path) -> None:
+    from pagespeak.services._run_record import json_safe
+
+    src, out = _pdf_raw_checkpoint(tmp_path, None)
+    recorded = json_safe({"svc": _Service()})
+    _write_record(out, {"ingest_flags": {"pdf_backend": "marker", "pdf_backend_kwargs": recorded}})
+    result = _convert_without_backend(src, out, pdf_backend_kwargs={"svc": _Service()})
+    assert result.markdown.startswith("# from the earlier run")
+
+
+def test_raw_resume_treats_absent_and_empty_backend_kwargs_alike(tmp_path: Path) -> None:
+    for i, (recorded, current) in enumerate([(None, {}), ({}, None)]):
+        src, out = _pdf_raw_checkpoint(tmp_path / str(i), None)
+        _write_record(
+            out,
+            {"ingest_flags": {"pdf_backend": "marker", "pdf_backend_kwargs": recorded}},
+        )
+        result = _convert_without_backend(src, out, pdf_backend_kwargs=current)
+        assert result.markdown.startswith("# from the earlier run")

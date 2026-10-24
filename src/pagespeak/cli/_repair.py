@@ -15,6 +15,7 @@ import typer
 
 from ..services._staging import find_source_pdf
 from ..services._table_repair import (
+    RepairRecord,
     find_collapsed_cells,
     find_split_tables,
     repair_tables_in_markdown,
@@ -79,9 +80,7 @@ def register(app: typer.Typer) -> None:
         )
         repaired, records = repair_tables_in_markdown(text, str(pdf))
         fixed = sum(1 for r in records if r.status == "repaired")
-        for r in records:
-            detail = f" ({r.br_count} <br>)" if r.br_count else ""
-            typer.echo(f"  line {r.line}{detail}, page {r.page}: {r.status}")
+        _echo_records(records)
 
         if dry_run:
             typer.echo(f"\n[dry-run] {fixed}/{len(records)} would be repaired; raw.md not written")
@@ -98,3 +97,10 @@ def register(app: typer.Typer) -> None:
             f"  bin/run convert {out_dir} --from cleanup --vision-cache-only "
             f"(add the dir's .pagespeak-run.json split flags)"
         )
+
+
+def _echo_records(records: list[RepairRecord]) -> None:
+    for r in records:
+        detail = f" ({r.br_count} <br>)" if r.br_count else ""
+        missing = f" — Docling's table lacks: {', '.join(r.lost[:12])}" if r.lost else ""
+        typer.echo(f"  line {r.line}{detail}, page {r.page}: {r.status}{missing}")

@@ -23,6 +23,7 @@ from urllib.parse import unquote
 from ._audit_checks import AuditFinding, run_text_checks
 from ._audit_coverage import check_text_coverage
 from ._audit_extraction import run_extraction_checks
+from ._audit_lost_column import check_lost_column_against
 from ._image_refs import parse_image_refs
 
 _CHECKPOINT_SUFFIXES = (
@@ -221,6 +222,7 @@ def audit_paths(
                 continue
             checked += 1
             findings = check_text_coverage(checked_md, pdf)
+            findings += check_lost_column_against(checked_md, pdf)
             if findings:
                 findings_by_file.setdefault(checked_md, []).extend(findings)
     return AuditReport(findings_by_file, scanned, checked, tuple(no_source))

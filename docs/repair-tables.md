@@ -27,7 +27,7 @@ Use it when all of these hold:
 
 Do not reach for it on authored multi-line cells. A legitimate cell with a handful of `<br>` line breaks is faithful output, not a collapse — `repair-tables` only acts on mega-cells of **≥30 `<br>`**, the same threshold the audit uses.
 
-It also repairs **split tables** — where Marker breaks one multi-line cell across several rows, leaving continuation rows whose key or value cell is empty (pervasive in spec-heavy key/value tables with wrapped descriptions). These are not audit-flagged; `repair-tables` finds them by that continuation-row shape. Over-flagging a table with a legitimately empty cell is harmless — the splice only swaps in a Docling table that scores a strong two-way content match, leaving a no-better candidate untouched.
+It also repairs **split tables** — where Marker breaks one multi-line cell across several rows, leaving continuation rows whose key or value cell is empty (pervasive in spec-heavy key/value tables with wrapped descriptions) — or, when key and value wrap together, a row whose key is a parenthetical second line (`(lid side)` under `Power switch`) beside a value that picks up mid-sentence. These are not audit-flagged; `repair-tables` finds them by those continuation-row shapes. Over-flagging a table with a legitimately empty cell is harmless — the splice only swaps in a Docling table that scores a strong two-way content match, leaving a no-better candidate untouched.
 
 ## Prerequisites
 
@@ -57,14 +57,15 @@ pagespeak repair-tables conversions/out/<doc> --source path/to/original.pdf
 pagespeak repair-tables conversions/out/<doc> --dry-run
 ```
 
-It prints one line per collapsed table — the line number, the `<br>` count, the located PDF page, and the outcome (`repaired`, `no-page`, or `no-match`):
+It prints one line per collapsed table — the line number, the `<br>` count, the located PDF page, and the outcome (`repaired`, `no-page`, `no-match`, `loses-words` with the words Docling's table lacks, or `absorbs-table`):
 
 ```
-2 collapsed table(s) in manual.raw.md; Docling-splicing from conversions/in/manual.pdf…
+3 collapsed table(s) in manual.raw.md; Docling-splicing from conversions/in/manual.pdf…
   line 412 (88 <br>), page 43: repaired
   line 905 (61 <br>), page 71: no-match
+  line 1210 (34 <br>), page 96: loses-words — Docling's table lacks: fuse, spare, widgets
 
-repaired 1/2 table(s) → patched manual.raw.md
+repaired 1/3 table(s) → patched manual.raw.md
 ```
 
 With `--dry-run` the same report prints but `raw.md` is not written.
@@ -76,7 +77,8 @@ For each broken table in `<stem>.raw.md` — a collapsed `<br>` mega-cell or a s
 1. **Locate the page.** Take the most distinctive text from the broken table — the longest `<br>`-segment of a collapsed mega-cell, or the longest cell value of a split table — and search the PDF's text layer for the page(s) that contain it.
 2. **Re-read just that page with Docling.** One page, markdown only, no image side-effects.
 3. **Match the table by content.** Across every candidate page, pick the Docling table whose tokens overlap the broken table's most — scored *symmetrically* (both directions), so a bigger table that merely contains the block, or a tail of it, loses to the exact one. Reject the match if nothing clears the overlap floor, if Docling *also* collapsed that table, or if Docling's grid silently **drops a value** the original had — a per-value word-pair check, because a lost row is worse than the ugly-but-complete original.
-4. **Splice.** Replace the whole broken table block (the mega-cell, or the run of split rows) with Docling's clean grid.
+4. **Check every token.** The splice replaces the whole Marker table, including rows outside the mega-cell the match was judged on, so Docling's table must hold every token of it, as many times: words in any script, whole numbers with an attached sign or comparison (`7.4`, `-5`, `< 5`), and symbols (`✓`, `$`, `%`, `°`). Markup is not counted: `<br>`, HTML tags with quoted attributes (an inline one joins, so `m<sup>2</sup>` reads `m2`), entities, the target of a link to a page anchor or URL, `_` / `*` emphasis, thousands separators, a LaTeX span's `$`, braces, `_` / `^` and formatting commands, and a few LaTeX symbols, which read as the symbol (`\times` is `×`, `\mu` is `μ`). Any other LaTeX command counts as words, and `<LLN or >ULN` or `<input>` count as wording. A word a hyphen split at a line break — `recom-<br>mended` in a cell, or a cell ending `recom-` above the same column's `mended` — counts whole when Docling's grid has it whole. When unsure, a token counts as lost: a refused splice leaves Marker's complete table in place. If any token is missing, Marker's table stays and the outcome is `loses-words`, naming them. If Docling's table also holds at least half of a neighbouring Marker table's body — Docling read the two as one — splicing it would print that table's rows twice: Marker's tables stay and the outcome is `absorbs-table`. Both refusals are logged as `table_repair_kept_marker`.
+5. **Splice.** Replace the whole broken table block (the mega-cell, or the run of split rows) with Docling's clean grid.
 
 The rest of the Marker output — body prose, headings, images, captions — is left exactly as it was. Only `<stem>.raw.md` is rewritten.
 
@@ -92,7 +94,7 @@ Match the split flags the original run used — read them from `<doc>/.pagespeak
 
 ## What it will not do
 
-- **It refuses to splice a no-better table.** A `no-match` outcome means Docling's grid did not clearly correspond to the broken table, Docling collapsed it too, or Docling's grid would silently **drop a value** the original had (it keeps the complete-but-ugly Marker table over a cleaner one that loses a row). The original table is left in place — `repair-tables` never replaces a table with a worse one.
+- **It refuses to splice a no-better table.** A `no-match` outcome means Docling's grid did not clearly correspond to the broken table, Docling collapsed it too, or Docling's grid would silently **drop a value** the original had (it keeps the complete-but-ugly Marker table over a cleaner one that loses a row). A `loses-words` outcome is the same refusal at word level: Docling read the table, but a word of Marker's table is not in its grid. An `absorbs-table` outcome means Docling's table also carries the next or previous Marker table. The original table is left in place — `repair-tables` never replaces a table with a worse one.
 - **It cannot fix image-based tables.** A `no-page` outcome means the cell's text was not found in the PDF text layer (e.g. a table that is itself a scanned image). There is nothing for Docling to grid.
 - **PDF + Marker only.** The fix is built around Docling re-reading a PDF page; it does not apply to DOCX, HTML, or other formats.
 - **It does not judge the result.** Spot-check a spliced table on an unfamiliar document.

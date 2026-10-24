@@ -35,12 +35,13 @@ _MODELS_NOT_CACHED = (
     "`bin/run convert some.pdf -o /tmp/out --pdf-backend docling --no-diagrams`."
 )
 
-_HEADERS = ["Profile Type", "Database", "Extension"]
+_HEADERS = ["Widget Type", "Material", "Suffix"]
 _ROWS = [
-    ["Data Pump Export Profile", "Oracle", ".nbakora"],
-    ["Data View Profile", "Redis", ".ndvredis"],
-    ["ER Diagram File", "PostgreSQL", ".ned"],
-]
+    ["Gear Housing Shell Part", "Brass", ".wghsp"],
+    ["Spring Clip Mount", "Steel", ".wscm"],
+    ["Pivot Arm Bracket", "Copper", ".wpa"],
+    *([f"Spacer Ring {n}", "Nickel", f".wsr{n}"] for n in range(1, 9)),
+]  # 12 rows x 3 cells: one copy clears the 30-`<br>` collapse threshold
 
 
 @pytest.fixture(scope="module")
@@ -51,7 +52,7 @@ def table_pdf(tmp_path_factory: pytest.TempPathFactory) -> Path:
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Helvetica", size=14)
-    pdf.cell(0, 10, "Connection Profile Types")
+    pdf.cell(0, 10, "Widget Part Types")
     pdf.ln(16)
     pdf.set_font("Helvetica", size=10)
     widths = (70, 55, 40)
@@ -68,10 +69,9 @@ def table_pdf(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 def _collapsed_raw_md() -> str:
-    """Marker-collapse shape: the whole table jammed into one `<br>`-joined
-    mega-cell, repeated enough to clear the 30-`<br>` threshold."""
+    """Marker-collapse shape: the whole table jammed into one `<br>`-joined mega-cell."""
     segs: list[str] = []
-    for row in [_HEADERS, *_ROWS] * 6:
+    for row in [_HEADERS, *_ROWS]:
         segs.extend(row)
     blob = "<br>".join(segs)
     return f"# Profiles\n\n| {blob} |  |  |\n| --- | --- | --- |\n|  |  |  |\n\nEnd.\n"
@@ -79,7 +79,7 @@ def _collapsed_raw_md() -> str:
 
 def test_locate_pages_in_pdf_finds_the_table_page(table_pdf: Path) -> None:
     """Real pypdfium2 text search locates the page(s) holding the table text."""
-    assert locate_pages_in_pdf("Data Pump Export Profile", str(table_pdf)) == [0]
+    assert locate_pages_in_pdf("Gear Housing Shell Part", str(table_pdf)) == [0]
 
 
 def test_real_docling_splice_repairs_collapsed_table(table_pdf: Path) -> None:
@@ -94,6 +94,6 @@ def test_real_docling_splice_repairs_collapsed_table(table_pdf: Path) -> None:
         pytest.skip(_MODELS_NOT_CACHED)
     assert records and records[0].status == "repaired", records
     assert "<br>" not in repaired
-    assert "Data Pump Export Profile" in repaired
-    assert "Oracle" in repaired and ".nbakora" in repaired
+    assert "Gear Housing Shell Part" in repaired
+    assert "Brass" in repaired and ".wghsp" in repaired
     assert "# Profiles" in repaired and "End." in repaired  # surrounding preserved

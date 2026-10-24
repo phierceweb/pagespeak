@@ -28,7 +28,7 @@ from ..backends._pdf import parse_page_range
 from ..models._models import IngestResult
 from ..models._pipeline import completed_chunk_backends
 from ..services._hierarchy_trust import ingested_from_outline
-from ..services._run_record import INGEST_FLAGS_FIELD, read_run_record
+from ..services._run_record import INGEST_FLAGS_FIELD, json_safe, read_run_record
 
 # Cleanup-affecting flags. If any of these change between runs, the
 # cleaned.md snapshot is stale and Phase 3a (frontmatter strip +
@@ -47,7 +47,7 @@ _CLEANUP_AFFECTING_FLAGS: tuple[str, ...] = (
 def _compared_ingest_keys(suffix: str, flags: Mapping[str, Any]) -> tuple[str, ...]:
     """The ingest flags that change what this format's backend writes."""
     if suffix == ".pdf":
-        keys = ("pdf_backend", "force_ocr", "page_range", "max_pages")
+        keys = ("pdf_backend", "pdf_backend_kwargs", "force_ocr", "page_range", "max_pages")
         return (*keys, "heading_hierarchy") if flags.get("pdf_backend") == "docling" else keys
     if suffix == ".docx":
         if flags.get("docx_backend") == "python-docx":
@@ -59,6 +59,8 @@ def _compared_ingest_keys(suffix: str, flags: Mapping[str, Any]) -> tuple[str, .
 
 
 def _comparable(key: str, value: Any) -> Any:
+    if key == "pdf_backend_kwargs":
+        return json_safe(value or {})
     if key == "page_range" and value is not None:
         try:
             return tuple(parse_page_range(value))

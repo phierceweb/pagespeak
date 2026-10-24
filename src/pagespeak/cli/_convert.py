@@ -12,11 +12,13 @@ from .. import to_markdown
 from ..backends._docx_dispatch import DocxBackendName
 from ..backends._pdf_dispatch import PdfBackendName
 from ..backends._qti import is_qti_export
-from ..orchestrators._chunk import resolve_cli_workers
+from ..orchestrators._chunk_sizing import resolve_cli_workers
 from ..orchestrators._ingest import PartialIngestError
 from ..services._cleanup import CleanupLevel, CrossRefs
 from ..services._diagrams import VisionBackendName
 from ..services._normalize_decision import NormalizeModeOption
+from ._backend_kwargs import HELP as BACKEND_KWARGS_HELP
+from ._backend_kwargs import parse_backend_kwargs
 from ._convert_report import report_result
 from ._help_text import NORMALIZE_MODEL_HELP
 from ._inherit import (
@@ -173,6 +175,9 @@ def register(
             False,
             "--heading-hierarchy/--no-heading-hierarchy",
             help="Docling PDF only. Infer real heading levels from PDF bookmarks, then section numbering, then font style, instead of Docling's flat single-level default. Helps documents with an embedded outline or 'Section N.'/'N.M' numbering; not a win on documents with neither. Off by default. Requires docling>=2.109. See docs/backends.md.",
+        ),
+        pdf_backend_kwargs: str | None = typer.Option(
+            None, "--pdf-backend-kwargs", help=BACKEND_KWARGS_HELP
         ),
         repair_tables: bool = typer.Option(
             False,
@@ -413,6 +418,9 @@ def register(
                 decoration_threshold=_flag("decoration_threshold", None),
                 decoration_hamming_distance=_flag("decoration_hamming_distance", None),
                 pdf_backend=cast(PdfBackendName, pdf_backend),
+                pdf_backend_kwargs=_flag(
+                    "pdf_backend_kwargs", parse_backend_kwargs(pdf_backend_kwargs)
+                ),
                 heading_hierarchy=_flag("heading_hierarchy", heading_hierarchy),
                 repair_tables=repair_tables,
                 docx_backend=cast(DocxBackendName, _flag("docx_backend", docx_backend)),
