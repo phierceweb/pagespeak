@@ -60,7 +60,7 @@ def register(
             "--docx-backend",
             help=(
                 "DOCX backend: 'markitdown' (default) | 'python-docx' "
-                "(structure-faithful, requires pagespeak[docx-structured]). "
+                "(structure-faithful, requires pagespeak\\[docx-structured]). "
                 "Ignored for non-.docx formats."
             ),
         ),
@@ -82,7 +82,9 @@ def register(
         device: str | None = typer.Option(
             None, "--device", help='Torch device override ("cpu" / "mps" / "cuda").'
         ),
-        force_ocr: bool = typer.Option(False, "--force-ocr"),
+        force_ocr: bool = typer.Option(
+            False, "--force-ocr", help="PDF only: force OCR even on text-bearing PDFs."
+        ),
         max_pages: int | None = typer.Option(
             None,
             "--max-pages",

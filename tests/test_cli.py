@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
+import typer.main
+from rich.text import Text
 from typer.testing import CliRunner
 
 from pagespeak import IngestResult
@@ -369,3 +373,27 @@ def test_cli_version_prints_the_installed_version() -> None:
     result = runner.invoke(app, ["--version"])
     assert result.exit_code == 0
     assert result.output.strip() == f"pagespeak {__version__}"
+
+
+def _commands(command: Any, path: str = "pagespeak") -> Iterator[tuple[str, Any]]:
+    """Every command in the tree, with its invocation path."""
+    yield path, command
+    for name, sub in getattr(command, "commands", {}).items():
+        yield from _commands(sub, f"{path} {name}")
+
+
+def test_help_text_keeps_its_brackets() -> None:
+    """`--help` reads each string as Rich markup, which deletes a `[...]` it
+    takes for a tag (`pagespeak[pdf-docling]` printed as `pagespeak`). A
+    literal bracket is written `\\[`."""
+    for path, command in _commands(typer.main.get_command(app)):
+        texts = [command.help or ""] + [getattr(p, "help", None) or "" for p in command.params]
+        for text in texts:
+            assert Text.from_markup(text).plain == text.replace("\\[", "["), f"{path}: {text}"
+
+
+def test_every_option_has_help() -> None:
+    for path, command in _commands(typer.main.get_command(app)):
+        for param in command.params:
+            if param.param_type_name == "option" and not param.hidden:
+                assert param.help, f"{path} {param.opts} has no help"

@@ -6,6 +6,7 @@ directory-input mode.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -312,3 +313,18 @@ def test_min_body_chars_defaults_to_none(monkeypatch, tmp_path: Path) -> None:
     """Unpassed stays None so the library's own default applies."""
     captured = _capture_convert_kwargs(monkeypatch, tmp_path, [])
     assert captured.get("min_body_chars") is None
+
+
+def test_convert_help_names_the_extras() -> None:
+    """Rich prints the bracketed extras instead of reading them as markup tags."""
+    # Wide enough that Rich doesn't truncate a long word to `pagespeak[pdf-docl…`.
+    result = runner.invoke(app, ["convert", "--help"], env={"COLUMNS": "200"})
+    assert result.exit_code == 0
+    output = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+    for text in (
+        "pagespeak[pdf-docling]",
+        "pagespeak[tophat]",
+        "pagespeak[docx-structured]",
+        "[label](#page-X-Y)",
+    ):
+        assert text in output

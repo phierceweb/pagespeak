@@ -74,7 +74,7 @@ Some manual-aggregator sites wrap every download with a nav page at the head (a 
 
 **Flavor 2 — mostly-English manual with a multilingual regulatory chapter.** Chapters 1–4 entirely English; the final regulatory chapter has per-country `##` sub-sections, some written in a local language (e.g. a local-language block under a `## <Country>` heading). The peek catches it because non-English text appears *only* in the last ~10% of pages, mixed with English `##` headings.
 
-**Do** accept it (English RAG queries won't retrieve non-English chunks). Or post-process at section level. `--page-range` does not help here — the multilingual content is interleaved per-section, not contiguous at the tail.
+**Do** add `--english-only` to the split (`--split-sections`): it drops the non-English branches and keeps the English ones — see [cleanup.md](cleanup.md). Its known gap is a boilerplate block repeated in all 24 EU languages, whose short function words collide with English. Without the flag, the mixed-language tail stays (English RAG queries won't retrieve the non-English chunks). `--page-range` does not help here — the multilingual content is interleaved per-section, not contiguous at the tail.
 
 ### Detect big-doc threshold (~300+ pages)
 
@@ -172,10 +172,6 @@ These show up in output regardless of which recipe you pick. The classifier can 
 If Marker emits a flat list of `#` headings and the only signal that one should be a child of another is topical (a subsection sits under a parent by subject alone, with no numbering or indentation in the source), `llm_full` leaves them as `#` peers. It re-levels what looks like a chapter/subsection pattern (numbered, indented in source) but proximity + topical relevance alone don't trigger nesting.
 
 Effect: shallower hierarchy than ideal. Body content still complete; navigation and section context weakened.
-
-### No language-section filter for Flavor-2 multilingual
-
-Pagespeak has no built-in way to drop non-English `##` sub-sections from a regulatory chapter. Either accept the mixed-language tail, or post-process by section after split.
 
 ### Marker can silently drop chapter headings — even when the doc's own TOC lists them
 
