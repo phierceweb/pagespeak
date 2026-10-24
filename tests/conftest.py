@@ -43,6 +43,7 @@ _OPTIONAL_EXTRA_FOR_MODULE = {
     "test_docx_table": "docx",
     "test_docx_walk": "docx",
     "test_marker_ignoretext": "marker",
+    "test_marker_pagebox": "marker",
     "test_pdf_docling": "docling",
     "test_web_actions": "fastapi",
     "test_web_app": "fastapi",

@@ -48,6 +48,8 @@ pdf = [
     # >=1.10: backends/_marker_ignoretext.py subclasses Marker's processor internals.
     "marker-pdf>=1.10,<2",
     "rapidfuzz>=3,<4",
+    # backends/_marker_pagebox.py rebuilds a clipped span as pdftext builds one.
+    "pdftext>=0.6.3,<1",
     "pypdfium2",
 ]
 pdf-docling = [

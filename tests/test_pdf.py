@@ -327,3 +327,28 @@ def test_marker_keeps_its_lifted_pixel_limit_only_for_its_own_call(
         convert_pdf(pdf_path)
     assert during == [None, None]
     assert Image.MAX_IMAGE_PIXELS == 200_000_000
+
+
+def test_convert_pdf_clips_marker_text_to_each_page_box(tmp_path: Path) -> None:
+    """Marker's PdfProvider reads pdftext through `dictionary_output`; the clip
+    covers the conversion, and `PdfProvider_clip_to_page_box: false` turns it off."""
+    pytest.importorskip("marker")
+    import marker.providers.pdf as marker_pdf
+
+    read = marker_pdf.dictionary_output
+    pdf_path = tmp_path / "doc.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4\n")
+    clipped: list[bool] = []
+    PdfCls, models_fn, text_fn = _patch_marker()
+    PdfCls.return_value.side_effect = lambda _p: clipped.append(
+        marker_pdf.dictionary_output is not read
+    )
+    with (
+        patch("marker.converters.pdf.PdfConverter", PdfCls),
+        patch("marker.models.create_model_dict", models_fn),
+        patch("marker.output.text_from_rendered", text_fn),
+    ):
+        convert_pdf(pdf_path)
+        convert_pdf(pdf_path, backend_kwargs={"PdfProvider_clip_to_page_box": False})
+    assert clipped == [True, False]
+    assert marker_pdf.dictionary_output is read

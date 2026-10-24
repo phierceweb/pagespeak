@@ -71,6 +71,7 @@ def _run_marker(path: Path, config: dict[str, object]) -> tuple[str, dict[str, A
         ) from e
 
     from ._marker_ignoretext import marker_processor_list
+    from ._marker_pagebox import clipped_to_page_box
 
     converter = PdfConverter(
         artifact_dict=create_model_dict(),
@@ -78,7 +79,8 @@ def _run_marker(path: Path, config: dict[str, object]) -> tuple[str, dict[str, A
         config=config or None,
     )
     try:
-        rendered = converter(str(path))
+        with clipped_to_page_box(config):
+            rendered = converter(str(path))
     except PermissionError as e:
         if "sysconf" in str(e) or "Operation not permitted" in str(e):
             raise PermissionError(
