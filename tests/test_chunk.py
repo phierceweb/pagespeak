@@ -9,10 +9,16 @@ from pagespeak.models._pipeline import Manifest
 from pagespeak.orchestrators._chunk import (
     ChunkPlan,
     chunk,
+    chunk_settings,
     plan_chunks,
 )
 from pagespeak.orchestrators._chunk_sizing import (
     DEFAULT_CHUNK_PAGES,
+)
+
+# A chunk as this version's Marker run records it.
+_MARKER_NOW = chunk_settings(
+    "marker", heading_hierarchy=False, force_ocr=False, backend_kwargs=None
 )
 
 # --- resolve_workers ---
@@ -158,7 +164,9 @@ def test_chunk_resume_skips_completed(tmp_path: Path, monkeypatch: pytest.Monkey
 
     # Pre-mark 0-49 as completed.
     mf = Manifest.load_or_create(out, input_path=src)
-    mf.mark_chunk_completed("0-49", raw_md="chunks/0-49/raw.md", images=[])
+    mf.mark_chunk_completed(
+        "0-49", raw_md="chunks/0-49/raw.md", images=[], pdf_backend="marker", settings=_MARKER_NOW
+    )
 
     calls = []
 
@@ -250,8 +258,8 @@ def test_chunk_refuses_resume_with_other_settings(
 def test_chunk_settings_compare_only_what_the_backend_reads(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Marker ignores `heading_hierarchy`; chunks from before settings were
-    recorded are not evidence of a mismatch."""
+    """Marker ignores `heading_hierarchy`; outside Marker, chunks from before
+    settings were recorded are not evidence of a mismatch."""
     src = tmp_path / "doc.pdf"
     src.write_bytes(b"%PDF-1.4\n")
     out = tmp_path / "out"
@@ -264,9 +272,43 @@ def test_chunk_settings_compare_only_what_the_backend_reads(
     mf = Manifest.load_or_create(legacy, input_path=src)
     for page_range in ("0-49", "50-99"):
         mf.mark_chunk_completed(
-            page_range, raw_md=f"chunks/{page_range}/raw.md", images=[], pdf_backend="marker"
+            page_range, raw_md=f"chunks/{page_range}/raw.md", images=[], pdf_backend="docling"
         )
-    chunk(src, output_dir=legacy, chunk_pages=50, workers=1, force_ocr=True)
+    chunk(src, output_dir=legacy, chunk_pages=50, workers=1, force_ocr=True, pdf_backend="docling")
+
+
+def test_marker_chunks_from_before_settings_were_recorded_are_not_resumed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """They were read before the page-box clip."""
+    src = tmp_path / "doc.pdf"
+    src.write_bytes(b"%PDF-1.4\n")
+    out = tmp_path / "out"
+    _patch_inline(monkeypatch, _stub_chunk_result_factory(out))
+    monkeypatch.setattr("pagespeak.orchestrators._chunk.count_pages", lambda p: 100)
+    mf = Manifest.load_or_create(out, input_path=src)
+    mf.mark_chunk_completed("0-49", raw_md="chunks/0-49/raw.md", images=[], pdf_backend="marker")
+    with pytest.raises(ValueError, match="page_box_clip"):
+        chunk(src, output_dir=out, chunk_pages=50, workers=1)
+
+
+def test_marker_chunks_read_without_the_page_box_clip_are_not_resumed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Their text could hold a facing page's; this run's would not."""
+    src = tmp_path / "doc.pdf"
+    src.write_bytes(b"%PDF-1.4\n")
+    out = tmp_path / "out"
+    _patch_inline(monkeypatch, _stub_chunk_result_factory(out))
+    monkeypatch.setattr("pagespeak.orchestrators._chunk.count_pages", lambda p: 100)
+    mf = Manifest.load_or_create(out, input_path=src)
+    unclipped = {"force_ocr": False, "pdf_backend_kwargs": {}}
+    mf.mark_chunk_completed(
+        "0-49", raw_md="chunks/0-49/raw.md", images=[], pdf_backend="marker", settings=unclipped
+    )
+    mf.save()
+    with pytest.raises(ValueError, match="page_box_clip"):
+        chunk(src, output_dir=out, chunk_pages=50, workers=1)
 
 
 def test_chunk_records_settings_on_completion(
@@ -303,7 +345,9 @@ def test_chunk_force_reruns_all(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr("pagespeak.orchestrators._chunk.count_pages", lambda p: 100)
 
     mf = Manifest.load_or_create(out, input_path=src)
-    mf.mark_chunk_completed("0-49", raw_md="chunks/0-49/raw.md", images=[])
+    mf.mark_chunk_completed(
+        "0-49", raw_md="chunks/0-49/raw.md", images=[], pdf_backend="marker", settings=_MARKER_NOW
+    )
 
     calls = []
 
@@ -356,7 +400,9 @@ def test_chunk_no_op_when_all_done(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr("pagespeak.orchestrators._chunk.count_pages", lambda p: 50)
 
     mf = Manifest.load_or_create(out, input_path=src)
-    mf.mark_chunk_completed("0-49", raw_md="chunks/0-49/raw.md", images=[])
+    mf.mark_chunk_completed(
+        "0-49", raw_md="chunks/0-49/raw.md", images=[], pdf_backend="marker", settings=_MARKER_NOW
+    )
 
     # If chunk() tried to call the worker we'd see ImportError on real Marker.
     # Just patch it out defensively to nothing.

@@ -7,7 +7,7 @@ Runs each extracted image through a vision model and embeds the result — a cap
 1. **Gather** — for each image: compute its phash, look it up in `<outdir>/.vision-cache/<phash>.json`, and on a miss fire one backend call. Calls fan out across a thread pool (`vision_concurrency`, default 6). One image's failure is non-fatal — it yields a caption-only result and the pass continues.
 2. **Inject** — rewrite the markdown, matching cached results to image references by basename and inserting the caption + Mermaid block.
 
-Backends (`vision_backend`): `claude_code` (default — local `claude --print`, $0/call), `anthropic` (direct API), `openrouter`. Default model is Claude Haiku 4.5.
+Backends (`vision_backend`): `claude_code` (default — local `claude --print`, $0/call), `anthropic` (direct API), `openrouter`. Default model is Claude Haiku 5.5.
 
 ## When it runs
 

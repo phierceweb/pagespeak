@@ -41,7 +41,7 @@ pip install pagespeak[pdf-docling]          # adds Docling for PDF (pair with --
 pip install pagespeak[pdf,pdf-docling]      # both — pick at call time
 pip install pagespeak[docx-structured]      # adds python-docx for structure-faithful DOCX
 pip install pagespeak[pdf,docx-structured]  # PDF + structure-faithful DOCX
-pip install pagespeak[tophat]               # adds the Top Hat quiz-export backend (light; pypdfium2)
+pip install pagespeak[tophat]               # adds the Top Hat quiz-export backend and verify's PDF checks (light; pypdfium2)
 pip install pagespeak[web]                  # localhost web console (FastAPI + uvicorn)
 ```
 
@@ -118,7 +118,7 @@ flowchart TD
 | `anthropic` | Direct API; fastest | `ANTHROPIC_API_KEY` |
 | `openrouter` | Multi-provider unified billing (Gemini, Llama vision, …) | `OPENROUTER_API_KEY` |
 
-The default model is Claude Haiku 4.5 — $0 on the default `claude_code` backend, or typically $0.001–$0.005 per image on a paid backend. See [docs/diagrams.md](https://github.com/phierceweb/pagespeak/blob/main/docs/diagrams.md) for backend mechanics, prompt versioning, and failure handling.
+The default model is Claude Haiku 5.5 — $0 on the default `claude_code` backend, or about $0.001 per image on a paid backend. See [docs/diagrams.md](https://github.com/phierceweb/pagespeak/blob/main/docs/diagrams.md) for backend mechanics, prompt versioning, and failure handling.
 
 Vision output is best-effort. A diagram's Mermaid is a model's *reading* of the image — usually faithful for clean structural figures, but it can be approximate or wrong on dense, hand-drawn, or low-resolution ones, and a confidently-wrong caption is worse than none. pagespeak keeps the original image beside every block, biases the prompt toward caption-only when a figure isn't cleanly structural, and for critical content you should spot-check the Mermaid against the source rather than trust it blindly. The worked examples report the real per-figure hit rate (e.g. organs named for 7 of 11 body systems), not a perfect one.
 
@@ -164,6 +164,7 @@ So no backend gets structure right on its own — "just use Marker" or "just use
 - [docs/cleanup.md](https://github.com/phierceweb/pagespeak/blob/main/docs/cleanup.md) — cleanup levels, cross-refs, section splitting
 - [docs/normalize-headings.md](https://github.com/phierceweb/pagespeak/blob/main/docs/normalize-headings.md) — heading-level renormalization
 - [docs/audit.md](https://github.com/phierceweb/pagespeak/blob/main/docs/audit.md) — `pagespeak audit`: scan converted output for conversion defects (read-only, $0)
+- [docs/verify.md](https://github.com/phierceweb/pagespeak/blob/main/docs/verify.md) — `pagespeak verify`: PASS/FAIL per converted document against its source PDF; `deliver` refuses a failing document
 - [docs/repair-tables.md](https://github.com/phierceweb/pagespeak/blob/main/docs/repair-tables.md) — `pagespeak repair-tables`: splice Docling's clean grid into Marker-collapsed tables (the fix for the audit's `collapsed_table`)
 - [docs/caching.md](https://github.com/phierceweb/pagespeak/blob/main/docs/caching.md) — cache layers, `--rerun-from`, baselines, diff
 - [docs/backends.md](https://github.com/phierceweb/pagespeak/blob/main/docs/backends.md) — Marker vs Docling for PDF

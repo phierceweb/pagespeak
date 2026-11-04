@@ -18,7 +18,7 @@ result = to_markdown(
     output_dir=Path("./out"),
     diagrams=True,
     vision_cache_only=False,        # True → vision reads only .vision-cache/; zero LLM calls; skips uncached images
-    vision_model=None,             # default → claude-haiku-4-5-20251001
+    vision_model=None,             # default → claude-haiku-5-5
     force_ocr=False,               # PDF-only; force OCR even on text-bearing PDFs
     cleanup="basic",               # "off" | "basic" | "aggressive"
     cross_refs="keep",             # "keep" | "strip" | "remap" — [label](#page-X-Y) refs
@@ -69,7 +69,8 @@ The result includes the final markdown string (with Mermaid blocks already embed
 | `pagespeak ingest <input>` | Backend phase only: produces `<stem>.raw.md` + `images/`. Use `--workers N` for chunked-parallel PDF. See [ingest.md](ingest.md). |
 | `pagespeak invalidate <out> <stage>` | Bust caches at this stage and downstream. See [caching.md](caching.md). |
 | `pagespeak baseline save \| list \| diff <out>` | Snapshot, inspect, and diff prior runs. See [caching.md](caching.md). |
-| `pagespeak deliver <out> [-o <dir>]` | Strip a converted output dir to delivery-ready files: copy only the master `.md`, `sections/`, and `images/` (dropping stage checkpoints, run records, caches) into a parallel dir. Defaults to `conversions/out/<name>` → `conversions/delivery/<name>`; re-runnable (rebuilds the destination to match the source). |
+| `pagespeak deliver <out> [-o <dir>] [--in-dir <dir>]` | Strip a converted output dir to delivery-ready files: copy only the master `.md`, `sections/`, and `images/` (dropping stage checkpoints, run records, caches) into a parallel dir. Defaults to `conversions/out/<name>` → `conversions/delivery/<name>`; re-runnable (rebuilds the destination to match the source). Refuses, naming each verdict file, while any document fails `pagespeak verify` (it runs verify first, or reuses an unchanged document's last verdict); `--in-dir` is where verify looks for source PDFs (default: the `in` folder beside the document's `out` folder, else `conversions/in`). |
+| `pagespeak verify <paths…> [--no-delivery] [--in-dir <dir>]` | PASS or FAIL for each converted document as a whole, written beside its master as `.pagespeak-verdict.md`: missing picture files and pictures `deliver` would leave behind, pictures with no caption or sharing one, section files that lose or repeat part of the master, a stale delivered copy, and notes on captions that seem to contradict their label; with the source PDF, printed figure and table titles; with a build's source map, every body line of five words or more, line joins, and ink no cut picture holds. A finding read and accepted in `.pagespeak-accepted.json` stops failing. `--in-dir` is where to look for source PDFs (default: the `in` folder beside the document's `out` folder, else `conversions/in`). Read-only apart from the verdict files, $0, no LLM. Exit 1 if any document fails. See [verify.md](verify.md). |
 | `pagespeak audit <paths…> [--summary-only] [--text-coverage [--source <pdf>] [--in-dir <dir>]]` | Scan converted output (dirs or single `.md` files; `--text-coverage` takes document folders only) for known conversion defects — collapsed tables, HTML debris, encoding damage, undecoded entities, shattered emphasis, orphan-shell sections, dangling and unparseable image refs, duplicated junk headings, collapsed or unclosed code blocks, formula glyph codes. `--text-coverage` also checks each document against its source PDF's text layer for body text that never arrived and for tables that lost their label column. Read-only, $0, no LLM. Exit 1 on errors; warnings alone exit 0. See [audit.md](audit.md). |
 | `pagespeak vision-audit <paths…> [--summary-only] [--strict]` | Flag likely-confabulated vision captions for human review: compares each figure's generated caption to the author's source alt text and flags a caption keeping none of the alt's subject words (a squirrel captioned as a lemur). Deterministic, $0, no LLM; only figures with a clear source alt are assessable, figures without alt are skipped. Exit 0 by default; `--strict` exits 1 on findings. See [audit.md](audit.md). |
 | `pagespeak repair-tables <out> [--source <pdf>] [--dry-run]` | Fix Marker-broken tables (collapsed `<br>` mega-cells and split multi-line cells) by splicing in the clean grid Docling extracts from just the broken-table page — no whole-doc re-ingest, no re-vision. Patches `<stem>.raw.md`; propagate with `convert <dir> --from cleanup --vision-cache-only`. Needs the source PDF (auto-located in `conversions/in/` or `--source`). See [repair-tables.md](repair-tables.md). |
@@ -115,15 +116,17 @@ Either way, when the target output dir holds a `.pagespeak-run.json` from a prev
 | `--min-body-chars` | `1` | With `--split-sections`, drop sections whose body has fewer than N characters. The default drops only heading-only shells left by an extractor (page-anchor lines and `---` rules don't count as text); a section with any text is kept. Pass `0` to keep **every** section, empty ones included — the right choice for a document you intend to edit forward, where an empty heading is a placeholder the author wrote and a dropped one is silently lost work. |
 | `--english-only` / `--no-english-only` | off | With `--split-sections`, drop a multilingual manual's translated branches (a multilingual manual: EN/DE/ZH/IT/FR/ES/RU, or a 24-language warranty block), keeping the English. Judged by **subtree** — a branch's aggregated text, recursing into kept English branches — so a translation fragmented into terse sections, or nested under an English chapter, is still caught. Dropped only on a strong signal: >30% non-Latin script, OR sparse English **and** a real density of distinctively-foreign function words (the latter keeps stopword-poor English specs tables that sparse-English alone would wrongly flag). Removes the major Latin languages + all non-Latin; a 24-EU-language boilerplate block is the known gap. Off by default. |
 | `--pdf-backend` | `marker` | `marker` (default), `docling` (requires `pagespeak[pdf-docling]`; pair with `--heading-hierarchy`, else every heading lands at one level), or `tophat` (Top Hat quiz-export PDFs → per-question markdown, requires `pagespeak[tophat]`). See [docs/backends.md](backends.md) / [docs/tophat-quizzes.md](tophat-quizzes.md). |
-| `--heading-hierarchy` | off | Docling PDF only. Infer real heading levels from PDF bookmarks → section numbering → font style, instead of Docling's flat single-level default. Helps documents with an outline or `Section N.`/`N.M` numbering; not a win on documents with neither. Requires `docling>=2.109`. See [docs/backends.md](backends.md). |
+| `--heading-hierarchy` / `--no-heading-hierarchy` | off | Docling PDF only. Infer real heading levels from PDF bookmarks → section numbering → font style, instead of Docling's flat single-level default. Helps documents with an outline or `Section N.`/`N.M` numbering; not a win on documents with neither. Requires `docling>=2.109`. See [docs/backends.md](backends.md). |
 | `--pdf-backend-kwargs` | none | PDF backend pipeline options as a JSON object, passed to the backend as-is (e.g. `'{"IgnoreTextProcessor_max_streak": 100000}'` for Marker). Recorded in `.pagespeak-run.json` and inherited by a later `convert` into the same output dir; resuming from a `raw.md` read with other kwargs stops with an error. See [docs/backends.md](backends.md). |
 | `--repair-tables` / `--no-repair-tables` | off | Marker PDF only. After ingest, splice Docling's clean grid over Marker-broken tables — both `<br>`-collapsed mega-cells (a multi-column table jammed into one cell) and split multi-line-cell tables (one row per wrapped line). Requires `pagespeak[pdf-docling]`; off by default (no Docling cost unless asked). Same fix as the standalone `pagespeak repair-tables` command, run inline. See [docs/repair-tables.md](repair-tables.md). |
 | `--docx-backend` | `markitdown` | `markitdown` (default) or `python-docx` (structure-faithful, requires `pagespeak[docx-structured]`). Ignored for non-`.docx`. |
 | `--docx-outline-heading-depth` | `0` | python-docx only. The outline→heading switch. `0` (default) = the ENTIRE Word outline is retained as a nested list (only the document title is `#`). `N>0` overrides the top N outline levels into headings (`1` = `ilvl0` → `#` section spine; higher promotes more). |
+| `--answer-key` / `--no-answer-key` | on | Canvas QTI quiz exports only. Mark each correct answer — a `✓` on the option and a `**Correct answer:**` line. `--no-answer-key` renders a blank quiz. See [docs/canvas-quizzes.md](canvas-quizzes.md#output-shape). |
 | `--preset` | none | Curated config bundle: `rag-default` / `flat` / `textbook` / `archival` / `qti`. Per-flag CLI args win over preset values. See [docs/presets.md](presets.md). |
 | `--normalize-headings` / `--no-normalize-headings` | off | Fix flattened chapter+subsection levels (textbook-style PDFs). See [docs/normalize-headings.md](normalize-headings.md). |
 | `--normalize-headings-mode` | `heuristic` | `heuristic` (default — fast, free, deterministic), `llm` (headers-only LLM), `llm_full` (LLM with body anchors — for badly-flattened textbooks), `llm_dehead` (same payload; drops junk headings but never changes a level — for a doc whose hierarchy is already correct), or `auto` (pick `heuristic`/`llm_full` per-document from a $0 heading-shape signal; see [normalize-headings.md](normalize-headings.md#auto-mode)). |
 | `--normalize-headings-model` | from `config/model_router.yaml` (`agents.heading_normalize{,_full}.backends.<backend>.model`) | LLM-mode only. The legacy `$PAGESPEAK_NORMALIZE_HEADINGS_MODEL` env var is no longer consulted — edit the YAML for non-CLI overrides. |
+| `--normalize-headings-backend` | `claude_code` (or the `PAGESPEAK_HEADING_NORMALIZE_*_BACKEND` env vars) | LLM-mode only. Backend for the heading-normalize calls: `claude_code`, `anthropic` or `openrouter`. Sets `PAGESPEAK_HEADING_NORMALIZE_BACKEND`, `_FULL_BACKEND` and `_DEHEAD_BACKEND` for the run, so it applies to every normalize mode. Never inherited from a run record. |
 | `--strip-frontmatter` / `--no-strip-frontmatter` | preset-controlled | DOCX template-frontmatter strip (TOC anchors, revision-history table, `<Project Name>` placeholders). |
 | `--provenance` / `--no-provenance` | preset-controlled (on for `rag-default`) | Emit **rich** output provenance frontmatter on the whole-doc markdown **and every section file**: source tags (`source_type` / `source_label` / `source_file`) + `doc_title` + per-section locators `section_title`, `section_path` (the ancestor-heading breadcrumb), `section_number`, `heading_level` — so a multi-source RAG DB can tag and locate each chunk. With no `--source-label`, the label is auto-derived from the cleaned filename stem; `source_type` is omitted from the block unless `--source-type` is given. Off → output is byte-for-byte frontmatter-free. Setting `--source-type`/`--source-label` also turns it on. Re-tag an existing conversion cheaply with `--from split --preset rag-default`. Distinct from `--strip-frontmatter` (which strips *input* frontmatter). |
 | `--source-type` | none | Provenance tag (e.g. `textbook` / `lab_manual` / `lecture_notes` / `manual`). Omitted from the block when unset (never auto-classified). Also turns frontmatter on (see `--provenance`). |
@@ -197,6 +200,7 @@ bin/lint                             # ergonomic shortcut for ruff + mypy via `b
 | `PAGESPEAK_WEB_MAX_UPLOAD_BYTES` | `536870912` | Web console: largest accepted request body (512 MiB); larger uploads get a 413, counted as the body arrives when it has no `Content-Length`. |
 | `PAGESPEAK_MAX_ARCHIVE_BYTES` | `1073741824` | Cap on the bytes one zip-based input (DOCX/PPTX/XLSX/EPUB media, a Canvas `.imscc` export) may decompress to, counted as they inflate (1 GiB). Past it the conversion stops with an error. |
 | `PAGESPEAK_AUDIT_MIN_TEXT_COVERAGE_PCT` | `90` | `pagespeak audit --text-coverage` flags a document when fewer than this percentage of its source PDF's distinct text-layer words reached `raw.md`. |
+| `PAGESPEAK_VERIFY_MIN_DROPPED_INK` | `150` | `pagespeak verify` (`picture_coverage`): dark pixels, at a pixel per point, that ink away from every cut picture needs before it is reported as dropped art. Ink touching a picture's edge is reported from 15 dark pixels; a long thin mark (a writing line, a table's heavy rule) is never dropped art. |
 
 Per-task **model + sampling kwargs** (model, max_tokens, temperature, etc.) live in `config/model_router.yaml` — not in env. The file is read by pw-core's model router (`pw_core.llm.router`); a copy ships **inside the package** as the default, so a `pip install`ed pagespeak has the tuned models out of the box. It is resolved (highest first) from the `MODEL_ROUTER_CONFIG` env var, then a `config/model_router.yaml` in the working directory, then the bundled default; an explicitly-set `MODEL_ROUTER_CONFIG` pointing at a missing or malformed file is a hard `ConfigurationError` (fail-fast, no silent model fallback). Edits hot-reload within `MODEL_ROUTER_RELOAD_SECONDS` (default 60) without a restart. The legacy `PAGESPEAK_VISION_MODEL` / `PAGESPEAK_NORMALIZE_HEADINGS_MODEL` env vars are no longer read, and a `PAGESPEAK_<TASK>_BACKEND` value that isn't one of the declared backends now falls back to the default (`claude_code`) instead of raising. Edit the YAML (or point `MODEL_ROUTER_CONFIG` at your own file) to change which model runs per task per backend; per-call CLI flags (`--vision-model`, `--normalize-headings-model`) still win as the highest-precedence override.
 
@@ -215,7 +219,7 @@ to_markdown("scan.pdf", output_dir="./out", diagrams=False)
 ```python
 to_markdown(
     "architecture-diagrams.pdf", output_dir="./out",
-    vision_model="claude-sonnet-4-6",   # ~10× cost, better on dense diagrams
+    vision_model="claude-sonnet-5-5",   # ~20× cost, better on dense diagrams
 )
 ```
 
@@ -236,7 +240,7 @@ bin/run convert textbook.pdf -o ./out --vision-concurrency 16
 ```bash
 pagespeak convert manual.pdf -o ./out \
     --vision-backend claude_code \
-    --vision-model claude-haiku-4-5-20251001
+    --vision-model claude-haiku-5-5
 ```
 
 Caveats: ~1–3s per image (vs ~500ms direct Anthropic). `vision_model` always fires as `--model` to `claude --print` — a missing override resolves to Haiku, never to your interactive session's Sonnet/Opus. The `claude` binary must be on PATH.
@@ -246,7 +250,7 @@ Caveats: ~1–3s per image (vs ~500ms direct Anthropic). `vision_model` always f
 ```bash
 OPENROUTER_API_KEY=sk-or-v1-... pagespeak convert manual.pdf -o ./out \
   --vision-backend openrouter \
-  --vision-model anthropic/claude-haiku-4.5
+  --vision-model anthropic/claude-haiku-5.5
 ```
 
 Or:
@@ -256,7 +260,7 @@ result = to_markdown(
     "manual.pdf",
     output_dir="./out",
     vision_backend="openrouter",
-    vision_model="google/gemini-2.0-flash-exp",   # OpenRouter model-id format
+    vision_model="google/gemini-3.8-flash",   # OpenRouter model-id format
 )
 ```
 

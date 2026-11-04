@@ -48,17 +48,15 @@ agents:
         model: haiku
         # claude --print uses session-default max output; no kwarg needed.
       anthropic:
-        model: claude-haiku-4-5-20251001
-        max_tokens: 2048
-        # Anthropic's strict mode for Haiku 4.5 rejects sending both
-        # `temperature` AND `top_p`. Keep `temperature` (set per-call /
-        # via pw-core default 0.2), drop `top_p` (set null → pw-core's
-        # conditional-include omits it from the API body).
+        model: claude-haiku-5-5
+        # Thinking is on by default and counts against max_tokens.
+        max_tokens: 8000
+        # Haiku 5.5 rejects non-default sampling values; null makes
+        # pw-core omit them from the API body.
+        temperature: null
         top_p: null
       openrouter:
-        # Gemini 2.5 Flash — 1M context, native multimodal,
-        # ~10× cheaper than Haiku via Anthropic API for the same task.
-        model: google/gemini-2.5-flash
+        model: google/gemini-3.8-flash
         max_tokens: 2048
 
   heading_normalize:
@@ -74,10 +72,12 @@ agents:
         # Haiku your session has access to.
         model: sonnet
       anthropic:
-        model: claude-sonnet-4-6
-        max_tokens: 8000
+        model: claude-sonnet-5-5
+        max_tokens: 16000
+        temperature: null
+        top_p: null
       openrouter:
-        model: google/gemini-2.5-flash
+        model: google/gemini-3.8-flash
         max_tokens: 8000
 
   heading_normalize_dehead:
@@ -93,13 +93,13 @@ agents:
         model: opus
         max_input_tokens: 900000
       anthropic:
-        model: claude-opus-4-8
-        max_tokens: 8000
+        model: claude-opus-5-5
+        max_tokens: 16000
         max_input_tokens: 150000
         temperature: null
         top_p: null
       openrouter:
-        model: anthropic/claude-opus-4.8
+        model: anthropic/claude-opus-5.5
         max_tokens: 16000
         max_input_tokens: 900000
 
@@ -125,22 +125,18 @@ agents:
         # Drop to 150K to force that fallback.
         max_input_tokens: 900000
       anthropic:
-        # Direct Anthropic API. Opus 4.8 is a reasoning model that
-        # rejects `temperature` and `top_p` — set both to null to
-        # opt out (pw-core's AnthropicClient drops `None` kwargs from
-        # the API call body). Swap model to `claude-sonnet-4-6` (or
-        # similar non-reasoning model) and the temperature/top_p
-        # opt-out can stay or be removed; both are accepted there.
-        model: claude-opus-4-8
-        #model: claude-sonnet-4-6
-        max_tokens: 8000
+        # Direct Anthropic API. Current models reject `temperature` and
+        # `top_p` — null makes pw-core omit them. Thinking is always on
+        # and counts against max_tokens.
+        model: claude-opus-5-5
+        #model: claude-sonnet-5-5
+        max_tokens: 16000
         max_input_tokens: 150000
         temperature: null
         top_p: null
       openrouter:
-        # Gemini 2.5 for the 1M window — keeps body anchors through for
-        # textbook-scale docs without the gate firing.
-        #model: google/gemini-2.5-pro
-        model: anthropic/claude-opus-4.8
+        # 1M window — keeps body anchors through for textbook-scale docs
+        # without the gate firing.
+        model: anthropic/claude-opus-5.5
         max_tokens: 16000
         max_input_tokens: 900000

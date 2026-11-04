@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import threading
 from html import escape
 from typing import Any
 
@@ -18,6 +19,8 @@ from pagespeak.web._security import max_upload_bytes
 from pagespeak.web._upload import UploadRefused, save_upload, upload_target
 
 router = APIRouter(prefix="/api")
+# One Deliver at a time: pdfium is not thread-safe, and two would rebuild one folder.
+_DELIVER_LOCK = threading.Lock()
 
 
 @router.post("/upload")
@@ -109,11 +112,15 @@ async def run(request: Request, dir_name: str) -> Response:
 
 
 @router.post("/deliver/{dir_name}")
-async def deliver(request: Request, dir_name: str) -> Response:
+def deliver(request: Request, dir_name: str) -> Response:
     """Strip a converted out dir down to delivery-ready files (master `.md` +
-    `sections/` + `images/`) under `conversions/delivery/<dir_name>/`. Returns
-    an inline HTMX snippet showing the result, mirroring `pagespeak deliver`."""
-    from pagespeak.services._deliver import strip_for_delivery
+    `sections/` + `images/`) under `conversions/delivery/<dir_name>/`, behind
+    the verify gate. Returns an inline HTMX snippet showing the result,
+    mirroring `pagespeak deliver`. A plain function, so FastAPI runs verify on
+    a worker thread instead of the event loop; presses take turns."""
+    from pw_foundation.exceptions import PreconditionError
+
+    from pagespeak.services._deliver import deliver as deliver_verified
 
     cfg: WebConfig = request.app.state.cfg
     conv = get_conversion(cfg, dir_name)
@@ -122,7 +129,10 @@ async def deliver(request: Request, dir_name: str) -> Response:
     # From the resolved dir, never the raw segment: the latter can carry path syntax.
     dest = cfg.delivery_dir / conv.out_dir.name
     try:
-        result = strip_for_delivery(conv.out_dir, dest)
+        with _DELIVER_LOCK:
+            result = deliver_verified(conv.out_dir, dest, in_dir=cfg.in_dir)
+    except PreconditionError as refused:
+        return _error_box(str(refused))
     except (OSError, ValueError) as exc:
         return _error_box(f"delivery failed: {exc}")
     if result.documents == 0:

@@ -62,15 +62,16 @@ pagespeak ingest thick-textbook.pdf -o ./out --workers 4 --device cpu
 | `<input>` | (required) | Path to the source document |
 | `--output-dir`, `-o` | (required) | Directory for `<stem>.raw.md` and `images/` |
 | `--workers`, `-w` | `1` | Worker count. `1` = single-process; `N > 1` = chunked-parallel (PDF only). Override the default via `PAGESPEAK_WORKERS` (applied to PDF input only). |
-| `--chunk-pages` | `50` | Pages per chunk (chunked path only). Smaller = finer-grained resume; larger = less Marker model-load overhead per chunk. |
+| `--chunk-pages` | `50` (or `PAGESPEAK_CHUNK_PAGES`) | Pages per chunk (chunked path only). Smaller = finer-grained resume; larger = less Marker model-load overhead per chunk. |
 | `--max-pages` | (all) | PDF only — convert just the first N pages, as a trial on a slice, with any `--workers`. Not with `--pdf-backend tophat`, which reads the whole export. A later `convert` of the whole source into the same dir refuses the trial's `raw.md`. |
 | `--device` | (auto) | `cpu` / `mps` / `cuda`. `cpu` avoids the surya/MPS crash on Apple Silicon. |
 | `--force-ocr` | off | PDF only — force OCR even on text-bearing PDFs. |
 | `--pdf-backend` | `marker` | `marker` (default), `docling` (pair with `--heading-hierarchy`, else every heading lands at one level), or `tophat`. See [docs/backends.md](backends.md). |
-| `--heading-hierarchy` | off | Docling PDF only. Heading levels from PDF bookmarks → section numbering → font style. Requires `docling>=2.109`. |
+| `--heading-hierarchy` / `--no-heading-hierarchy` | off | Docling PDF only. Heading levels from PDF bookmarks → section numbering → font style. Requires `docling>=2.109`. |
 | `--pdf-backend-kwargs` | none | PDF backend pipeline options as a JSON object, passed to the backend as-is. Recorded and inherited like the other ingest settings. See [docs/backends.md](backends.md). |
 | `--docx-backend` | `markitdown` | `markitdown` (default) or `python-docx`. `.docx`-only, single-process. See [docs/docx-backends.md](docx-backends.md). |
-| `--force` | off | Re-run chunks already marked completed in the manifest (chunked path only). |
+| `--docx-outline-heading-depth` | `0` | python-docx only. The outline→heading switch. `0` (default) keeps the whole Word outline as a nested list (only the document title is `#`); `N>0` turns the top N outline levels into headings (`1` = `ilvl0` → `#`). |
+| `--force` | off | Discard the manifest and `chunks/`, then re-ingest every chunk from scratch (chunked path only). |
 
 > **Sandbox / `ProcessPoolExecutor`:** Chunked-parallel ingest fails with `PermissionError` on restricted macOS sandboxes. See [operations.md](operations.md).
 
@@ -92,7 +93,7 @@ On the single-process path there is no manifest; resume means the same thing as 
 
 **Run record:** `pagespeak ingest` stamps the settings it ran with (`pdf_backend`, `pdf_backend_kwargs`, `heading_hierarchy`, `force_ocr`, `page_range`, `docx_backend`, `max_pages`, …) into the `ingest_flags` block of `<outdir>/.pagespeak-run.json`, merging into an existing record. A following `pagespeak convert <outdir>` inherits them and carries the source identity forward; a `convert` of the source into the same dir refuses a `--max-pages` trial's `raw.md` instead of building the whole document from its first pages.
 
-**Setting mismatch:** each chunk in the manifest records the backend and the settings that read it (`force_ocr`, the backend kwargs, and `heading_hierarchy` under Docling). Resuming with another backend or other settings refuses with a message naming each difference, instead of mixing chunks read two ways. Pass `--force` to re-run all chunks from scratch.
+**Setting mismatch:** each chunk in the manifest records the backend and the settings that read it (`force_ocr`, the backend kwargs, `heading_hierarchy` under Docling, and `page_box_clip` under Marker, so a chunk read before Marker's text was clipped to its page is not mixed with clipped ones). Resuming with another backend or other settings refuses with a message naming each difference, instead of mixing chunks read two ways. Pass `--force` to re-run all chunks from scratch.
 
 ### Partial ingest
 

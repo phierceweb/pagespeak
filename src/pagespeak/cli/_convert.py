@@ -129,7 +129,7 @@ def register(
         cross_refs: str = typer.Option(
             "keep",
             "--cross-refs",
-            help="How to handle [label](#page-X-Y) refs: keep | strip | remap.",
+            help="How to handle \\[label](#page-X-Y) refs: keep | strip | remap.",
         ),
         split_sections: bool = typer.Option(
             False,
@@ -169,7 +169,7 @@ def register(
         pdf_backend: str = typer.Option(
             "marker",
             "--pdf-backend",
-            help="PDF backend: 'marker' (default) | 'docling' (requires pagespeak[pdf-docling]; pair with --heading-hierarchy, else every heading lands at one level) | 'tophat' (Top Hat quiz-export PDFs → per-question markdown, requires pagespeak[tophat]).",
+            help="PDF backend: 'marker' (default) | 'docling' (requires pagespeak\\[pdf-docling]; pair with --heading-hierarchy, else every heading lands at one level) | 'tophat' (Top Hat quiz-export PDFs → per-question markdown, requires pagespeak\\[tophat]).",
         ),
         heading_hierarchy: bool = typer.Option(
             False,
@@ -182,12 +182,12 @@ def register(
         repair_tables: bool = typer.Option(
             False,
             "--repair-tables/--no-repair-tables",
-            help="Marker PDF only. After ingest, splice Docling's clean grid over Marker-broken tables — both <br>-collapsed mega-cells (a multi-column table jammed into one cell) and split multi-line-cell tables (one row per wrapped line). Off by default; requires pagespeak[pdf-docling]. Same fix as the standalone `pagespeak repair-tables` command, run inline. See docs/repair-tables.md.",
+            help="Marker PDF only. After ingest, splice Docling's clean grid over Marker-broken tables — both <br>-collapsed mega-cells (a multi-column table jammed into one cell) and split multi-line-cell tables (one row per wrapped line). Off by default; requires pagespeak\\[pdf-docling]. Same fix as the standalone `pagespeak repair-tables` command, run inline. See docs/repair-tables.md.",
         ),
         docx_backend: str = typer.Option(
             "markitdown",
             "--docx-backend",
-            help="DOCX backend: 'markitdown' (default) | 'python-docx' (structure-faithful, requires pagespeak[docx-structured]). Ignored for non-.docx formats.",
+            help="DOCX backend: 'markitdown' (default) | 'python-docx' (structure-faithful, requires pagespeak\\[docx-structured]). Ignored for non-.docx formats.",
         ),
         docx_outline_heading_depth: int = typer.Option(
             0,

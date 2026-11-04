@@ -36,6 +36,15 @@ def test_ingest_help_shows_workers_and_pdf_backend():
     assert "--output-dir" in help_text
 
 
+def test_ingest_help_names_the_pdf_extras() -> None:
+    """Rich prints the bracketed extras instead of reading them as markup tags."""
+    result = runner.invoke(app, ["ingest", "--help"], env={"COLUMNS": "200"})
+    assert result.exit_code == 0
+    output = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+    for text in ("pagespeak[pdf-docling]", "pagespeak[tophat]", "pagespeak[docx-structured]"):
+        assert text in output, text
+
+
 def test_ingest_invokes_orchestrator(tmp_path, monkeypatch):
     """CLI flag passthrough → `ingest()` is called with the expected kwargs."""
     from pagespeak.cli import _ingest as cli_ingest

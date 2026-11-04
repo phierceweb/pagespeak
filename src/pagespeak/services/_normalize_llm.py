@@ -58,7 +58,7 @@ _BODY_GUARD_MAX_RECURRENCE_DEFAULT = 25
 _BODY_GUARD_MAX_RECURRENCE_ENV_VAR = "PAGESPEAK_DEHEAD_GUARD_MAX_RECURRENCE"
 
 
-DEFAULT_NORMALIZE_MODEL = "claude-haiku-4-5-20251001"
+DEFAULT_NORMALIZE_MODEL = "claude-haiku-5-5"
 
 # Must match the slugs `_normalize_llm_gather` passes to `invoke_agent`: this
 # model goes in as `model_override`, which outranks the agent block's own.

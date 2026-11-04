@@ -1,12 +1,50 @@
-"""Tests for `backends/_tophat_images.py` figure→question binding.
-
-The pure binding logic is tested here; the pypdfium2 extraction
-(`extract_question_images`) needs a real PDF and is exercised end-to-end.
-"""
+"""Tests for `backends/_tophat_images.py`: figure→question binding, and
+`extract_question_images` on a generated PDF."""
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
+
 from pagespeak.backends import _tophat_images as ti
+
+
+def test_a_figure_is_pulled_out_for_its_question(tmp_path: Path) -> None:
+    pytest.importorskip("pypdfium2")
+    fpdf = pytest.importorskip("fpdf")
+    from PIL import Image
+
+    figure = tmp_path / "figure.png"
+    Image.new("RGB", (200, 160), (30, 90, 160)).save(figure)
+    pdf = fpdf.FPDF(unit="pt", format=(612, 792))
+    pdf.add_page()
+    pdf.set_font("Helvetica", size=12)
+    pdf.text(72, 72, "Question 1")
+    pdf.image(str(figure), x=72, y=100, w=200, h=160)
+    path = tmp_path / "quiz.pdf"
+    pdf.output(str(path))
+
+    assert ti.extract_question_images(path, tmp_path / "images") == {1: ["images/q1_1.png"]}
+    with Image.open(tmp_path / "images" / "q1_1.png") as png:
+        assert (png.size, png.getpixel((100, 80))) == ((200, 160), (30, 90, 160))
+
+
+def test_a_figure_drawn_inside_a_form_is_pulled_out(tmp_path: Path) -> None:
+    pytest.importorskip("pypdfium2")
+    from PIL import Image
+
+    from tests.fixtures.pdf_pages import raw_pdf, text_at
+
+    pdf = raw_pdf(
+        tmp_path / "quiz.pdf",
+        text_at(72, 720, "Question 1") + b"q 1 0 0 1 72 300 cm /Fm1 Do Q\n",
+        forms={"Fm1": b"q 200 0 0 160 0 0 cm /Im1 Do Q"},
+        images={"Im1": (200, 160, bytes([30, 90, 160]) * (200 * 160))},
+    )
+    assert ti.extract_question_images(pdf, tmp_path / "images") == {1: ["images/q1_1.png"]}
+    with Image.open(tmp_path / "images" / "q1_1.png") as png:
+        assert (png.size, png.getpixel((100, 80))) == ((200, 160), (30, 90, 160))
 
 
 def test_bind_image_to_marker_on_same_page() -> None:

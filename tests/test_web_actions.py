@@ -153,6 +153,80 @@ def test_deliver_strips_to_delivery_dir(monkeypatch, tmp_path):
     assert not (delivered / ".pagespeak-run.json").exists()
 
 
+def test_deliver_runs_verify_off_the_event_loop(monkeypatch, tmp_path):
+    """Verify reads whole PDFs; on the event loop it would stall every other request."""
+    import asyncio
+
+    from pagespeak.services import _deliver
+
+    client, conv = _client(monkeypatch, tmp_path)
+    out = conv / "out" / "doc"
+    out.mkdir(parents=True)
+    (out / "Doc.md").write_text("# master", encoding="utf-8")
+    seen = []
+    real = _deliver.deliver
+
+    def deliver(*args, **kwargs):
+        try:
+            asyncio.get_running_loop()
+            seen.append("event loop")
+        except RuntimeError:
+            seen.append("worker thread")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(_deliver, "deliver", deliver)
+    assert client.post("/api/deliver/doc").status_code == 200
+    assert seen == ["worker thread"]
+
+
+def test_two_delivers_at_once_take_turns(monkeypatch, tmp_path):
+    """pdfium is not thread-safe, and both would rebuild one delivery folder."""
+    import threading
+    import time
+
+    from pagespeak.services import _deliver
+
+    client, conv = _client(monkeypatch, tmp_path)
+    out = conv / "out" / "doc"
+    out.mkdir(parents=True)
+    (out / "Doc.md").write_text("# master", encoding="utf-8")
+    spans, codes = [], []
+    real = _deliver.deliver
+
+    def deliver(*args, **kwargs):
+        start = time.monotonic()
+        time.sleep(0.2)
+        result = real(*args, **kwargs)
+        spans.append((start, time.monotonic()))
+        return result
+
+    def press():
+        codes.append(client.post("/api/deliver/doc").status_code)
+
+    monkeypatch.setattr(_deliver, "deliver", deliver)
+    presses = [threading.Thread(target=press) for _ in range(2)]
+    for t in presses:
+        t.start()
+    for t in presses:
+        t.join()
+    assert codes == [200, 200]
+    (_, first_end), (second_start, _) = sorted(spans)
+    assert first_end <= second_start
+
+
+def test_deliver_refuses_a_document_that_fails_verify(monkeypatch, tmp_path):
+    client, conv = _client(monkeypatch, tmp_path)
+    out = conv / "out" / "doc"
+    out.mkdir(parents=True)
+    (out / "Doc.md").write_text("# master\n\n![a](images/gone.png)\n", encoding="utf-8")
+
+    r = client.post("/api/deliver/doc")
+
+    assert r.status_code == 200
+    assert "delivery refused" in r.text
+    assert not (conv / "delivery" / "doc").exists()
+
+
 def test_deliver_without_master_md_reports_nothing(monkeypatch, tmp_path):
     # An out dir that only has a raw checkpoint (no final .md yet) reports
     # "nothing to deliver", not a 500.

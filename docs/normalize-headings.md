@@ -102,7 +102,7 @@ result = to_markdown(
     output_dir="./out",
     normalize_headings=True,
     normalize_headings_mode="llm",
-    normalize_headings_model="claude-haiku-4-5-20251001",  # optional, LLM-mode only
+    normalize_headings_model="claude-haiku-5-5",  # optional, LLM-mode only
 )
 ```
 
@@ -116,7 +116,7 @@ bin/run convert textbook.pdf -o ./out --normalize-headings
 bin/run convert textbook.pdf -o ./out \
     --normalize-headings \
     --normalize-headings-mode llm \
-    --normalize-headings-model claude-haiku-4-5-20251001
+    --normalize-headings-model claude-haiku-5-5
 ```
 
 ### Model selection (LLM mode only)
@@ -125,9 +125,9 @@ Heuristic mode ignores model selection. For LLM mode (`llm` or `llm_full`), thre
 
 1. Explicit `normalize_headings_model="…"` / `--normalize-headings-model …`
 2. `config/model_router.yaml` — `agents.heading_normalize.backends.<backend>.model` for `llm` mode; `agents.heading_normalize_full.backends.<backend>.model` for `llm_full`. The two modes have separate YAML blocks so they can use different models (e.g. a larger-context model for `llm_full` on very large docs).
-3. `DEFAULT_NORMALIZE_MODEL` (`claude-haiku-4-5-20251001`) — never falls through to the user's interactive Claude Code session model.
+3. `DEFAULT_NORMALIZE_MODEL` (`claude-haiku-5-5`) — never falls through to the user's interactive Claude Code session model.
 
-The legacy `PAGESPEAK_NORMALIZE_HEADINGS_MODEL` env var is no longer consulted — the YAML is the source of truth and env is reserved for backend selection only. Haiku is plenty for `llm` mode; Gemini 2.5 Flash via OpenRouter is the recommended model for `llm_full` on very large docs (1M context window fits body anchors that Haiku's 200K cannot).
+The legacy `PAGESPEAK_NORMALIZE_HEADINGS_MODEL` env var is no longer consulted — the YAML is the source of truth and env is reserved for backend selection only. Haiku is plenty for `llm` mode; `llm_full` routes to Opus on every backend (each backend's input cap is in the router file in use: `MODEL_ROUTER_CONFIG`, else `config/model_router.yaml` in the working folder, else the copy packaged as `pagespeak/model_router.yaml`).
 
 ## Side files
 

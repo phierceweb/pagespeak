@@ -5,8 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import typer
+from pw_foundation.exceptions import PreconditionError
 
-from ..services._deliver import strip_for_delivery
+from ..services._deliver import deliver
 
 
 def _default_dest(source: Path) -> Path:
@@ -34,7 +35,9 @@ def register(app: typer.Typer) -> None:
             ".md, sections/, and images/ into a parallel delivery dir, dropping "
             "stage checkpoints, run records, and caches. Re-runnable — the "
             "destination is rebuilt to match the source. Defaults to mirroring "
-            "conversions/out/<name> → conversions/delivery/<name>."
+            "conversions/out/<name> → conversions/delivery/<name>. Refuses while "
+            "any document fails `pagespeak verify` (it runs verify first, or "
+            "reuses the last verdict of an unchanged document)."
         ),
     )
     def deliver_cmd(
@@ -51,9 +54,21 @@ def register(app: typer.Typer) -> None:
             "-o",
             help="Delivery destination. Default: the 'out' segment swapped to 'delivery'.",
         ),
+        in_dir: Path | None = typer.Option(
+            None,
+            "--in-dir",
+            help=(
+                "Where verify looks for each document's source PDF. Default: the `in` "
+                "folder beside the document's `out` folder, else conversions/in."
+            ),
+        ),
     ) -> None:
         dest = output_dir or _default_dest(source)
-        result = strip_for_delivery(source, dest)
+        try:
+            result = deliver(source, dest, in_dir=in_dir)
+        except PreconditionError as refused:
+            typer.echo(str(refused), err=True)
+            raise typer.Exit(code=1) from refused
         if result.documents == 0:
             typer.echo(f"no delivery-ready documents found under {source}", err=True)
             raise typer.Exit(code=1)

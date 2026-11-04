@@ -349,7 +349,7 @@ def test_invoke_agent_dispatches_to_routed_client(
     assert content == "response"
     assert run_id is None  # DB not initialized → no row written
     assert len(captured) == 1
-    assert captured[0]["model"] == "google/gemini-2.5-flash"
+    assert captured[0]["model"] == "google/gemini-3.8-flash"
     assert captured[0]["messages"] == [{"role": "user", "content": "test"}]
 
 
@@ -438,7 +438,7 @@ def test_invoke_agent_writes_llm_runs_row_when_db_initialized(
     assert len(rows) == 1
     slug, model_name, provider, ptok, ctok, cost = rows[0]
     assert slug == "vision"
-    assert model_name.endswith("gemini-2.5-flash")
+    assert model_name.endswith("gemini-3.8-flash")
     assert provider == "openrouter"
     assert ptok == 10
     assert ctok == 20

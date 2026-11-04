@@ -868,15 +868,12 @@ def test_openrouter_backend_constructs_openai_style_image_payload(
 def test_openrouter_backend_uses_yaml_model_when_arg_unset(fake_image: Path) -> None:
     """Model resolution goes through pw-core's `get_agent_config` —
     YAML at `config/model_router.yaml` (`agents.vision.backends.openrouter.model`)
-    wins. Repo YAML pins `google/gemini-2.5-flash` for openrouter, so an
-    OpenRouterVisionBackend with no explicit `model=` picks that up.
-
-    The previous behavior (hardcoded `anthropic/claude-haiku-4.5` fallback)
-    silently shadowed the YAML — this test pins the corrected behavior."""
+    wins. Repo YAML pins `google/gemini-3.8-flash` for openrouter, so an
+    OpenRouterVisionBackend with no explicit `model=` picks that up."""
     client = _mock_openrouter_client({"is_diagram": False, "caption": "x", "mermaid": None})
     backend = OpenRouterVisionBackend(api_key="k", client=client)
     backend.analyze(fake_image)
-    assert client.chat.call_args.kwargs["model"] == "google/gemini-2.5-flash"
+    assert client.chat.call_args.kwargs["model"] == "google/gemini-3.8-flash"
 
 
 def test_openrouter_backend_fails_fast_when_config_missing(

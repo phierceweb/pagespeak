@@ -90,7 +90,7 @@ A three-step flow: (1) **Choose what to run** — a step picker (`Full run` or a
 
 ### Deliver
 
-A **Deliver** card sits under the run form. Pressing it strips this conversion's output dir to delivery-ready files — the master `.md`, `sections/`, and `images/` — into `conversions/delivery/<dir>/`, dropping stage checkpoints, the run record, and content caches. The destination is rebuilt fresh on every press so it always matches the current `out/`; the source `out/` is never modified. The button is disabled until a master `.md` exists (nothing to deliver yet). POST `/api/deliver/<dir>` is the underlying route; CLI parity is `pagespeak deliver <out-dir>`.
+A **Deliver** card sits under the run form. Pressing it strips this conversion's output dir to delivery-ready files — the master `.md`, `sections/`, and `images/` — into `conversions/delivery/<dir>/`, dropping stage checkpoints, the run record, and content caches. The destination is rebuilt fresh on every press so it always matches the current `out/`; the source `out/` is never modified. The button is disabled until a master `.md` exists (nothing to deliver yet). Delivery is refused, with the failing documents and their verdict files named in the result box, while any document fails `pagespeak verify` (see [verify.md](verify.md)); source PDFs are looked up in the console's `in/` folder. Two presses at once take turns: one Deliver runs at a time. POST `/api/deliver/<dir>` is the underlying route; CLI parity is `pagespeak deliver <out-dir>`.
 
 ### LLM summary
 
@@ -108,7 +108,7 @@ It shows this before you confirm, e.g.:
 
 > *"40 images · 31 cached · 9 live calls. Backend claude_code → 9 Max-quota calls ($0)."*
 
-An explicit confirm is required. The confirm dialog also shows the grounded cost estimate for paid backends (~3–5K tokens per image via anthropic/openrouter).
+An explicit confirm is required. The confirm dialog also shows the grounded cost estimate for paid backends (~3–5K tokens per image via anthropic/openrouter), priced on the model `config/model_router.yaml` routes vision to on that backend; no estimate is shown when nothing prices that model.
 
 **Vision backend defaults to `claude_code` ($0 in dollars; draws from your Claude Max subscription).** Switching to a paid backend (anthropic / openrouter) triggers a louder warning. There is no silent switch to a paid backend — that is a deliberate cost-safety default.
 

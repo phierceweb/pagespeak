@@ -47,11 +47,8 @@ class OpenRouterVisionBackend:
     `api_key=` constructor kwarg.
     """
 
-    # Cost-protection fallback when YAML is absent / unreadable. Same
-    # `anthropic/claude-haiku-4.5` slug as before, to preserve the
-    # historical default; `config/model_router.yaml` sets the real model
-    # (`google/gemini-2.5-flash` for vision/openrouter).
-    DEFAULT_MODEL = "anthropic/claude-haiku-4.5"
+    # A cheap fallback for when the YAML is absent or unreadable; the YAML sets the real model.
+    DEFAULT_MODEL = "anthropic/claude-haiku-5.5"
 
     def __init__(
         self,

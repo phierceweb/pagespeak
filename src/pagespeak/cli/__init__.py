@@ -7,6 +7,7 @@ Subcommands:
   pagespeak baseline <output> [...]  snapshot / diff runs
   pagespeak invalidate <output> [...] bust caches at a stage
   pagespeak deliver <output> [...]   strip an output dir to delivery-ready files
+  pagespeak verify <output> [...]    PASS/FAIL each converted document as a whole
   pagespeak audit <paths> [...]      scan converted output for conversion defects
   pagespeak vision-audit <paths> [.] flag likely-confabulated vision captions
   pagespeak repair-tables <out> [...] splice Docling grids into collapsed tables
@@ -25,6 +26,7 @@ from ._deliver import register as _register_deliver
 from ._ingest import register as _register_ingest
 from ._invalidate import register as _register_invalidate
 from ._repair import register as _register_repair
+from ._verify import register as _register_verify
 from ._vision_audit import register as _register_vision_audit
 
 # Logging is bootstrapped at package import (see pagespeak/__init__.py).
@@ -35,6 +37,7 @@ app = typer.Typer(
     help="Convert PDFs and Office docs to LLM-friendly markdown.",
     add_completion=False,
     no_args_is_help=True,
+    rich_markup_mode="rich",  # help strings escape a literal `[` as `\[`
 )
 
 
@@ -149,6 +152,7 @@ _register_ingest(app, validate_pdf_backend=_validate_pdf_backend)
 _register_invalidate(app)
 _register_baseline(app)
 _register_deliver(app)
+_register_verify(app)
 _register_audit(app)
 _register_vision_audit(app)
 _register_repair(app)

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pagespeak"
-version = "0.20.0"
+version = "0.21.0"
 description = "Convert PDF, Word, and other documents into retrieval-ready markdown — one document or a whole corpus, diagrams turned to Mermaid."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -30,7 +30,7 @@ dependencies = [
     "markitdown[docx,pptx,xlsx,outlook]>=0.0.1a3",
     "pw-foundation~=1.0",
     # pw-core's phash refuses the image formats whose decoders carry CVEs in the pdf extra's Pillow 10.4.
-    "pw-core[tracking,llm]~=0.27.0",
+    "pw-core[tracking,llm]~=1.0",
     # Not via pw-core[image-phash]: its Pillow>=12.3 floor can't co-install with
     # marker-pdf's Pillow<11 (pdf extra). 10.4 is the last release under that cap.
     "ImageHash>=4.3.2",
@@ -48,14 +48,16 @@ pdf = [
     # >=1.10: backends/_marker_ignoretext.py subclasses Marker's processor internals.
     "marker-pdf>=1.10,<2",
     "rapidfuzz>=3,<4",
-    "pypdfium2",
+    # backends/_marker_pagebox.py rebuilds a clipped span as pdftext 0.6 builds one.
+    "pdftext>=0.6.3,<0.7",
+    "pypdfium2>=4.30,<6",
 ]
 pdf-docling = [
     # >=2.109 for heading-level inference incl. the PDF-bookmark signal
     # (`--heading-hierarchy`). A bare >=2.0 resolves to a pre-feature release
     # on a fresh install, and the flag then silently degrades to flat levels.
     "docling>=2.109",
-    "pypdfium2",
+    "pypdfium2>=4.30,<6",
 ]
 docx-structured = [
     "python-docx>=1.1",
@@ -63,8 +65,9 @@ docx-structured = [
 tophat = [
     # Top Hat quiz-export PDFs: text-layer extraction only (no Marker/torch).
     # pypdfium2 also ships with the `pdf` / `pdf-docling` extras, so PDF users
-    # already have it; this light extra is for tophat-only installs.
-    "pypdfium2",
+    # already have it; this light extra is for tophat-only installs. 4.30 is
+    # Marker's pin; utils/_pdfium.py reads both it and 5.
+    "pypdfium2>=4.30,<6",
 ]
 web = [
     "fastapi>=0.110",
@@ -139,6 +142,7 @@ ignore = ["E501"]
 "src/pagespeak/cli/_audit.py" = ["B008"]  # Typer uses function calls in argument defaults
 "src/pagespeak/cli/_repair.py" = ["B008"]  # Typer uses function calls in argument defaults
 "src/pagespeak/cli/_vision_audit.py" = ["B008"]  # Typer uses function calls in argument defaults
+"src/pagespeak/cli/_verify.py" = ["B008"]  # Typer uses function calls in argument defaults
 "tests/*" = ["B011"]
 
 [tool.mypy]

@@ -94,6 +94,10 @@ def chunk_settings(
     }
     if pdf_backend == "docling":
         settings["heading_hierarchy"] = heading_hierarchy
+    if pdf_backend == "marker":
+        # The reader clips to each page's box unless the kwargs above turn it
+        # off; a Marker chunk without this key was read unclipped.
+        settings["page_box_clip"] = True
     return settings
 
 
@@ -101,8 +105,8 @@ def _refuse_other_chunk_settings(
     mf: Manifest, out: Path, *, pdf_backend: str, settings: dict[str, Any]
 ) -> None:
     """Completed chunks read another way would join this run's raw.md while the
-    run record names this run's settings. A chunk from before settings were
-    recorded is not evidence of a mismatch."""
+    run record names this run's settings. A chunk with no recorded settings is
+    not evidence of a mismatch, except under Marker: it was read unclipped."""
     completed = [c for c in mf.chunks if c.status == "completed"]
     other_backends = sorted(
         {c.pdf_backend for c in completed if c.pdf_backend and c.pdf_backend != pdf_backend}
@@ -113,13 +117,18 @@ def _refuse_other_chunk_settings(
             f"cannot resume with pdf_backend={pdf_backend!r}. {_START_OVER}"
         )
     for c in completed:
-        if c.settings is None or c.settings == settings:
+        if c.settings == settings:
             continue
-        diffs = "; ".join(
-            f"{key}: {c.settings.get(key)!r} → {settings.get(key)!r}"
-            for key in sorted(c.settings.keys() | settings.keys())
-            if c.settings.get(key) != settings.get(key)
-        )
+        if c.settings is None:
+            if "page_box_clip" not in settings:
+                continue
+            diffs = f"page_box_clip: unrecorded → {settings['page_box_clip']!r}"
+        else:
+            diffs = "; ".join(
+                f"{key}: {c.settings.get(key)!r} → {settings.get(key)!r}"
+                for key in sorted(c.settings.keys() | settings.keys())
+                if c.settings.get(key) != settings.get(key)
+            )
         raise ValueError(
             f"Output dir {out} has chunks read with other settings ({diffs}); "
             f"cannot resume. {_START_OVER}"

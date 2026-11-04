@@ -5,17 +5,26 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from pw_foundation.exceptions import PreconditionError
 from typer.testing import CliRunner
 
 from pagespeak.cli import app
-from pagespeak.services._deliver import strip_for_delivery
+from pagespeak.services._deliver import deliver, is_delivered, strip_for_delivery
+
+_MASTER = "# Exam\n\n## Question 001\n\nq1\n"
+
+
+@pytest.fixture(autouse=True)
+def _outside_the_corpus(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify's source-PDF fallback is `conversions/in` under the working folder."""
+    monkeypatch.chdir(tmp_path)
 
 
 def _make_doc(doc_dir: Path, stem: str) -> None:
     """A converted document dir: master .md + stage checkpoints + run record
     + images/ + sections/ + vision cache."""
     doc_dir.mkdir(parents=True, exist_ok=True)
-    (doc_dir / f"{stem}.md").write_text("# master\n", encoding="utf-8")
+    (doc_dir / f"{stem}.md").write_text(_MASTER, encoding="utf-8")
     for stage in ("raw", "cleaned", "normalized", "repaired", "visioned"):
         (doc_dir / f"{stem}.{stage}.md").write_text(f"{stage}\n", encoding="utf-8")
     (doc_dir / ".pagespeak-run.json").write_text("{}\n", encoding="utf-8")
@@ -23,7 +32,9 @@ def _make_doc(doc_dir: Path, stem: str) -> None:
     (doc_dir / "images").mkdir()
     (doc_dir / "images" / "fig.png").write_bytes(b"\x89PNG\r\n")
     (doc_dir / "sections").mkdir()
-    (doc_dir / "sections" / "Question 001.md").write_text("q1\n", encoding="utf-8")
+    (doc_dir / "sections" / "Question 001.md").write_text(
+        "## Question 001\n\nq1\n", encoding="utf-8"
+    )
     (doc_dir / "sections" / "INDEX.md").write_text("idx\n", encoding="utf-8")
     (doc_dir / ".vision-cache").mkdir()
     (doc_dir / ".vision-cache" / "abc.json").write_text("{}\n", encoding="utf-8")
@@ -37,7 +48,7 @@ def test_strip_keeps_deliverables_drops_working_files(tmp_path: Path) -> None:
     result = strip_for_delivery(src, dest)
 
     # kept
-    assert (dest / "Exam 1.md").read_text(encoding="utf-8") == "# master\n"
+    assert (dest / "Exam 1.md").read_text(encoding="utf-8") == _MASTER
     assert (dest / "images" / "fig.png").exists()
     assert (dest / "sections" / "Question 001.md").exists()
     assert (dest / "sections" / "INDEX.md").exists()
@@ -48,6 +59,19 @@ def test_strip_keeps_deliverables_drops_working_files(tmp_path: Path) -> None:
     assert not (dest / ".pagespeak-run.json").exists()
     assert not (dest / "manifest.json").exists()
     assert not (dest / ".vision-cache").exists()
+    assert result.documents == 1
+
+
+def test_strip_leaves_out_dot_file_markdown(tmp_path: Path) -> None:
+    """A verify verdict sits beside the master as a dot-file; it is not a document."""
+    src = tmp_path / "out" / "Exam 1"
+    _make_doc(src, "Exam 1")
+    (src / ".pagespeak-verdict.md").write_text("# Verify\n", encoding="utf-8")
+    dest = tmp_path / "delivery" / "Exam 1"
+
+    result = strip_for_delivery(src, dest)
+
+    assert not (dest / ".pagespeak-verdict.md").exists()
     assert result.documents == 1
 
 
@@ -153,3 +177,93 @@ def test_deliver_cmd_errors_when_nothing_to_deliver(tmp_path: Path) -> None:
     src.mkdir(parents=True)
     result = CliRunner().invoke(app, ["deliver", str(src)])
     assert result.exit_code == 1
+
+
+def test_deliver_refuses_a_document_that_fails_verify(tmp_path: Path) -> None:
+    src = tmp_path / "out" / "Exam 1"
+    _make_doc(src, "Exam 1")
+    (src / "Exam 1.md").write_text(_MASTER + "\n![fig](images/gone.png)\n", encoding="utf-8")
+    dest = tmp_path / "delivery" / "Exam 1"
+
+    with pytest.raises(PreconditionError, match="delivery refused"):
+        deliver(src, dest)
+
+    assert not dest.exists()
+    assert (src / ".pagespeak-verdict.md").is_file()
+
+
+def test_a_folder_with_sections_but_no_master_is_not_delivered(tmp_path: Path) -> None:
+    export = tmp_path / "out" / "exams"
+    _make_doc(export / "exam-1", "exam-1")
+    (export / "exam-2" / "sections").mkdir(parents=True)
+    (export / "exam-2" / "sections" / "Question 1.md").write_text(
+        "![fig](../images/gone.png)\n", encoding="utf-8"
+    )
+    dest = tmp_path / "delivery" / "exams"
+    assert deliver(export, dest).documents == 1
+    assert not (dest / "exam-2").exists()
+
+
+def test_a_source_with_no_document_leaves_the_last_delivery_in_place(tmp_path: Path) -> None:
+    src = tmp_path / "out" / "Exam 1"
+    src.mkdir(parents=True)
+    dest = tmp_path / "delivery" / "Exam 1"
+    dest.mkdir(parents=True)
+    (dest / "Exam 1.md").write_text(_MASTER, encoding="utf-8")
+    assert deliver(src, dest).documents == 0
+    assert (dest / "Exam 1.md").read_text(encoding="utf-8") == _MASTER
+
+
+def test_dot_files_under_sections_are_not_delivered(tmp_path: Path) -> None:
+    src = tmp_path / "out" / "Exam 1"
+    _make_doc(src, "Exam 1")
+    (src / "sections" / ".pagespeak-verdict.md").write_text("# Verify\n", encoding="utf-8")
+    dest = tmp_path / "delivery" / "Exam 1"
+    deliver(src, dest)
+    assert (dest / "sections" / "Question 001.md").exists()
+    assert not (dest / "sections" / ".pagespeak-verdict.md").exists()
+
+
+@pytest.mark.parametrize(
+    ("path", "delivered"),
+    [
+        ("images/a.png", True),
+        ("sections/1/One.md", True),
+        ("figures/a.png", False),
+        ("b.png", False),
+        ("images/.hidden.png", False),
+        ("sections/.cache/One.md", False),
+        ("../in/a.png", False),
+    ],
+)
+def test_deliver_hands_off_only_images_and_sections_without_dot_files(
+    path: str, delivered: bool
+) -> None:
+    assert is_delivered(Path(path)) is delivered
+
+
+def test_deliver_refuses_a_sections_folder(tmp_path: Path) -> None:
+    src = tmp_path / "out" / "Exam 1"
+    _make_doc(src, "Exam 1")
+    with pytest.raises(PreconditionError, match="is part of a document"):
+        deliver(src / "sections", tmp_path / "delivery" / "sections")
+
+
+def test_deliver_hands_off_a_document_that_passes(tmp_path: Path) -> None:
+    src = tmp_path / "out" / "Exam 1"
+    _make_doc(src, "Exam 1")
+    result = deliver(src, tmp_path / "delivery" / "Exam 1")
+    assert result.documents == 1
+
+
+def test_deliver_cmd_refuses_a_failing_document(tmp_path: Path) -> None:
+    src = tmp_path / "conversions" / "out" / "Exam 1"
+    _make_doc(src, "Exam 1")
+    (src / "Exam 1.md").write_text(_MASTER + "\n![fig](images/gone.png)\n", encoding="utf-8")
+
+    result = CliRunner().invoke(app, ["deliver", str(src)])
+
+    assert result.exit_code == 1
+    assert "delivery refused" in result.output
+    assert ".pagespeak-verdict.md" in result.output
+    assert not (tmp_path / "conversions" / "delivery" / "Exam 1").exists()

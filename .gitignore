@@ -65,6 +65,7 @@ CLAUDE.md
 
 # Editor / AI-tool configs (rule/plan symlinks, skills, local settings)
 .claude/
+.cbmignore
 .cursor/
 
 # Playwright MCP artifacts

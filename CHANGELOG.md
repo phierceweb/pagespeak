@@ -2,6 +2,29 @@
 
 Notable changes to pagespeak, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## 0.21.0
+
+### Added
+- **`pagespeak verify`**: checks each converted document as a whole and writes a PASS/FAIL verdict beside its master (`.pagespeak-verdict.md`, and `.pagespeak-verdict.json` for `deliver`); exits 1 when any document fails. Read-only apart from the verdict files; no LLM calls. It fails a document for a picture link to a missing file or to one `deliver` leaves behind, a picture the build cut that nothing shows, a picture with neither a vision caption nor an alt text that describes it, identical pictures sharing a caption that names only some of their figure or table numbers, and section files that lose, repeat or add master lines; it notes heading and table shape and captions that doubt their label, and compares the delivered copy with the build (`--no-delivery` skips that). See `docs/verify.md`.
+- **Checks against the source PDF** in `verify`: printed figure and table titles that never arrive, repeat, sit out of page order or have no picture near them, and bookmarks no heading carries (notes). The PDF is found by its recorded name and SHA-256 under `--in-dir` (default: the `in` folder beside the document's `out` folder). With a build's source map (`.pagespeak-source-map.json`, written by `services._source_map.write_source_map()`; no build in this package writes one yet): every body line of the PDF of five words or more, consecutive lines still joined, ink no cut picture holds, a crop that cuts a drawing short, and a crop edge through a label. These checks need pypdfium2 (the `pdf`, `pdf-docling` or `tophat` extra); without it they report that they did not run.
+- **Accept list** (`.pagespeak-accepted.json`): a finding read and found right, accepted by its key with a non-empty reason, no longer fails its document; a malformed list fails it.
+- **`PAGESPEAK_VERIFY_MIN_DROPPED_INK`**: how much ink away from every picture `verify` calls dropped art.
+
+### Fixed
+- **Marker reads only the text inside each page's visible box.** A page cut from a two-page spread by its CropBox no longer carries the facing page's text, in its body or its tables (it ran into the page's own title where the two shared a line); a word the page's edge runs through goes whole to the page its middle is on, and a Chinese, Japanese or Korean character by its own middle. A page left with no text inside is OCRed. `--pdf-backend-kwargs '{"PdfProvider_clip_to_page_box": false}'` turns the clip off. Re-ingest (`--rerun-from ingest`) to apply it to an existing conversion; a chunked ingest begun before it does not resume (`ingest --force` starts it over).
+- **`--help` names the extras an option needs** (`pagespeak[pdf-docling]`, `[tophat]`, `[docx-structured]`) instead of dropping them, and `ingest --force-ocr` has help text.
+- **A Top Hat export with a figure converts under pypdfium2 5**, which a `pagespeak[tophat]` install without Marker gets; reading the figure failed the conversion.
+
+### Changed
+- **`deliver` refuses a document that fails `verify`**, naming each failing document's verdict file, and reuses a document's last verdict while nothing it depends on has changed. The web console's Deliver does the same, off the request loop, one delivery at a time. There is no flag to skip it: accept the finding instead. `deliver --in-dir` says where `verify` looks for source PDFs.
+- **What `deliver` copies**: a folder's `sections/` and `images/` only beside its master `.md`, and no dot-files. A `sections/`, `images/` or `chunks/` folder given as the source is refused, as is a folder holding two master `.md` files; a source holding no document leaves the last delivery in place.
+- **Paid backends route to current models**: vision to Claude Haiku 5.5 on `anthropic` and Gemini 3.8 Flash on `openrouter`; heading normalize to Claude Sonnet 5.5 (`llm`) and Claude Opus 5.5 (`llm_full`, `llm_dehead`) on `anthropic`, and to Gemini 3.8 Flash (`llm`) and Claude Opus 5.5 (`llm_full`, `llm_dehead`) on `openrouter`. With no router file the fallback is Claude Haiku 5.5. Heading-normalize answers are cached per model, so a document normalized on these backends under the old models is asked again; `claude_code` keeps its model aliases and its cache, and the vision cache is keyed by picture and reused.
+- **The web console's paid-vision estimate** prices the model routed for the chosen backend, and shows no amount when nothing prices it.
+- **`audit --text-coverage`** never takes a dot-file (a `verify` verdict) for a document's master.
+- `pagespeak[pdf]` declares `pdftext`, and `[pdf]`, `[pdf-docling]` and `[tophat]` require pypdfium2 `>=4.30,<6`.
+- Requires `pw-core ~=1.0`, which prices the Claude 5.x models: the paid-vision estimate shows an amount for them, and their calls' cost is recorded.
+- **Accept lists written with a pre-release `verify`** may hold keys that no longer match: a label finding's key now names the labels the crop cuts, and a key part longer than 80 characters ends in a digest of the whole part. The verdict lists such keys as matching no finding; accept the finding again under its new key.
+
 ## 0.20.0
 
 ### Added

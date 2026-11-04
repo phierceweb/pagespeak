@@ -11,7 +11,8 @@ What every command runs, stage by stage. This is the process-oriented spine; eac
 | `pagespeak ingest <file> [--workers N]` | Ingest only — produces `<stem>.raw.md` + `images/`. |
 | `pagespeak invalidate <outdir> <stage>` | Bust caches at `<stage>` and everything downstream. |
 | `pagespeak baseline save\|list\|diff <outdir>` | Snapshot / compare runs. |
-| `pagespeak deliver <outdir>` | Post-pipeline: copy just the deliverables (master `.md` + `sections/` + `images/`) to `…/delivery/<name>/`. See [usage.md](usage.md). |
+| `pagespeak deliver <outdir>` | Post-pipeline: copy just the deliverables (master `.md` + `sections/` + `images/`) to `…/delivery/<name>/`, refused while the document fails `verify`. See [usage.md](usage.md). |
+| `pagespeak verify <outdir>` | Post-pipeline: PASS/FAIL for the finished document as a whole. See [verify.md](verify.md). |
 
 `to_markdown(path, ...)` is the library equivalent of `pagespeak convert`.
 

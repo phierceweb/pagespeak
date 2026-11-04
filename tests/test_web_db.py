@@ -21,7 +21,9 @@ def test_init_web_db_creates_jobs_and_llm_tables(monkeypatch, tmp_path):
     register_kind(kind="t_kind")
     jid = JobRepo().create(kind="t_kind", inputs=None, created_by="test")
     assert isinstance(jid, int)
-    from pw_core.llm.tracking import LlmRunRepo
+    from pw_core.llm.tracking import LlmRunRepo, clear_resolver_caches
 
+    # The resolver ID cache outlives the engine reset; stale IDs from an earlier test's DB break the FK.
+    clear_resolver_caches()
     rid = LlmRunRepo().record(agent_type="vision", model="m", job_id=jid)
     assert isinstance(rid, int)

@@ -170,7 +170,9 @@ def _coverage_target(doc_dir: Path) -> Path | None:
     masters = [
         p
         for p in sorted(doc_dir.glob("*.md"))
-        if p.name != "INDEX.md" and not p.name.endswith(_CHECKPOINT_SUFFIXES)
+        if p.name != "INDEX.md"
+        and not p.name.startswith(".")
+        and not p.name.endswith(_CHECKPOINT_SUFFIXES)
     ]
     return masters[0] if masters else None
 

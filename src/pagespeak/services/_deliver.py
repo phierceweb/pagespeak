@@ -13,9 +13,11 @@ fresh on every run (replaces any prior delivery); the source is never modified.
 from __future__ import annotations
 
 import shutil
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from pw_foundation.exceptions import PreconditionError
 from pw_foundation.log import get_logger
 
 from ._rerun import PAGESPEAK_REGISTRY
@@ -43,11 +45,34 @@ def _checkpoint_md_suffixes() -> frozenset[str]:
 _CHECKPOINT_MD_SUFFIXES = _checkpoint_md_suffixes()
 
 
-def _is_master_md(name: str) -> bool:
-    """A `.md` deliverable: the master doc, not a stage checkpoint."""
-    return name.endswith(".md") and not any(
-        name.endswith(suffix) for suffix in _CHECKPOINT_MD_SUFFIXES
+def is_master_md(name: str) -> bool:
+    """A `.md` deliverable: the master doc, not a stage checkpoint or a dot-file
+    (a verify verdict sits beside the master)."""
+    return (
+        name.endswith(".md")
+        and not name.startswith(".")
+        and not any(name.endswith(suffix) for suffix in _CHECKPOINT_MD_SUFFIXES)
     )
+
+
+def is_delivered(rel: Path) -> bool:
+    """Whether deliver hands off `rel`, a path relative to its document's folder:
+    inside `images/` or `sections/`, with no dot-named part."""
+    parts = rel.parts
+    return (
+        len(parts) > 1
+        and parts[0] in _DELIVERABLE_DIRS
+        and not any(p.startswith(".") for p in parts)
+    )
+
+
+def _left_behind(root: Path) -> Callable[[str, list[str]], set[str]]:
+    """`copytree`'s ignore for a document folder `root`: what `is_delivered` turns away."""
+
+    def ignore(folder: str, names: list[str]) -> set[str]:
+        return {n for n in names if not is_delivered(Path(folder, n).relative_to(root))}
+
+    return ignore
 
 
 @dataclass
@@ -97,25 +122,40 @@ def strip_for_delivery(source: str | Path, dest: str | Path) -> DeliveryResult:
     return DeliveryResult(dest=dst, documents=counts.documents, files=counts.files)
 
 
+def deliver(source: str | Path, dest: str | Path, *, in_dir: Path | None = None) -> DeliveryResult:
+    """`strip_for_delivery` behind the verify gate: raises PreconditionError,
+    naming each verdict file, while any document under `source` fails verify.
+    A source holding no document delivers nothing and leaves `dest` as it is.
+    `in_dir` is where verify looks for source PDFs (default: beside each
+    document's `out` folder, see `default_in_dir`)."""
+    from ._verify import require_deliverable  # _verify imports this module
+
+    if Path(source).name in _DELIVERABLE_DIRS | _SKIP_DIRS:
+        raise PreconditionError(
+            f"delivery refused: {source} is part of a document; deliver its folder instead"
+        )
+    if not require_deliverable(Path(source), in_dir=in_dir):
+        return DeliveryResult(dest=Path(dest), documents=0, files=0)
+    return strip_for_delivery(source, dest)
+
+
 def _deliver_tree(src_dir: Path, dest_dir: Path, counts: _Counts) -> None:
     """Recursively copy deliverables from `src_dir` to `dest_dir`. A dir with a
-    master `.md` is one document; dirs without are traversed for nested
-    documents (the export → per-exam fan-out)."""
+    master `.md` is one document, delivered with its `sections/` and `images/`;
+    dirs without are traversed for nested documents (the export → per-exam
+    fan-out), and their own `sections/` or `images/` are not a document."""
     entries = sorted(src_dir.iterdir())
-    masters = [e for e in entries if e.is_file() and _is_master_md(e.name)]
-    deliverable_dirs = [e for e in entries if e.is_dir() and e.name in _DELIVERABLE_DIRS]
-
-    if masters or deliverable_dirs:
-        dest_dir.mkdir(parents=True, exist_ok=True)
+    masters = [e for e in entries if e.is_file() and is_master_md(e.name)]
     if masters:
+        dest_dir.mkdir(parents=True, exist_ok=True)
         counts.documents += 1
-    for master in masters:
-        shutil.copy2(master, dest_dir / master.name)
-        counts.files += 1
-    for sub in deliverable_dirs:
-        target = dest_dir / sub.name
-        shutil.copytree(sub, target)
-        counts.files += sum(1 for p in target.rglob("*") if p.is_file())
+        for master in masters:
+            shutil.copy2(master, dest_dir / master.name)
+            counts.files += 1
+        for sub in (e for e in entries if e.is_dir() and e.name in _DELIVERABLE_DIRS):
+            target = dest_dir / sub.name
+            shutil.copytree(sub, target, ignore=_left_behind(src_dir))
+            counts.files += sum(1 for p in target.rglob("*") if p.is_file())
 
     for entry in entries:
         if (
@@ -127,4 +167,4 @@ def _deliver_tree(src_dir: Path, dest_dir: Path, counts: _Counts) -> None:
             _deliver_tree(entry, dest_dir / entry.name, counts)
 
 
-__all__ = ["DeliveryResult", "strip_for_delivery"]
+__all__ = ["DeliveryResult", "deliver", "is_delivered", "is_master_md", "strip_for_delivery"]

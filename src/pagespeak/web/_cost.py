@@ -150,7 +150,7 @@ def gate_decision(
             misses=misses,
         )
     if is_paid:
-        est = _estimate_paid(misses)
+        est = _estimate_paid(misses, backend)
         money = f" ≈ ${est:.2f}" if est is not None else ""
         msg = (
             f"{images} images · {cached} cached · {misses} live calls on {backend}{money}. "
@@ -172,17 +172,20 @@ def gate_decision(
     )
 
 
-def _estimate_paid(misses: int) -> float | None:
-    """Rough $ estimate for ``misses`` paid vision calls (~4K in / ~1K out per image)."""
+def _estimate_paid(misses: int, backend: str) -> float | None:
+    """Rough $ estimate for ``misses`` vision calls on ``backend``'s routed model
+    (~4K in / ~1K out per image); None when nothing prices it, which pw-core
+    projects as 0.0."""
     try:
         from pw_core.budget import project_cost
+        from pw_core.llm.router import get_agent_config
 
         per: float = project_cost(
             agent_type="vision",
-            model="claude-haiku-4-5-20251001",
+            model=str(get_agent_config("vision", backend=backend)["model"]),
             estimated_prompt_tokens=4000,
             estimated_completion_tokens=1000,
         )
-        return per * misses
     except Exception:
         return None
+    return per * misses if per > 0 else None

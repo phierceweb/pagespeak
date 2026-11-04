@@ -18,6 +18,8 @@ import ctypes
 import re
 from pathlib import Path
 
+from ..utils._pdfium import object_bounds
+
 # Any question marker, for binding figures by reading position. Matches both
 # Top Hat styles: a bare/`Question N` marker, OR a gradable marker where the
 # number precedes "(Show|Hide) Correct Answer" (the "Topic 2 Hide Correct
@@ -50,7 +52,7 @@ def bind_images_to_questions(
     """Bind each image to the question whose marker last precedes it, **by page**.
 
     Binding is page-level, not y-level: Top Hat nests figures in form XObjects
-    whose `get_pos()` returns *form-local* coordinates (a top far outside the
+    whose bounds come back in *form-local* coordinates (a top far outside the
     page box), so an image's y is not comparable to the page's text y. A figure
     therefore binds to the last marker on its page or an earlier page — which is
     its question, since a figure sits between its own marker and the next
@@ -111,7 +113,7 @@ def extract_question_images(path: Path, images_dir: Path) -> dict[int, list[str]
             pil = obj.get_bitmap(render=False).to_pil()
             if pil.width < _MIN_DIM_PX or pil.height < _MIN_DIM_PX:
                 continue
-            figures.append((pno, obj.get_pos()[3]))  # pos = (left, bottom, right, top)
+            figures.append((pno, object_bounds(obj)[3]))  # (left, bottom, right, top)
             bitmaps.append(pil)
 
     if not figures:

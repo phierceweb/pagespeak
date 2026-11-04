@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-DEFAULT_VISION_MODEL = "claude-haiku-4-5-20251001"
+DEFAULT_VISION_MODEL = "claude-haiku-5-5"
 
 # Per-image `claude --print` timeout — distinct from the whole-doc
 # heading-normalize timeout (`PAGESPEAK_CLAUDE_CODE_TIMEOUT_S`, 1800s).

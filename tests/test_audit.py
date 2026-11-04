@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from pagespeak.services._audit import (
+    _coverage_target,
     audit_file,
     audit_paths,
     check_dangling_image_refs,
@@ -275,3 +276,12 @@ def test_is_document_dir(tmp_path: Path) -> None:
     assert not is_document_dir(tmp_path / "out")
     assert not is_document_dir(tmp_path / "out" / "notes")
     assert not is_document_dir(tmp_path / "out" / "doc" / "doc.raw.md")
+
+
+def test_a_verify_verdict_is_not_a_documents_master(tmp_path: Path) -> None:
+    doc = tmp_path / "out" / "doc"
+    _write(doc / ".pagespeak-verdict.md", "# Verify: doc — PASS\n")
+    assert not is_document_dir(doc)
+    _write(doc / "doc.md", "# Doc\n")
+    target = _coverage_target(doc)
+    assert target is not None and target.name == "doc.md"
