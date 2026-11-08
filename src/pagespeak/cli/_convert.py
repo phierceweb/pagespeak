@@ -88,6 +88,11 @@ def register(
                 "--no-diagrams."
             ),
         ),
+        vision_all_images: bool = typer.Option(
+            False,
+            "--vision-all-images",
+            help="Caption every file in images/, including pictures cleanup removed from the text. Default: only the pictures the document references. Use to fill the vision cache ahead of a cleanup re-run.",
+        ),
         preserve_alt: bool = typer.Option(
             False,
             "--preserve-alt",
@@ -178,6 +183,18 @@ def register(
         ),
         pdf_backend_kwargs: str | None = typer.Option(
             None, "--pdf-backend-kwargs", help=BACKEND_KWARGS_HELP
+        ),
+        decoration_threshold: int | None = typer.Option(
+            None,
+            "--decoration-threshold",
+            min=0,
+            help="Look-alike pictures that occur at least this many times are page furniture: a near-identical copy is removed, another keeps only its description, unless it is large and used at most twice under its own description. Default 5; 0 turns it off. See docs/pipeline-decorations.md.",
+        ),
+        decoration_hamming_distance: int | None = typer.Option(
+            None,
+            "--decoration-hamming-distance",
+            min=0,
+            help="How alike pictures must be to count as one piece of furniture, in perceptual-hash bits (default 12). 2 = only near-identical copies: use it for screenshot-heavy help sites whose screens all share one frame.",
         ),
         repair_tables: bool = typer.Option(
             False,
@@ -394,6 +411,7 @@ def register(
                 vision_model=vision_model,
                 vision_concurrency=vision_concurrency,
                 vision_cache_only=vision_cache_only,
+                vision_all_images=vision_all_images,
                 preserve_alt=preserve_alt,
                 force_ocr=_flag("force_ocr", force_ocr),
                 device=device,
@@ -415,8 +433,10 @@ def register(
                 min_body_chars=_flag("min_body_chars", min_body_chars),
                 english_only=english_only,
                 regenerate_toc=_flag("regenerate_toc", True),
-                decoration_threshold=_flag("decoration_threshold", None),
-                decoration_hamming_distance=_flag("decoration_hamming_distance", None),
+                decoration_threshold=_flag("decoration_threshold", decoration_threshold),
+                decoration_hamming_distance=_flag(
+                    "decoration_hamming_distance", decoration_hamming_distance
+                ),
                 pdf_backend=cast(PdfBackendName, pdf_backend),
                 pdf_backend_kwargs=_flag(
                     "pdf_backend_kwargs", parse_backend_kwargs(pdf_backend_kwargs)

@@ -108,7 +108,7 @@ def _identifiers(text: str) -> set[str]:
     return found
 
 
-def _describes(alt: str) -> bool:
+def describes_picture(alt: str) -> bool:
     """Alt text that says what the picture shows. "A photo of a lighthouse." and
     "Apollo 11" do; "Sidebar 19.4 image", "User-added image" and "IMG 2034" are a
     label, filler and a camera's numbering."""
@@ -138,7 +138,7 @@ def check_captions(doc: VerifyDoc, phashes: dict[Path, str | None]) -> CheckResu
         if phash is None:
             message = "could not read this picture to look up its caption"
             findings.append(VerifyFinding("captions", key, where, message, blocking=False))
-        elif not (cache / f"{phash}.json").is_file() and not _describes(alt):
+        elif not (cache / f"{phash}.json").is_file() and not describes_picture(alt):
             message = f"picture has no caption: no vision caption, and its alt text ({alt.strip()[:60]!r}) does not describe it"
             findings.append(VerifyFinding("captions", key, where, message))
     return CheckResult("captions", tuple(findings))

@@ -1,6 +1,6 @@
 # Diagram extraction
 
-pagespeak's vision pass turns each extracted image into one of two LLM-friendly forms: a structured, editable **Mermaid** block when the content is *structural* (boxes, arrows, named steps), or a label-rich **caption** when the content is *morphological/spatial* (the drawing of a physical thing is itself the information). The original image is always kept alongside, so a downstream multimodal step can still see it.
+pagespeak's vision pass turns each picture the document references (every file in `images/` with `--vision-all-images`) into one of two LLM-friendly forms: a structured, editable **Mermaid** block when the content is *structural* (boxes, arrows, named steps), or a label-rich **caption** when the content is *morphological/spatial* (the drawing of a physical thing is itself the information). The original image is always kept alongside, so a downstream multimodal step can still see it.
 
 The prompt is a versioned YAML artifact: [`src/pagespeak/prompts/diagram.yaml`](../src/pagespeak/prompts/diagram.yaml). Edit it there, never inline — see [Bumping the prompt](#bumping-the-prompt).
 

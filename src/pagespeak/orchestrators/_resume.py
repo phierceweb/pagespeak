@@ -28,6 +28,7 @@ from ..backends._pdf import parse_page_range
 from ..models._models import IngestResult
 from ..models._pipeline import completed_chunk_backends
 from ..services._hierarchy_trust import ingested_from_outline
+from ..services._image_files import image_files
 from ..services._run_record import INGEST_FLAGS_FIELD, json_safe, read_run_record
 
 # Cleanup-affecting flags. If any of these change between runs, the
@@ -143,8 +144,7 @@ def _try_resume_from_checkpoint(
         return None
     if current_flags is not None:
         assert_ingest_flags_match(out, src.suffix.lower(), current_flags)
-    images_dir = out / "images"
-    images = sorted(images_dir.glob("*")) if images_dir.exists() else []
+    images = image_files(out / "images")
     return IngestResult(
         markdown=cached_text,
         images=images,

@@ -446,7 +446,7 @@ def test_convert_html_downloads_remote_images(
 
     _patch_fetcher(monkeypatch, {"https://docs.x.com/images/intro/fig.png": _PNG})
     with patch("markitdown.MarkItDown") as MD:
-        MD.return_value.convert.return_value = _R()
+        MD.return_value.convert_stream.return_value = _R()
         result = convert_with_markitdown(src, output_dir=tmp_path)
 
     assert {p.name for p in result.images} == {"intro-fig.png"}
@@ -470,7 +470,7 @@ def test_convert_html_respects_disable_toggle(
 
     monkeypatch.setenv("PAGESPEAK_DOWNLOAD_REMOTE_IMAGES", "0")
     with patch("markitdown.MarkItDown") as MD:
-        MD.return_value.convert.return_value = _R()
+        MD.return_value.convert_stream.return_value = _R()
         result = convert_with_markitdown(src, output_dir=tmp_path)
 
     # Disabled: remote ref left as-is, nothing downloaded.
@@ -497,7 +497,7 @@ def test_convert_html_resolves_relative_refs_with_base_url(
     resolved = "https://site.com/manual/Storage/topic/fig.png"
     _patch_fetcher(monkeypatch, {resolved: _PNG})
     with patch("markitdown.MarkItDown") as MD:
-        MD.return_value.convert.return_value = _R()
+        MD.return_value.convert_stream.return_value = _R()
         result = convert_with_markitdown(
             src,
             output_dir=tmp_path,

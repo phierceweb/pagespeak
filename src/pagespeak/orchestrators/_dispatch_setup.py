@@ -56,6 +56,7 @@ def resolved_flags_from_ctx(ctx: PipelineContext) -> dict[str, Any]:
         "vision_model": ctx.vision_model,
         "vision_concurrency": ctx.vision_concurrency,
         "vision_cache_only": ctx.vision_cache_only,
+        "vision_all_images": ctx.vision_all_images,
         "preserve_alt": ctx.preserve_alt,
         "force_ocr": ctx.force_ocr,
         "device": ctx.device,

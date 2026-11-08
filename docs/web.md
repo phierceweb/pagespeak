@@ -106,7 +106,9 @@ cache misses = (images in images/) − (matching phashes in .vision-cache/)
 
 It shows this before you confirm, e.g.:
 
-> *"40 images · 31 cached · 9 live calls. Backend claude_code → 9 Max-quota calls ($0)."*
+> *"40 images · 31 cached · up to 9 live calls on claude_code → up to 9 Max-quota calls ($0)."*
+
+The count is an upper bound: it counts every file in `images/`, while vision captions only the pictures the document's text references. A picture with no perceptual hash, such as an SVG, is never cached, so it counts as a call on every run.
 
 An explicit confirm is required. The confirm dialog also shows the grounded cost estimate for paid backends (~3–5K tokens per image via anthropic/openrouter), priced on the model `config/model_router.yaml` routes vision to on that backend; no estimate is shown when nothing prices that model.
 

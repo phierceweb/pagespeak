@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, PlainTextResponse
 from starlette.responses import Response
 
+from pagespeak.services._image_files import image_files
 from pagespeak.web._config import WebConfig
 from pagespeak.web._scan import (
     PHASES,
@@ -31,8 +32,6 @@ _VIEW_SUFFIX = {
     "vision": ".visioned.md",
     "final": ".md",
 }
-
-_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff"}
 
 
 @router.get("/")
@@ -87,10 +86,7 @@ async def detail(request: Request, dir_name: str, view: str | None = None) -> Re
             run_record = json.loads(rr.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             run_record = None
-    images = []
-    img_dir = conv.out_dir / "images"
-    if img_dir.is_dir():
-        images = sorted(f.name for f in img_dir.iterdir() if f.suffix.lower() in _IMAGE_EXTS)
+    images = [f.name for f in image_files(conv.out_dir / "images")]
     return cast(
         Response,
         request.app.state.templates.TemplateResponse(

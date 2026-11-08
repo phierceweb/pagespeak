@@ -44,6 +44,7 @@ def run_qti_export(
     vision_model: str | None,
     vision_concurrency: int | None,
     vision_cache_only: bool,
+    vision_all_images: bool,
     source_type: str | None,
     source_label: str | None,
     answer_key: bool,
@@ -85,6 +86,7 @@ def run_qti_export(
                 vision_model=vision_model,
                 vision_concurrency=vision_concurrency,
                 vision_cache_only=vision_cache_only,
+                vision_all_images=vision_all_images,
                 split_sections=False,
                 regenerate_toc=False,
             )

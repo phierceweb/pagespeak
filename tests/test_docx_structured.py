@@ -378,9 +378,13 @@ def test_convert_structured_returns_ingestresult(make_docx, tmp_path) -> None:
     from pagespeak.backends._docx_structured import convert_structured
 
     path = make_docx(document_xml="<w:p><w:r><w:t>Hi</w:t></w:r></w:p>")
+    (tmp_path / "images" / "sub").mkdir(parents=True)  # left by an earlier ingest
+    (tmp_path / "images" / ".DS_Store").write_bytes(b"x")
+    (tmp_path / "images" / "a.png").write_bytes(b"x")
     res = convert_structured(path, output_dir=tmp_path)
     assert res.source_format == "docx"
     assert res.markdown.strip() == "Hi"
+    assert [p.name for p in res.images] == ["a.png"]  # the files vision may send
 
 
 def test_convert_structured_empty_doc_empty_markdown(make_docx, tmp_path) -> None:

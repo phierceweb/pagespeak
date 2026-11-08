@@ -90,3 +90,25 @@ def test_gate_counts_every_image_as_a_miss_when_the_run_clears_the_cache(tmp_pat
     )
     assert (d.images, d.cached, d.misses) == (1, 0, 1)
     assert d.needs_confirm is True
+
+
+def test_cache_miss_count_counts_every_file_vision_could_send(tmp_path):
+    """An SVG has no phash, so it is never cached: every run pays for it again."""
+    images = tmp_path / "images"
+    images.mkdir()
+    (images / "drawing.svg").write_text("<svg xmlns='http://www.w3.org/2000/svg'/>")
+    (images / "figure.tif").write_bytes(b"not decodable")
+    (images / ".DS_Store").write_bytes(b"")
+    assert cache_miss_count(tmp_path) == (2, 0, 2)
+
+
+def test_gate_message_says_up_to(tmp_path, monkeypatch):
+    import pagespeak.web._cost as cost
+
+    (tmp_path / "images").mkdir()
+    (tmp_path / "images" / "a.png").write_bytes(b"a")
+    monkeypatch.setattr(cost, "compute_phash", lambda p: p.stem)
+    d = gate_decision(out_dir=tmp_path, will_run=True, backend="claude_code", confirmed=False)
+    assert d.message is not None
+    assert "1 images · 0 cached · up to 1 live calls on claude_code" in d.message
+    assert "→ up to 1 Max-quota calls ($0)" in d.message

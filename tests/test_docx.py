@@ -206,7 +206,7 @@ def test_convert_html_resolves_mathml_to_latex(tmp_path: Path) -> None:
     # markitdown stand-in: echo back the (tokenized) HTML text it was handed,
     # so the prepare→restore wiring round-trips through the boundary.
     with patch("markitdown.MarkItDown") as MD:
-        MD.return_value.convert.side_effect = lambda p: _R(Path(p).read_text(encoding="utf-8"))
+        MD.return_value.convert_stream.side_effect = lambda s, **_: _R(s.read().decode("utf-8"))
         result = convert_with_markitdown(html)
 
     assert "$y^{3}$" in result.markdown  # restored LaTeX, superscript intact
@@ -333,3 +333,116 @@ def test_html_recurring_label_headings_stay_headings(tmp_path: Path) -> None:
     src.write_text(f"<html><body><h1>Guide</h1>{cases}</body></html>", encoding="utf-8")
     result = to_markdown(src, output_dir=tmp_path / "out", diagrams=False)
     assert result.markdown.count("## Field Note") == 3
+
+
+def test_html_paragraph_starting_with_a_hash_is_not_a_heading(tmp_path: Path) -> None:
+    pytest.importorskip("markitdown")
+    from pagespeak import to_markdown
+
+    src = tmp_path / "rules.html"
+    src.write_text(
+        "<html><body><h1>Guide</h1><h2>Sample rule file</h2>"
+        "<p># Sample rule file.</p><p>#</p><p>METHOD: TABLE</p>"
+        "<pre># a shell comment</pre></body></html>",
+        encoding="utf-8",
+    )
+    md = to_markdown(src, output_dir=tmp_path / "out", diagrams=False).markdown
+    lines = md.splitlines()
+    fence = [i for i, ln in enumerate(lines) if ln.startswith("```")]
+    outside = [ln for i, ln in enumerate(lines) if not fence or not fence[0] <= i <= fence[-1]]
+    assert [ln for ln in outside if ln.startswith("#")] == ["# Guide", "## Sample rule file"]
+    assert "\\# Sample rule file." in lines
+    assert "\\#" in lines
+    assert "# a shell comment" in lines
+
+
+def test_html_in_a_declared_charset_keeps_its_letters_on_the_string_path(tmp_path: Path) -> None:
+    pytest.importorskip("markitdown")
+    from markitdown import MarkItDown
+
+    from pagespeak.backends._docx import _run_markitdown
+
+    src = tmp_path / "latin.html"
+    src.write_bytes(
+        "<html><head><meta charset='iso-8859-1'></head><body>"
+        "<p># caf\xe9</p><p>na\xefve r\xe9sum\xe9</p></body></html>".encode("latin-1")
+    )
+    assert _run_markitdown(MarkItDown(), src).splitlines() == ["\\# café", "", "naïve résumé"]
+
+
+def test_html_source_text_matching_the_marker_survives(tmp_path: Path) -> None:
+    pytest.importorskip("markitdown")
+    from markitdown import MarkItDown
+
+    from pagespeak.backends._docx import _run_markitdown
+
+    src = tmp_path / "m.html"
+    src.write_text("<html><body><p>see xpagespeakhashx here</p></body></html>", encoding="utf-8")
+    assert _run_markitdown(MarkItDown(), src) == "see xpagespeakhashx here"
+
+
+def test_short_html_page_is_read_as_utf8_on_the_string_path(tmp_path: Path) -> None:
+    """MarkItDown guesses the charset of a short stream wrongly; the string path states it."""
+    pytest.importorskip("markitdown")
+    from markitdown import MarkItDown
+
+    from pagespeak.backends._docx import _run_markitdown
+
+    src = tmp_path / "short.html"
+    src.write_text("<html><body><p># z</p><p>​ z</p></body></html>", encoding="utf-8")
+    assert _run_markitdown(MarkItDown(), src) == "\\# z\n\n​ z"
+
+
+def test_every_html_page_is_read_as_utf8(tmp_path: Path) -> None:
+    """A page with no MathML and no `#` line must not fall back to MarkItDown's charset guess."""
+    pytest.importorskip("markitdown")
+    from markitdown import MarkItDown
+
+    from pagespeak.backends._docx import _run_markitdown
+
+    src = tmp_path / "plain.html"
+    src.write_text("<html><body><p>​ z café</p></body></html>", encoding="utf-8")
+    assert _run_markitdown(MarkItDown(), src) == "​ z café"
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "<meta charset='koi8-r'><p>Привет</p>".encode("koi8-r"),
+        ("<p>" + "你好世界，这是一个测试页面。" * 3 + "</p>").encode("gb2312"),
+        "<p>Café – naïve “q”</p>".encode("cp1252"),
+        b'<meta charset="hex"><p>caf\xe9 ok</p>',
+        "<p>café</p>".encode("utf-16"),
+        "<html><body><h2>Hello</h2><p>Plain words.</p></body></html>".encode("utf-16-le"),
+        b"\xfe\xff" + "<html><body><p>café naïve</p></body></html>".encode("utf-16-be"),
+        (
+            "<html><body>"
+            + "<p>日本語のテキストです。これはテストの文章です。</p>" * 40
+            + "</body></html>"
+        ).encode("iso-2022-jp"),
+        ("<p>" + "plain words " * 400 + "</p><p>Café – naïve “q”</p>").encode("cp1252"),
+    ],
+    ids=[
+        "koi8r-declared",
+        "gb2312-undeclared",
+        "cp1252-undeclared",
+        "codec-label",
+        "utf16-bom",
+        "utf16le-no-bom-ascii",
+        "utf16be-bom",
+        "iso2022jp",
+        "cp1252-after-4kb",
+    ],
+)
+def test_a_page_that_is_not_utf8_converts_as_markitdown_reads_the_file(
+    tmp_path: Path, raw: bytes
+) -> None:
+    pytest.importorskip("markitdown")
+    from markitdown import MarkItDown
+
+    from pagespeak.backends._docx import _run_markitdown
+
+    src = tmp_path / "p.html"
+    src.write_bytes(raw)
+    converter = MarkItDown()
+    assert _run_markitdown(converter, src) == converter.convert(str(src)).text_content

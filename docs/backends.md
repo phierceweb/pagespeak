@@ -157,3 +157,21 @@ Use `--force` to acknowledge the choice and re-run, or pick a fresh output dir.
 ## Speed
 
 On CPU, Docling converted all nine PDFs measured faster than Marker on the same machine — a median of ~8×. Marker also pays a ~30s model-load on the first call in a process. Docling's speed means a large PDF can usually run single-process; the `--workers N` chunked pipeline was built for Marker's per-page cost, and skipping it also avoids Marker's chunk-boundary heading drift.
+
+### Faster Docling on a PDF with a text layer, at a cost
+
+Docling OCRs every picture region that covers more than 5% of a page, even when the page has a text layer, and that OCR is most of its time on a screenshot-heavy manual. Raising the threshold to Docling's own full-page mark OCRs only pages a picture covers almost entirely (a scanned page), and skips figures and screenshots:
+
+```bash
+bin/run convert manual.pdf -o out --pdf-backend docling --heading-hierarchy \
+  --pdf-backend-kwargs '{"ocr_options": {"bitmap_area_threshold": 0.75}}'
+```
+
+It is not the default because text that exists only as pixels is lost: on one plug-in manual the cover's title was in a picture, so the document lost its top heading and every heading moved up a level, and another lost a logo's letter. A scanned PDF converts the same either way. Measured on four manuals:
+
+| Document | Pages | Time (default → 0.75) | Output |
+|---|---|---|---|
+| plug-in manual A | 16 | 19.2 s → 2.9 s | lost one OCRed logo letter |
+| plug-in manual B | 64 | 28.7 s → 10.0 s | lost the cover title; headings shifted a level |
+| plug-in manual C | 29 | 6.7 s → 5.7 s | identical |
+| scanned speaker manual | 52 | 89.5 s → 82.7 s | identical |

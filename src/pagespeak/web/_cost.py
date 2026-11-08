@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from pagespeak.services._image_files import image_files
 from pagespeak.utils._phash import compute_phash
 
 _PHASE_ORDER = {
@@ -26,7 +27,6 @@ _PHASE_ORDER = {
 _VISION_IDX = _PHASE_ORDER["vision"]
 _LAST_IDX = max(_PHASE_ORDER.values())
 _PAID_BACKENDS = {"anthropic", "openrouter"}
-_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff"}
 
 
 def vision_will_run(
@@ -45,10 +45,9 @@ def cache_miss_count(out_dir: Path) -> tuple[int, int, int] | None:
 
     A miss is an image whose perceptual hash has no ``.vision-cache/<phash>.json``.
     """
-    images_dir = out_dir / "images"
-    if not images_dir.is_dir():
-        return None
-    images = [f for f in images_dir.iterdir() if f.suffix.lower() in _IMAGE_EXTS]
+    # Every file vision could send: an SVG or other picture with no phash is never
+    # cached, so it is a live call on every run.
+    images = image_files(out_dir / "images")
     if not images:
         return None
     cache_dir = out_dir / ".vision-cache"
@@ -153,13 +152,13 @@ def gate_decision(
         est = _estimate_paid(misses, backend)
         money = f" ≈ ${est:.2f}" if est is not None else ""
         msg = (
-            f"{images} images · {cached} cached · {misses} live calls on {backend}{money}. "
+            f"{images} images · {cached} cached · up to {misses} live calls on {backend}{money}. "
             f"Paid backend — confirm to spend."
         )
     else:
         msg = (
-            f"{images} images · {cached} cached · {misses} live calls on claude_code "
-            f"→ {misses} Max-quota calls ($0). Confirm to proceed."
+            f"{images} images · {cached} cached · up to {misses} live calls on claude_code "
+            f"→ up to {misses} Max-quota calls ($0). Confirm to proceed."
         )
     return GateDecision(
         needs_confirm=True,

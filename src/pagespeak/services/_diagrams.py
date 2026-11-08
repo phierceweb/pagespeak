@@ -228,6 +228,14 @@ def _any_cache_miss(
     return False
 
 
+def referenced_images(images: list[Path], alt_by_basename: dict[str, str]) -> list[Path]:
+    """The images a ref in the text points at (`alt_text_by_basename` keys); logs the rest."""
+    kept = [p for p in images if p.name in alt_by_basename]
+    if len(kept) < len(images):
+        logger.info("vision_unreferenced_skipped count=%d", len(images) - len(kept))
+    return kept
+
+
 def gather_diagrams(
     images: list[Path],
     *,

@@ -110,6 +110,52 @@ def test_vision_phase_feeds_source_alt_to_gather(
     assert captured["alt_by_basename"] == {"pic.webp": "Original source alt for pic"}
 
 
+def _gathered_images(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, **kwargs: object) -> list:
+    """Names the vision phase hands gather_diagrams for a text that references one
+    of two pictures in images/."""
+    import pagespeak.services._diagrams as diag_mod
+
+    d = _seed(tmp_path)
+    (d / "doc.structured.md").write_text("# Doc\n\n![A chart](images/in.png)\n", encoding="utf-8")
+    (d / "images").mkdir()
+    for name in ("in.png", "removed.png", ".DS_Store"):
+        (d / "images" / name).write_bytes(b"x")
+    (d / "images" / "sub").mkdir()  # vision sends files at the top of images/ only
+    captured: list = []
+    monkeypatch.setattr(
+        diag_mod, "gather_diagrams", lambda images, **_: (captured.extend(images), {})[1]
+    )
+    to_markdown(d, output_dir=d, diagrams=True, start="vision", stop_after="vision", **kwargs)
+    return sorted(p.name for p in captured)
+
+
+def test_vision_captions_only_pictures_the_text_references(tmp_path, monkeypatch, caplog) -> None:
+    caplog.set_level("INFO")
+    assert _gathered_images(tmp_path, monkeypatch) == ["in.png"]
+    assert "vision_unreferenced_skipped count=1" in caplog.text
+
+
+def test_vision_matches_an_encoded_ref_to_its_file(tmp_path, monkeypatch) -> None:
+    import pagespeak.services._diagrams as diag_mod
+
+    d = _seed(tmp_path)
+    (d / "doc.structured.md").write_text("![A chart](images/my%20shot.png?v=1)\n", encoding="utf-8")
+    (d / "images").mkdir()
+    (d / "images" / "my shot.png").write_bytes(b"x")
+    captured: list = []
+    monkeypatch.setattr(
+        diag_mod, "gather_diagrams", lambda images, **_: (captured.extend(images), {})[1]
+    )
+    to_markdown(d, output_dir=d, diagrams=True, start="vision", stop_after="vision")
+    assert [p.name for p in captured] == ["my shot.png"]
+    assert "![A chart](images/my%20shot.png?v=1)" in (d / "doc.visioned.md").read_text()
+
+
+def test_vision_all_images_captions_every_picture(tmp_path, monkeypatch) -> None:
+    names = _gathered_images(tmp_path, monkeypatch, vision_all_images=True)
+    assert names == ["in.png", "removed.png"]
+
+
 def test_vision_phase_degrades_missing_image_ref(tmp_path: Path) -> None:
     """VisionPhase degrades an image ref whose local target is missing on disk
     into an italic caption — even with diagrams OFF — so a broken
@@ -253,3 +299,22 @@ def test_orchestrators_write_documents_atomically() -> None:
         if re.search(r"\.write_text\(", line)
     ]
     assert not offenders, f"use pw_foundation.utils.io.atomic_write_text: {offenders}"
+
+
+def test_a_rerun_resuming_from_raw_sends_vision_only_top_level_files(tmp_path, monkeypatch) -> None:
+    import pagespeak.services._diagrams as diag_mod
+
+    src = tmp_path / "page.md"
+    src.write_text("# Doc\n\n![A chart](images/in.png)\n", encoding="utf-8")
+    out = tmp_path / "out"
+    to_markdown(src, output_dir=out, diagrams=False)
+    (out / "images").mkdir(exist_ok=True)
+    (out / "images" / "in.png").write_bytes(b"x")
+    (out / "images" / ".DS_Store").write_bytes(b"x")
+    (out / "images" / "sub").mkdir()
+    captured: list = []
+    monkeypatch.setattr(
+        diag_mod, "gather_diagrams", lambda images, **_: (captured.extend(images), {})[1]
+    )
+    to_markdown(src, output_dir=out, diagrams=True, vision_all_images=True)
+    assert [p.name for p in captured] == ["in.png"]

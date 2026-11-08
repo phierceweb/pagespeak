@@ -86,3 +86,43 @@ def test_percent_encoded_target_matches_decoded_file(tmp_path: Path) -> None:
     out, n = degrade_missing_image_refs(text, base_dir=tmp_path)
     assert n == 0
     assert out == text
+
+
+def test_ref_file_names_decode_and_drop_query_and_fragment() -> None:
+    from pagespeak.services._image_refs import ref_file_names
+
+    assert ref_file_names("images/a.png") == ("a.png",)
+    assert ref_file_names("images/my%20shot.png") == ("my%20shot.png", "my shot.png")
+    assert ref_file_names("images/q.png?raw=1") == ("q.png?raw=1", "q.png")
+    assert ref_file_names("images/f.png#page=2") == ("f.png#page=2", "f.png")
+    assert ref_file_names("images/sub/x.png") == ("x.png",)
+
+
+def test_ref_paths_and_remote_targets() -> None:
+    from pagespeak.services._image_refs import ref_file_names, ref_paths
+
+    assert ref_paths("images/my%20shot.png?v=1") == (
+        "images/my%20shot.png?v=1",
+        "images/my shot.png?v=1",
+        "images/my shot.png",
+    )
+    for remote in (
+        "https://cdn.x.com/img/a.png?w=300",
+        "HTTP://x/a.png",
+        "//cdn/a.png",
+        "data:image/png;base64,AA",
+    ):
+        assert ref_paths(remote) == () and ref_file_names(remote) == ()
+
+
+def test_degrade_keeps_a_ref_whose_query_or_fragment_names_an_existing_file(tmp_path: Path) -> None:
+    from pagespeak.services._image_refs import degrade_missing_image_refs
+
+    (tmp_path / "images").mkdir()
+    (tmp_path / "images" / "my shot.png").write_bytes(b"x")
+    (tmp_path / "images" / "f.png").write_bytes(b"x")
+    md = "![a](images/my%20shot.png?v=1)\n\n![b](images/f.png#page=2)\n\n![c](images/gone.png?v=1)"
+    out, n = degrade_missing_image_refs(md, base_dir=tmp_path)
+    assert n == 1
+    assert "![a](images/my%20shot.png?v=1)" in out and "![b](images/f.png#page=2)" in out
+    assert "_c_" in out

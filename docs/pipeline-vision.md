@@ -1,6 +1,6 @@
 # Stage: vision
 
-Runs each extracted image through a vision model and embeds the result — a caption, and for actual diagrams a Mermaid representation — next to the image reference in the markdown. Opt-in (but on by default).
+Runs each picture the document references through a vision model and embeds the result — a caption, and for actual diagrams a Mermaid representation — next to the image reference in the markdown. A file in `images/` that no image ref in the text points at (a picture cleanup removed as furniture) is skipped and logged as `vision_unreferenced_skipped`; `--vision-all-images` captions it anyway. Opt-in (but on by default).
 
 ## What it does
 

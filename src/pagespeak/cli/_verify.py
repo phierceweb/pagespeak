@@ -13,7 +13,7 @@ from ..services._verify import verify_paths
 from ..services._verify_verdict import render_summary
 
 
-def _from_shell(path: Path) -> Path:
+def from_shell(path: Path) -> Path:
     """A relative path made absolute from the shell's working folder ($PWD) when
     that names the real one, so a folder reached through a symlink keeps the
     `out` folder its source PDF and delivery are found beside."""
@@ -73,7 +73,7 @@ def register(app: typer.Typer) -> None:
     ) -> None:
         try:
             verdicts = verify_paths(
-                [_from_shell(p) for p in paths], in_dir=in_dir, include_delivery=delivery
+                [from_shell(p) for p in paths], in_dir=in_dir, include_delivery=delivery
             )
         except InvalidInputError as exc:
             raise typer.BadParameter(str(exc)) from exc

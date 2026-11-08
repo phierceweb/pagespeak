@@ -313,6 +313,56 @@ def test_min_body_chars_defaults_to_none(monkeypatch, tmp_path: Path) -> None:
     """Unpassed stays None so the library's own default applies."""
     captured = _capture_convert_kwargs(monkeypatch, tmp_path, [])
     assert captured.get("min_body_chars") is None
+    assert captured.get("decoration_threshold") is None
+    assert captured.get("decoration_hamming_distance") is None
+
+
+def test_decoration_options_passed_through(monkeypatch, tmp_path: Path) -> None:
+    captured = _capture_convert_kwargs(
+        monkeypatch,
+        tmp_path,
+        ["--decoration-threshold", "0", "--decoration-hamming-distance", "2"],
+    )
+    assert captured.get("decoration_threshold") == 0
+    assert captured.get("decoration_hamming_distance") == 2
+
+
+def test_vision_all_images_passed_through(monkeypatch, tmp_path: Path) -> None:
+    assert _capture_convert_kwargs(monkeypatch, tmp_path, [])["vision_all_images"] is False
+    captured = _capture_convert_kwargs(monkeypatch, tmp_path, ["--vision-all-images"])
+    assert captured["vision_all_images"] is True
+
+
+@pytest.mark.parametrize("option", ["--decoration-threshold", "--decoration-hamming-distance"])
+def test_decoration_options_reject_negative(tmp_path: Path, option: str) -> None:
+    f = tmp_path / "a.docx"
+    f.write_bytes(b"PK\x03\x04stub")
+    result = runner.invoke(app, ["convert", str(f), option, "-1"])
+    assert result.exit_code == 2
+
+
+def test_explicit_decoration_option_beats_the_run_record(
+    tmp_path: Path, monkeypatch, make_run_record
+) -> None:
+    from pagespeak.cli import _convert
+    from pagespeak.models._models import IngestResult
+
+    captured: dict[str, object] = {}
+
+    def fake_to_markdown(path, **kwargs):
+        captured.update(kwargs)
+        return IngestResult(markdown="", images=[], diagrams=[], source_format="raw")
+
+    monkeypatch.setattr(_convert, "to_markdown", fake_to_markdown)
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "doc.raw.md").write_text("# Doc\n", encoding="utf-8")
+    make_run_record(out, {"decoration_hamming_distance": 2, "decoration_threshold": 7})
+    assert runner.invoke(app, ["convert", str(out)]).exit_code == 0
+    assert (captured["decoration_hamming_distance"], captured["decoration_threshold"]) == (2, 7)
+    result = runner.invoke(app, ["convert", str(out), "--decoration-hamming-distance", "12"])
+    assert result.exit_code == 0, result.output
+    assert (captured["decoration_hamming_distance"], captured["decoration_threshold"]) == (12, 7)
 
 
 def test_convert_help_names_the_extras() -> None:

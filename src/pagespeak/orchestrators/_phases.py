@@ -16,6 +16,7 @@ from pw_foundation.log import get_logger
 from pw_foundation.utils.io import atomic_write_text
 
 from ..models._models import IngestResult
+from ..services._image_files import image_files
 from ._context import PipelineContext
 from ._phase import Phase
 from ._resume import _try_resume_from_checkpoint, _try_resume_from_cleaned
@@ -49,7 +50,7 @@ def _load_input(c: PipelineContext, checkpoint: Path | None) -> None:
             "Run the upstream phase(s) first."
         )
     images_dir = c.out / "images" if c.out is not None else None
-    images = sorted(images_dir.glob("*")) if images_dir and images_dir.exists() else []
+    images = image_files(images_dir) if images_dir else []
     c.result = IngestResult(
         markdown=checkpoint.read_text(encoding="utf-8"),
         images=images,
@@ -100,7 +101,7 @@ class IngestPhase:
             )
             if result is None:
                 images_dir = out / "images" if out is not None else None
-                images = sorted(images_dir.glob("*")) if images_dir and images_dir.exists() else []
+                images = image_files(images_dir) if images_dir else []
                 result = IngestResult(
                     markdown=src.read_text(encoding="utf-8"),
                     images=images,
@@ -395,19 +396,22 @@ class VisionPhase:
                 alt_text_by_basename,
                 gather_diagrams,
                 inject_diagrams,
+                referenced_images,
             )
 
+            # Read before inject overwrites the refs: each referenced picture's source
+            # alt feeds the alt-aware prompt, and its keys are the pictures in the text.
+            alt_by_name = alt_text_by_basename(result.markdown)
             c.diagrams_handoff = gather_diagrams(
-                result.images,
+                result.images
+                if c.vision_all_images
+                else referenced_images(result.images, alt_by_name),
                 backend_name=c.vision_backend,  # type: ignore[arg-type]
                 model=c.vision_model,
                 cache_dir=c.out / ".vision-cache" if c.out is not None else None,
                 concurrency=c.vision_concurrency,
                 cache_only=c.vision_cache_only,
-                # The figure's existing source alt text → the alt-aware prompt
-                # (correct/keep/enrich). Read from the structured checkpoint
-                # before inject overwrites the refs.
-                alt_by_basename=alt_text_by_basename(result.markdown),
+                alt_by_basename=alt_by_name,
             )
             result.markdown = inject_diagrams(
                 result.markdown, c.diagrams_handoff, preserve_alt=c.preserve_alt

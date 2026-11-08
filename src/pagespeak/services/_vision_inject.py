@@ -10,7 +10,7 @@ here, so the public + test surface is unchanged.
 from __future__ import annotations
 
 from ..models._models import Diagram
-from ._image_refs import ImageRef, parse_image_refs, replace_image_refs
+from ._image_refs import ImageRef, parse_image_refs, ref_file_names, replace_image_refs
 
 
 def alt_text_by_basename(markdown: str) -> dict[str, str]:
@@ -22,7 +22,8 @@ def alt_text_by_basename(markdown: str) -> dict[str, str]:
     """
     out: dict[str, str] = {}
     for ref in parse_image_refs(markdown):
-        out.setdefault(ref.target.rsplit("/", 1)[-1], ref.alt)
+        for name in ref_file_names(ref.target):
+            out.setdefault(name, ref.alt)
     return out
 
 
@@ -71,7 +72,7 @@ def _inject_diagrams(
 
     def repl(image: ImageRef) -> str | None:
         path = image.target
-        diagram = diagrams.get(path.rsplit("/", 1)[-1])
+        diagram = next((diagrams[n] for n in ref_file_names(path) if n in diagrams), None)
         if not diagram:
             return None
         # Faithful mode keeps the source alt verbatim and only appends Mermaid;

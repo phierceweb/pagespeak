@@ -2,6 +2,23 @@
 
 Notable changes to pagespeak, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## 0.22.0
+
+### Added
+- **`pagespeak pictures`**: settle a converted document's pictures before paying for captions. Prints how many pictures the text uses and how many have a cached caption, each picture with no label or one that says nothing about it, and verify's `picture_coverage` and `printed_titles` checks; writes a contact sheet of every file in `images/` that vision may send to `.pagespeak-pictures.html` beside the master. Read-only apart from the sheet, $0, no LLM; never fails. See `docs/verify.md`.
+- **`--decoration-threshold` and `--decoration-hamming-distance` on `convert`**: the decoration pass's two settings, which a run record already carried, can be set from the command line.
+- **`--vision-all-images`** (`vision_all_images=True`): caption every file at the top of `images/` (no dot-files or folders), not only the pictures the text references; use it to fill the vision cache ahead of a cleanup re-run.
+
+### Changed
+- **Vision captions only the pictures the document's text references.** A file in `images/` that no image ref points at, such as a picture cleanup removed as page furniture, is no longer sent to the vision model; the run logs `vision_unreferenced_skipped` with the count, and `result.diagrams` holds the referenced pictures only. The web console counts every file in `images/`, including SVG and other pictures that are never cached and so are paid for on every run, as an upper bound that says "up to"; its image counts and the vision phase list the same files (no dot-files or folders). An image ref whose target is `%`-encoded or carries a query or fragment now gets its picture's caption and keeps its picture; a scheme-relative (`//host/…`) or upper-case `HTTP:` ref is treated as remote, never matched to a local file or turned into its caption.
+- Requires `markitdown >=0.1.6,<0.2`: the HTML path uses its stream API and the charset its HTML reading picks.
+
+### Fixed
+- **Large pictures a document uses once or twice are no longer taken for page furniture.** A picture at least 200×200 pixels, used at most twice counting near-identical copies, stays in the text even when it looks like other pictures, unless as many refs in its look-alike group as the decoration threshold share its description, case and spacing aside (a filler label such as "User-added image" does not count): on help sites every screenshot shares the device frame, and distinct screens lost the picture and kept only their description. `PAGESPEAK_DECORATION_KEEP_MIN_PX` and `PAGESPEAK_DECORATION_KEEP_MAX_USES` tune it. Re-run from cleanup without new vision calls (`--from cleanup --vision-cache-only`) to apply it to an existing conversion; a picture with no perceptual hash, such as an SVG, has no cached caption and loses it on such a run.
+- **HTML text that starts with `#` stays text.** A paragraph, line, list item or quote such as `<p># comment</p>` (the `#` typed, or written `&#35;`) converted to a heading, or, as a bare `#`, was dropped as an empty one; its `#` is now escaped (`\#`). Text inside code keeps its `#`. A page whose only top-level heading was such a line now gets its `<title>` as its H1. Re-ingest (`--rerun-from ingest`) to apply it to an existing conversion.
+- **HTML pages in UTF-8 keep their letters outside ASCII.** A page that starts with a UTF-8 byte-order mark, or whose bytes are UTF-8 with few NUL bytes and no escape byte, is read as UTF-8; any other page is decoded exactly as MarkItDown decodes the file, as before, so a page in another charset keeps MarkItDown's guess. A page with MathML in another charset lost its letters, and a short UTF-8 page could be read in another charset. Re-ingest (`--rerun-from ingest`) to apply it to an existing conversion.
+- **An installed pagespeak sends `llm_full` and `llm_dehead` heading normalize under `claude_code` up to 900,000 input tokens**, as a repo checkout does; the bundled model router had 800,000.
+
 ## 0.21.0
 
 ### Added

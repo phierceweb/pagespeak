@@ -53,7 +53,7 @@
         <tr><td class="p-2 border-b mono">normalize</td><td class="p-2 border-b">Optional: fix flattened heading levels (textbook-style docs where everything is one depth). Off unless enabled.</td><td class="p-2 border-b mono">.normalized.md</td></tr>
         <tr><td class="p-2 border-b mono">repair</td><td class="p-2 border-b">Deterministic ($0) post-normalize heading fixes.</td><td class="p-2 border-b mono">.repaired.md</td></tr>
         <tr><td class="p-2 border-b mono">structure</td><td class="p-2 border-b">Deterministic ($0) whole-document heading restructuring (demote flat sources, rebalance stray top-level headings); no-op when the hierarchy is already healthy.</td><td class="p-2 border-b mono">.structured.md</td></tr>
-        <tr><td class="p-2 border-b mono">vision</td><td class="p-2 border-b">Run the vision LLM on each extracted image; embed a Mermaid diagram + caption for diagrams, caption-only for photos/screenshots. <strong>This is the LLM-spending phase.</strong></td><td class="p-2 border-b mono">.visioned.md → &lt;stem&gt;.md</td></tr>
+        <tr><td class="p-2 border-b mono">vision</td><td class="p-2 border-b">Run the vision LLM on each picture the document references; embed a Mermaid diagram + caption for diagrams, caption-only for photos/screenshots. <strong>This is the LLM-spending phase.</strong></td><td class="p-2 border-b mono">.visioned.md → &lt;stem&gt;.md</td></tr>
         <tr><td class="p-2 mono">split</td><td class="p-2">Optional: also write one file per section under <span class="mono">sections/</span>.</td><td class="p-2 mono">sections/</td></tr>
       </tbody>
     </table>
@@ -98,7 +98,7 @@
     </p>
     <ul class="text-sm text-slate-700 list-disc ml-5 space-y-1">
       <li>The vision backend defaults to <span class="mono">claude_code</span>, which is <strong>$0</strong> (it draws on your Claude Max plan rather than a paid API).</li>
-      <li>Before any live vision run, a confirmation card shows the exact <strong>cache-miss count</strong> — e.g. <em>"40 images · 31 cached · 9 live calls"</em> — and you must confirm.</li>
+      <li>Before any live vision run, a confirmation card shows the exact <strong>cache-miss count</strong> — e.g. <em>"40 images · 31 cached · up to 9 live calls"</em> — and you must confirm.</li>
       <li>A <strong>paid</strong> backend is <strong>blocked</strong> when the image count isn't known yet (the document hasn't been ingested), so you never approve an un-estimable spend. Run ingest first, then vision.</li>
       <li>Descriptions are cached by the image's content (perceptual hash), so re-running an unchanged document is free — switching engines or tinkering with other phases reuses the cache.</li>
     </ul>

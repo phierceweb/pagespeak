@@ -82,3 +82,38 @@ def test_an_unused_picture_is_a_note_unless_the_build_cut_it(tmp_path: Path) -> 
 
     cut = check_orphan_images(doc, pictures={"unused.png"})
     assert [f.blocking for f in cut.findings] == [True]
+
+
+def test_a_picture_ref_with_a_query_or_fragment_finds_its_file(tmp_path: Path) -> None:
+    doc = _doc(
+        tmp_path, "![a](images/my%20shot.png?v=1)\n\n![b](images/f.png#p2)\n\n![c](images/C#.png)\n"
+    )
+    picture(tmp_path / "images" / "my shot.png", 0)
+    picture(tmp_path / "images" / "f.png", 1)
+    picture(tmp_path / "images" / "C#.png", 2)  # the path as written wins over the fragment reading
+    assert check_image_links(doc).findings == ()
+
+
+def test_the_path_as_written_wins_over_dropping_a_fragment(tmp_path: Path) -> None:
+    from pagespeak.services._verify_output import local_target
+
+    picture(tmp_path / "images" / "C#.png", 0)
+    (tmp_path / "images" / "C").write_bytes(b"x")
+    assert local_target(tmp_path / "book.md", "images/C#.png") == tmp_path / "images" / "C#.png"
+
+
+@pytest.mark.parametrize(
+    ("target", "remote"),
+    [
+        ("data:image/png;base64,AA", True),
+        ("HTTP://x.org/a.png", True),
+        ("//cdn.x.org/a.png", True),
+        ("https://x.org/a.png", True),
+        ("images/a.png", False),
+        ("images/http-diagram.png", False),
+    ],
+)
+def test_is_remote(target: str, remote: bool) -> None:
+    from pagespeak.services._verify_output import is_remote
+
+    assert is_remote(target) is remote

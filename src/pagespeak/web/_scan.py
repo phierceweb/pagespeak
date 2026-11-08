@@ -13,6 +13,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from pagespeak.services._image_files import image_files
 from pagespeak.services._staging import staged_sources
 from pagespeak.web._config import WebConfig
 
@@ -36,8 +37,6 @@ _CHECKPOINT_SUFFIX: dict[str, str] = {
     "structure": ".structured.md",
     "vision": ".visioned.md",
 }
-
-_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff"}
 
 
 @dataclass(frozen=True)
@@ -95,10 +94,7 @@ def _phase_map(out_dir: Path, stem: str | None) -> dict[str, bool]:
 
 
 def _image_count(out_dir: Path) -> int:
-    images = out_dir / "images"
-    if not images.is_dir():
-        return 0
-    return sum(1 for f in images.iterdir() if f.suffix.lower() in _IMAGE_EXTS)
+    return len(image_files(out_dir / "images"))
 
 
 def _build_conversion(cfg: WebConfig, dir_name: str, out_dir: Path) -> Conversion:

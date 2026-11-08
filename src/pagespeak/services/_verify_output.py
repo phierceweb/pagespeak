@@ -8,33 +8,31 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from urllib.parse import unquote
 
 from pw_foundation.log import get_logger
 
 from ..utils._phash import compute_phash
 from ._deliver import is_delivered
-from ._image_refs import parse_image_refs
+from ._image_refs import EXTERNAL_SCHEMES, parse_image_refs, ref_paths
 from ._verify_doc import VerifyDoc
 from ._verify_finding import CheckResult, VerifyFinding, finding_key
 
 logger = get_logger(__name__)
 
-_EXTERNAL = ("http://", "https://", "data:")
 _MERMAID_TAG_RE = re.compile(r'pagespeak-image="([^"]+)"')
 
 
 def is_remote(target: str) -> bool:
     """A URL (any letter case, or scheme-relative `//host/…`) or inline data rather than a local file."""
-    return target.lower().startswith(_EXTERNAL) or target.startswith("//")
+    return target.lower().startswith(EXTERNAL_SCHEMES) or target.startswith("//")
 
 
 def local_target(md: Path, target: str) -> Path | None:
-    """The file a local ref points at (decoded when `%`-encoded); None for a remote one."""
-    if not target or is_remote(target):
+    """The file a local ref points at (see `ref_paths`); None for a remote one."""
+    paths = ref_paths(target)
+    if not paths:
         return None
-    plain = md.parent / target
-    return plain if plain.exists() else md.parent / unquote(target)
+    return next((md.parent / p for p in paths if (md.parent / p).exists()), md.parent / paths[-1])
 
 
 def _text(doc: VerifyDoc, md: Path) -> str:

@@ -30,6 +30,7 @@ def _ctx(**over: object) -> PipelineContext:
         vision_model=None,
         vision_concurrency=None,
         vision_cache_only=False,
+        vision_all_images=False,
         preserve_alt=False,
         force_ocr=False,
         device=None,

@@ -32,17 +32,24 @@ def test_version_matches_pyproject() -> None:
 
 
 def test_changelog_newest_section_matches_version() -> None:
-    """CHANGELOG.md's first `## ` heading names `__version__`.
+    """CHANGELOG.md's first `## ` heading names `__version__`, or is a
+    `## Unreleased` section with entries standing directly above it.
 
-    Catches both shapes of release drift: a stale top version, and an
-    `## Unreleased` section left standing above the version being shipped.
+    Catches both shapes of release drift: a stale top version, and an empty
+    `## Unreleased` heading left standing above the version being shipped.
     """
     changelog = Path(__file__).resolve().parents[1] / "CHANGELOG.md"
-    text = changelog.read_text(encoding="utf-8")
-    headings = re.findall(r"^## (.+)$", text, re.MULTILINE)
-    assert headings, "CHANGELOG.md has no `## ` section headings"
-    assert headings[0] == pagespeak.__version__, (
-        f"CHANGELOG.md's newest section is `## {headings[0]}` but __version__ is "
+    sections = re.split(r"^## ", changelog.read_text(encoding="utf-8"), flags=re.MULTILINE)[1:]
+    assert sections, "CHANGELOG.md has no `## ` section headings"
+    headings = [s.split("\n", 1)[0].strip() for s in sections]
+    if headings[0] == "Unreleased":
+        assert re.search(r"^[-*] ", sections[0], re.MULTILINE), (
+            "`## Unreleased` has no entries; remove it"
+        )
+        headings = headings[1:]
+    newest = headings[0] if headings else None
+    assert newest == pagespeak.__version__, (
+        f"CHANGELOG.md's newest version section is `## {newest}` but __version__ is "
         f"{pagespeak.__version__}; fold finished work into `## {pagespeak.__version__}`"
     )
 

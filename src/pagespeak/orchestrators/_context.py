@@ -48,6 +48,7 @@ class PipelineContext:
     vision_model: str | None
     vision_concurrency: int | None
     vision_cache_only: bool
+    vision_all_images: bool
     preserve_alt: bool
     force_ocr: bool
     device: str | None

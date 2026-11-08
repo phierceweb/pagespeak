@@ -198,7 +198,21 @@ def replace_image_refs(text: str, repl: Callable[[ImageRef], str | None]) -> tup
     return "".join(out), count
 
 
-_EXTERNAL_SCHEMES = ("http://", "https://", "data:")
+EXTERNAL_SCHEMES = ("http://", "https://", "data:")
+
+
+def ref_paths(target: str) -> tuple[str, ...]:
+    """The relative paths a local ref may name, in order: as written, `%`-decoded, and
+    decoded with any query or fragment dropped. Empty for a remote or data target."""
+    if not target or target.lower().startswith(EXTERNAL_SCHEMES) or target.startswith("//"):
+        return ()
+    found = [target, unquote(target), unquote(target.split("?", 1)[0].split("#", 1)[0])]
+    return tuple(dict.fromkeys(p for p in found if p))
+
+
+def ref_file_names(target: str) -> tuple[str, ...]:
+    """The file names a local ref may point at: the last segment of each of `ref_paths`."""
+    return tuple(dict.fromkeys(p.rsplit("/", 1)[-1] for p in ref_paths(target)))
 
 
 def degrade_missing_image_refs(text: str, *, base_dir: Path | None) -> tuple[str, int]:
@@ -215,12 +229,8 @@ def degrade_missing_image_refs(text: str, *, base_dir: Path | None) -> tuple[str
         return text, 0
 
     def _repl(ref: ImageRef) -> str | None:
-        target = ref.target
-        if target.startswith(_EXTERNAL_SCHEMES) or not target:
-            return None
-        # A `%`-encoded target (`My%20Fig.png`) resolves to its decoded file
-        # (`My Fig.png`) — check both so a real image isn't wrongly degraded.
-        if (base_dir / target).exists() or (base_dir / unquote(target)).exists():
+        paths = ref_paths(ref.target)
+        if not paths or any((base_dir / p).exists() for p in paths):
             return None
         alt = ref.alt.strip()
         return f"_{alt}_" if alt else ""

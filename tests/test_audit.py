@@ -30,7 +30,9 @@ def test_dangling_image_ref_resolves_percent_encoded(tmp_path: Path) -> None:
     not be reported as dangling (a writer may emit `%20` for a spaced name)."""
     (tmp_path / "images").mkdir()
     (tmp_path / "images" / "My Fig.png").write_bytes(b"x")
-    md = _write(tmp_path / "doc.md", "![f](images/My%20Fig.png)\n")
+    md = _write(
+        tmp_path / "doc.md", "![f](images/My%20Fig.png)\n\n![g](images/My%20Fig.png?v=1#p2)\n"
+    )
     assert check_dangling_image_refs(md) == []
 
 

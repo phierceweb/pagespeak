@@ -18,13 +18,12 @@ from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import unquote
 
 from ._audit_checks import AuditFinding, run_text_checks
 from ._audit_coverage import check_text_coverage
 from ._audit_extraction import run_extraction_checks
 from ._audit_lost_column import check_lost_column_against
-from ._image_refs import parse_image_refs
+from ._image_refs import parse_image_refs, ref_paths
 
 _CHECKPOINT_SUFFIXES = (
     ".raw.md",
@@ -38,7 +37,6 @@ _MAX_SHOWN_PER_CHECK = 3  # per file, in the rendered report
 _MAX_NAMED_NO_SOURCE = 10
 
 _PAGE_ANCHOR_RE = re.compile(r'<span id="page-\d+-\d+"></span>\s*')
-_EXTERNAL_SCHEMES = ("http://", "https://", "data:")
 
 
 @dataclass(frozen=True)
@@ -120,10 +118,10 @@ def check_dangling_image_refs(path: Path, text: str | None = None) -> list[Audit
     findings: list[AuditFinding] = []
     for ref in parse_image_refs(text):
         target = ref.target
-        if target.startswith(_EXTERNAL_SCHEMES) or not target:
+        paths = ref_paths(target)
+        if not paths:
             continue
-        # A `%`-encoded target resolves to its decoded file on disk; check both.
-        if not ((path.parent / target).exists() or (path.parent / unquote(target)).exists()):
+        if not any((path.parent / p).exists() for p in paths):
             findings.append(
                 AuditFinding(
                     check="dangling_image_ref",

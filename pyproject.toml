@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pagespeak"
-version = "0.21.0"
+version = "0.22.0"
 description = "Convert PDF, Word, and other documents into retrieval-ready markdown — one document or a whole corpus, diagrams turned to Mermaid."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -27,7 +27,7 @@ dependencies = [
     "anthropic>=0.39.0,<1.0",
     "beautifulsoup4>=4.12",
     "markdownify>=0.13",
-    "markitdown[docx,pptx,xlsx,outlook]>=0.0.1a3",
+    "markitdown[docx,pptx,xlsx,outlook]>=0.1.6,<0.2",
     "pw-foundation~=1.0",
     # pw-core's phash refuses the image formats whose decoders carry CVEs in the pdf extra's Pillow 10.4.
     "pw-core[tracking,llm]~=1.0",
@@ -143,6 +143,7 @@ ignore = ["E501"]
 "src/pagespeak/cli/_repair.py" = ["B008"]  # Typer uses function calls in argument defaults
 "src/pagespeak/cli/_vision_audit.py" = ["B008"]  # Typer uses function calls in argument defaults
 "src/pagespeak/cli/_verify.py" = ["B008"]  # Typer uses function calls in argument defaults
+"src/pagespeak/cli/_pictures.py" = ["B008"]  # Typer uses function calls in argument defaults
 "tests/*" = ["B011"]
 
 [tool.mypy]

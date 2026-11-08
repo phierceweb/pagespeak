@@ -18,6 +18,7 @@ from docx.text.paragraph import Paragraph
 from pw_foundation.log import get_logger
 
 from ..models._models import IngestResult
+from ..services._image_files import image_files
 from ._docx_images import _emit_images
 from ._docx_numbering import ORDERED_DEFAULT, WordNumbering, build_level_defs
 from ._docx_numpr import paragraph_numbering
@@ -336,11 +337,7 @@ def convert_structured(
 
         return convert_with_markitdown(path, output_dir=output_dir)
 
-    images: list[Path] = []
-    if output_dir is not None:
-        img_dir = output_dir / "images"
-        if img_dir.is_dir():
-            images = sorted(img_dir.iterdir())
+    images = image_files(output_dir / "images") if output_dir is not None else []
     return IngestResult(
         markdown=markdown,
         images=images,

@@ -25,6 +25,7 @@ from ._convert import register as _register_convert
 from ._deliver import register as _register_deliver
 from ._ingest import register as _register_ingest
 from ._invalidate import register as _register_invalidate
+from ._pictures import register as _register_pictures
 from ._repair import register as _register_repair
 from ._verify import register as _register_verify
 from ._vision_audit import register as _register_vision_audit
@@ -153,6 +154,7 @@ _register_invalidate(app)
 _register_baseline(app)
 _register_deliver(app)
 _register_verify(app)
+_register_pictures(app)
 _register_audit(app)
 _register_vision_audit(app)
 _register_repair(app)

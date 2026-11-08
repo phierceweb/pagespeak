@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import io
 import re
-import tempfile
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -10,8 +10,10 @@ from pw_foundation.log import get_logger
 
 from ..models._models import IngestResult
 from ..services._image_refs import ImageRef, replace_image_refs
+from ..utils._hash_escape import escape_marked_hashes, mark_leading_hashes
 from ..utils._mathml import prepare_mathml_for_markdown, restore_math
 from ._archive import ArchiveBudget, copy_member
+from ._html_decode import read_html
 
 logger = get_logger(__name__)
 
@@ -43,15 +45,12 @@ def _strip_dead_data_uri_images(md: str) -> str:
 
 
 def _convert_html_string(converter: Any, html: str) -> Any:
-    """Convert an in-memory HTML string via markitdown (which reads files) by
-    routing it through a temp ``.html`` file so the format is detected."""
-    with tempfile.NamedTemporaryFile("w", suffix=".html", delete=False, encoding="utf-8") as f:
-        f.write(html)
-        tmp = f.name
-    try:
-        return converter.convert(tmp)
-    finally:
-        Path(tmp).unlink(missing_ok=True)
+    """Convert an in-memory HTML string via markitdown, stating its UTF-8
+    encoding so a `<meta charset>` in the text cannot override it."""
+    from markitdown import StreamInfo
+
+    info = StreamInfo(extension=".html", mimetype="text/html", charset="utf-8")
+    return converter.convert_stream(io.BytesIO(html.encode("utf-8")), stream_info=info)
 
 
 _TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
@@ -92,17 +91,20 @@ def _run_markitdown(converter: Any, path: Path) -> str:
     so markitdown never sees (and can't mangle) it."""
     math_map: dict[str, str] = {}
     html: str | None = None
+    marked = False
     if path.suffix.lower() in (".html", ".htm"):
-        html = path.read_text(encoding="utf-8", errors="replace")
+        html = read_html(converter, path)
         tokenized, math_map = prepare_mathml_for_markdown(html)
-        result = (
-            _convert_html_string(converter, tokenized) if math_map else converter.convert(str(path))
-        )
+        prepared = mark_leading_hashes(tokenized)
+        marked = prepared is not tokenized
+        result = _convert_html_string(converter, prepared)
     else:
         result = converter.convert(str(path))
     text = result.text_content or ""
     if math_map:
         text = restore_math(text, math_map)
+    if marked:
+        text = escape_marked_hashes(text)
     if html is not None:
         text = _apply_html_title_as_h1(text, html)
     return _strip_dead_data_uri_images(text)

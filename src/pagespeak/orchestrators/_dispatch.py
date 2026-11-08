@@ -45,6 +45,7 @@ def to_markdown(
     vision_model: str | None = None,
     vision_concurrency: int | None = None,
     vision_cache_only: bool = False,
+    vision_all_images: bool = False,
     preserve_alt: bool = False,
     force_ocr: bool = False,
     device: str | None = None,
@@ -106,6 +107,8 @@ def to_markdown(
         vision_cache_only: Use ONLY the on-disk `.vision-cache/` — zero backend
             calls; uncached images are skipped (caption-only) with a WARNING.
             ValueError if combined with `diagrams=False`.
+        vision_all_images: Caption every file in `images/`, not only the
+            pictures the document's text references (fills the cache).
         preserve_alt: Faithful mode — keep each figure's existing alt verbatim,
             append only Mermaid (the caption is cached, not injected).
         force_ocr: PDF-only. Force surya OCR even on text-bearing PDFs.
@@ -227,6 +230,7 @@ def to_markdown(
             vision_model=vision_model,
             vision_concurrency=vision_concurrency,
             vision_cache_only=vision_cache_only,
+            vision_all_images=vision_all_images,
             preserve_alt=preserve_alt,
             cleanup=cleanup,
             cross_refs=cross_refs if not _cross_refs_was_default else None,
@@ -325,6 +329,7 @@ def to_markdown(
             vision_model=vision_model,
             vision_concurrency=vision_concurrency,
             vision_cache_only=vision_cache_only,
+            vision_all_images=vision_all_images,
             source_type=source_type,
             source_label=source_label,
             answer_key=answer_key,
@@ -377,6 +382,7 @@ def to_markdown(
         vision_model=vision_model,
         vision_concurrency=vision_concurrency,
         vision_cache_only=vision_cache_only,
+        vision_all_images=vision_all_images,
         preserve_alt=preserve_alt,
         force_ocr=force_ocr,
         device=device,

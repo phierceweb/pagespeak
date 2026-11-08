@@ -1382,6 +1382,7 @@ def test_vision_phase_threads_cache_only(monkeypatch, tmp_path):
         vision_model=None,
         vision_concurrency=None,
         vision_cache_only=True,
+        vision_all_images=False,
         preserve_alt=False,
         force_ocr=False,
         device=None,
@@ -1693,3 +1694,25 @@ def test_to_markdown_docstring_lists_every_rerun_stage() -> None:
     doc = to_markdown.__doc__ or ""
     missing = [s.name for s in PAGESPEAK_REGISTRY.stages if f'"{s.name}"' not in doc]
     assert not missing, f"to_markdown docstring omits stages: {missing}"
+
+
+@pytest.mark.parametrize("all_images", [False, True])
+def test_to_markdown_hands_the_flag_to_the_export(
+    tmp_path: Path, monkeypatch, all_images: bool
+) -> None:
+    from pagespeak import to_markdown
+    from pagespeak.models._models import IngestResult
+    from pagespeak.orchestrators import _qti_export
+
+    export = tmp_path / "export"
+    export.mkdir()
+    (export / "imsmanifest.xml").write_text("<manifest/>", encoding="utf-8")
+    seen: dict[str, object] = {}
+
+    def fake_run(src, out, **kwargs):
+        seen.update(kwargs)
+        return IngestResult(markdown="", images=[], source_format="qti")
+
+    monkeypatch.setattr(_qti_export, "run_qti_export", fake_run)
+    to_markdown(export, output_dir=tmp_path / "out", vision_all_images=all_images)
+    assert seen["vision_all_images"] is all_images

@@ -16,6 +16,7 @@ For AI assistants: a verdict is only as strong as the checks that ran. Read the 
 - [Accepting a finding](#accepting-a-finding)
 - [The source map](#the-source-map)
 - [The deliver gate](#the-deliver-gate)
+- [Before paying for captions: `pagespeak pictures`](#before-paying-for-captions-pagespeak-pictures)
 - [Tuning](#tuning)
 - [What verify does not do](#what-verify-does-not-do)
 - [Adding a new check](#adding-a-new-check)
@@ -108,6 +109,20 @@ Do not:
 There is no flag to skip the gate. To hand off a document whose finding is a known, accepted state, accept that finding. Deliver hands off a folder's `sections/` and `images/` only beside its master, leaves dot-files out, and refuses a `sections/`, `images/` or `chunks/` folder given as the source. A source holding no document delivers nothing and leaves the last delivery in place.
 
 `strip_for_delivery()` itself is ungated; library callers that need the gate call `deliver()`.
+
+## Before paying for captions: `pagespeak pictures`
+
+Verify judges a finished document. `pagespeak pictures` is for the step before the vision run: settle which pictures exist and what they are called, then caption once.
+
+```bash
+pagespeak convert source.pdf -o conversions/out/<doc> --no-diagrams   # build without captions
+pagespeak pictures conversions/out/<doc>                              # look before paying
+pagespeak convert conversions/out/<doc> --from vision                 # caption once
+```
+
+For each document it prints how many pictures the text uses and how many more files sit in `images/` unused, how many already have a cached caption (the rest have none yet), how many have no label, and each label that says nothing about its picture ("User-added image", "Activity 5 picture", a file name) by the same rule the `captions` check uses. Labels are read from the last checkpoint before vision, where each picture still has its source label. It also runs `picture_coverage` and `printed_titles` against the source PDF, with the same "did not run" reasons as verify. Fix a silent label at its source (the printed caption, box title or table row it belongs to), not by giving vision more context.
+
+Only files at the top of `images/` are listed, the files vision may send; a picture in a subfolder is not counted. It writes `<doc>/.pagespeak-pictures.html`, a contact sheet of every picture with its size, label and state, grouped into silent or missing labels, labelled pictures, and files the text does not use. It is a dot-file, so `deliver` leaves it out and verify's fingerprint ignores it. The command is read-only apart from the sheet, $0, and never fails a document.
 
 ## Tuning
 

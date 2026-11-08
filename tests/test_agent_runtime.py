@@ -166,7 +166,7 @@ def test_packaged_default_bootstrap_when_no_cwd_or_env(
     # `max_input_tokens` is a non_chat_keys option: stripped from chat
     # kwargs, read via the seam's agent_option instead.
     assert "max_input_tokens" not in cfg
-    assert agent_option("heading_normalize_full", "max_input_tokens") == 800000
+    assert agent_option("heading_normalize_full", "max_input_tokens") == 900000
 
 
 def test_get_agent_config_unknown_slug_raises() -> None:

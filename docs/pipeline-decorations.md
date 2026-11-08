@@ -8,6 +8,7 @@ Handles repeated page-furniture images — running page headers, footer logos, w
 2. Clusters near-duplicate phashes by Hamming distance (`decoration_hamming_distance`, default 12).
 3. A cluster whose size meets `decoration_threshold` (default 5) is treated as decoration. What happens to each ref depends on how sure the match is:
    - **Near-exact duplicate** (`EXACT_DUPLICATE_HAMMING_DISTANCE`, 2) → the ref is removed. This is the same image again, so its alt text is a label, not a description; a repeated UI icon reading "Add" is furniture either way.
+   - **Merely similar, large, and used at most twice under its own description** → left alone. A picture at least 200×200 pixels that the text uses once or twice is content: on a help site every screenshot sits in the same device frame, so distinct screens hash alike. Uses count every ref to any near-exact copy (a ref's file name is read decoded, query and fragment dropped), so one picture saved as a file per page is used once per page. A description that as many refs in the picture's own look-alike group share as the threshold names (case and spacing aside) labels furniture whatever the copies' distance, and those refs degrade to their caption; a filler label ("User-added image", a file name, a bare figure number) does not count. Tunable with `PAGESPEAK_DECORATION_KEEP_MIN_PX` (`0`: any size) and `PAGESPEAK_DECORATION_KEEP_MAX_USES` (`0`: rule off).
    - **Merely similar, with a real description** → the ref degrades to an italic caption, the same treatment a dangling ref gets. The description survives even when the cluster was wrong. A synthesised alt that is just the image's filename does not count as a description.
    - **Merely similar, with nothing to preserve** → left alone. Deleting it would destroy content on a guess.
 
@@ -20,7 +21,7 @@ Because this runs inside cleanup, refs extracted from PDFs are still alt-less at
 ## When it runs
 
 - **Always**, whenever the document has extracted images and an `output_dir`. Set `decoration_threshold=0` to disable.
-- Tunables: `decoration_threshold` (cluster-size cutoff; `0` = off), `decoration_hamming_distance` (near-duplicate grouping width).
+- Tunables: `decoration_threshold` (cluster-size cutoff; `0` = off), `decoration_hamming_distance` (near-duplicate grouping width), on `convert` as `--decoration-threshold` and `--decoration-hamming-distance`; both are recorded in `.pagespeak-run.json` and inherited by a re-run.
 
 ## Inputs
 
