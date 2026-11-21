@@ -123,3 +123,67 @@ def test_link_artifact_only_preamble_folds() -> None:
     sections = _parse_sections(lines, min_level=1)
     assert [s.title for s in sections] == ["Intro"]
     assert any("logo.png" in line for line in sections[0].content_lines)
+
+
+_AUTHORED_DOC = [
+    "# Guide",
+    "Guide body.",
+    "## 5.1 Thing",
+    "Thing body.",
+    "### 5.1.2 Sub",
+    "Sub body.",
+]
+
+_CHAPTER_DOC = [
+    "# Book",
+    "Book body.",
+    "## Chapter 2 Gears",
+    "Gears body.",
+    "## 2.1 Teeth",
+    "Teeth body.",
+]
+
+
+def _by_title(lines: list[str], **kwargs: object) -> dict[str, object]:
+    return {s.title: s for s in _parse_sections(lines, **kwargs)}  # type: ignore[arg-type]
+
+
+def test_parse_sections_authored_parents_by_level() -> None:
+    sections = _by_title(_AUTHORED_DOC, min_level=1, authored_levels=True)
+    thing, sub = sections["5.1 Thing"], sections["5.1.2 Sub"]
+    assert thing.number is None
+    assert thing.parent.title == "Guide"
+    assert sub.number is None
+    assert sub.parent.title == "5.1 Thing"
+
+
+def test_parse_sections_authored_same_level_numbers_are_siblings() -> None:
+    sections = _by_title(_CHAPTER_DOC, min_level=1, authored_levels=True)
+    assert sections["Chapter 2 Gears"].parent.title == "Book"
+    assert sections["2.1 Teeth"].parent.title == "Book"
+
+
+def test_parse_sections_authored_heading_line_verbatim() -> None:
+    authored = _by_title(_AUTHORED_DOC, min_level=1, authored_levels=True)
+    assert authored["5.1 Thing"].heading_line == "## 5.1 Thing"
+    chapter = _by_title(_CHAPTER_DOC, min_level=1, authored_levels=True)
+    assert chapter["Chapter 2 Gears"].heading_line == "## Chapter 2 Gears"
+
+
+def test_parse_sections_authored_min_level_none_finds_no_sections() -> None:
+    parsed = _parse_sections(_AUTHORED_DOC, min_level=None, authored_levels=True)
+    assert [s for s in parsed if not s.is_preamble] == []
+
+
+def test_parse_sections_authored_numbered_h1_ancestor_only_below_min_level() -> None:
+    lines = ["# 1 Guide", "## 1.1 Part", "Part body."]
+    sections = _by_title(lines, min_level=2, authored_levels=True)
+    assert sections["1 Guide"].is_ancestor_only is True
+    assert sections["1.1 Part"].is_ancestor_only is False
+    assert sections["1.1 Part"].parent is sections["1 Guide"]
+
+
+def test_parse_sections_default_still_numbers() -> None:
+    sections = {s.title: s for s in _parse_sections(_AUTHORED_DOC, min_level=1)}
+    assert sections["Thing"].number == "5.1"
+    assert sections["Thing"].heading_line == "## 5.1. Thing"

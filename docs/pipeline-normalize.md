@@ -8,7 +8,7 @@ Gathers the document's structural heading list, computes a level rewrite, and ap
 
 | Mode | Cost | Notes |
 |---|---|---|
-| `heuristic` (default) | $0, instant | Numbering-based rules for `Chapter N` / `N.M.O` patterns. No LLM call, no cache. |
+| `heuristic` (default) | $0, instant | Numbering-based rules for `Chapter N` / `N.M.O` patterns. No LLM call, no cache. Changes nothing when every heading is the author's (HTML). |
 | `llm` | one Claude call (~30–60s) | Sends the heading list; handles unusual front-matter / non-numbered chapters. |
 | `llm_full` | one Claude call | Sends headings **plus** body-context anchors so the model reasons from prose. |
 

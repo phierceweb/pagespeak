@@ -278,6 +278,7 @@ class NormalizePhase:
                 apply_normalization,
                 gather_normalize_levels,
             )
+            from ..services._hierarchy_trust import authored_headings
             from ..services._normalize_decision import (
                 resolve_normalize_mode,
                 route_authoritative_hierarchy,
@@ -302,6 +303,7 @@ class NormalizePhase:
                 mode=mode,  # "auto" already resolved to a concrete mode above
                 cache_dir=c.out / ".heading-normalize-cache",
                 model=c.normalize_headings_model,
+                authored_levels=authored_headings(c.out, in_memory=result.authored_headings),
             )
             result.markdown = apply_normalization(result.markdown, normalize_handoff)
 

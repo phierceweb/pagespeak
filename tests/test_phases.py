@@ -318,3 +318,40 @@ def test_a_rerun_resuming_from_raw_sends_vision_only_top_level_files(tmp_path, m
     )
     to_markdown(src, output_dir=out, diagrams=True, vision_all_images=True)
     assert [p.name for p in captured] == ["in.png"]
+
+
+def test_normalize_keeps_an_html_documents_heading_levels(tmp_path: Path) -> None:
+    src = tmp_path / "motion.html"
+    src.write_text(
+        "<html><body><h1>Motion Book</h1><p>Intro.</p>"
+        "<h2>2 Forces</h2><p>Forces body.</p><h3>2.1 Push</h3><p>Push body.</p>"
+        "<h2>3 Motion</h2><p>Motion body.</p><h3>3.1 Speed</h3><p>Speed body.</p>"
+        "<h3>3.2 Velocity</h3><p>Velocity body.</p></body></html>",
+        encoding="utf-8",
+    )
+    out = tmp_path / "out"
+    to_markdown(
+        src,
+        output_dir=out,
+        diagrams=False,
+        normalize_headings=True,
+        split_sections=True,
+        nested_split=True,
+    )
+    assert "### 2.1 Push" in (out / "motion.normalized.md").read_text(encoding="utf-8")
+    assert (out / "sections" / "motion-book" / "2-forces" / "2-1-push.md").is_file()
+
+
+def test_resumed_normalize_reads_the_authored_claim_from_the_marker(tmp_path: Path) -> None:
+    src = tmp_path / "motion.html"
+    src.write_text(
+        "<html><body><h1>Motion Book</h1><p>Intro.</p>"
+        "<h2>2 Forces</h2><p>Forces body.</p><h3>2.1 Push</h3><p>Push body.</p>"
+        "<h2>3 Motion</h2><p>Motion body.</p><h3>3.1 Speed</h3><p>Speed body.</p>"
+        "<h3>3.2 Velocity</h3><p>Velocity body.</p></body></html>",
+        encoding="utf-8",
+    )
+    out = tmp_path / "out"
+    to_markdown(src, output_dir=out, diagrams=False)
+    to_markdown(out, output_dir=out, diagrams=False, start="normalize", normalize_headings=True)
+    assert "### 2.1 Push" in (out / "motion.normalized.md").read_text(encoding="utf-8")

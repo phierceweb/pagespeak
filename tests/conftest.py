@@ -363,3 +363,15 @@ def make_run_record():
         return target
 
     return _write
+
+
+@pytest.fixture
+def convert_parameters() -> dict[str, object]:
+    """Each `convert` parameter's name and default, in signature order."""
+    import inspect
+
+    from pagespeak.cli import app
+
+    convert = next(c.callback for c in app.registered_commands if c.name == "convert")
+    assert convert is not None
+    return {n: p.default for n, p in inspect.signature(convert).parameters.items()}

@@ -17,10 +17,10 @@ from ..orchestrators._ingest import PartialIngestError
 from ..services._cleanup import CleanupLevel, CrossRefs
 from ..services._diagrams import VisionBackendName
 from ..services._normalize_decision import NormalizeModeOption
-from ._backend_kwargs import HELP as BACKEND_KWARGS_HELP
+from . import _convert_options_run as run_opts
+from . import _convert_options_source as source_opts
 from ._backend_kwargs import parse_backend_kwargs
 from ._convert_report import report_result
-from ._help_text import NORMALIZE_MODEL_HELP
 from ._inherit import (
     INHERITABLE_FLAGS,
     _is_commandline_source,
@@ -45,248 +45,52 @@ def register(
     @app.command("convert")
     def convert(
         ctx: typer.Context,
-        input_path: Path = typer.Argument(..., exists=True, dir_okay=True, readable=True),
-        output_dir: Path = typer.Option(
-            Path("./out"),
-            "--output-dir",
-            "-o",
-            help="Directory for the markdown file and extracted images.",
-        ),
-        preset: str | None = typer.Option(
-            None,
-            "--preset",
-            help="Curated config bundle: rag-default | flat | textbook | archival | qti. Per-flag args explicitly passed on the CLI win over preset values. See docs/presets.md.",
-        ),
-        diagrams: bool = typer.Option(
-            True,
-            "--diagrams/--no-diagrams",
-            help="Run vision LLM on extracted images to produce Mermaid blocks.",
-        ),
-        vision_backend: str | None = typer.Option(
-            None,
-            "--vision-backend",
-            help="claude_code (default — local CLI, $0) | anthropic (direct API) | openrouter (multi-provider via OPENROUTER_API_KEY). When unset, consults $PAGESPEAK_VISION_BACKEND env var.",
-        ),
-        vision_model: str | None = typer.Option(
-            None,
-            "--vision-model",
-            help="Override the model used for diagram extraction (else config/model_router.yaml). Under claude_code it is passed as --model.",
-        ),
-        vision_concurrency: int | None = typer.Option(
-            None,
-            "--vision-concurrency",
-            help="Per-image worker pool size for the vision pass. Default 6 (override via PAGESPEAK_VISION_CONCURRENCY env). Lower for claude_code on small laptops; higher when bottlenecked on network.",
-        ),
-        vision_cache_only: bool = typer.Option(
-            False,
-            "--vision-cache-only",
-            help=(
-                "Vision uses ONLY the existing .vision-cache/ and makes zero LLM "
-                "calls. Uncached images are skipped (caption-only) with a warning "
-                "naming them. Guarantees $0 / zero quota when re-ingesting an "
-                "edited document whose images are unchanged. Incompatible with "
-                "--no-diagrams."
-            ),
-        ),
-        vision_all_images: bool = typer.Option(
-            False,
-            "--vision-all-images",
-            help="Caption every file in images/, including pictures cleanup removed from the text. Default: only the pictures the document references. Use to fill the vision cache ahead of a cleanup re-run.",
-        ),
-        preserve_alt: bool = typer.Option(
-            False,
-            "--preserve-alt",
-            help=(
-                "Faithful mode: keep each figure's existing alt text VERBATIM and only "
-                "append a Mermaid block (for diagrams). The vision caption is still "
-                "computed and cached but NOT injected, so the same run can later be "
-                "re-emitted enriched with no re-vision. Use to add structure without "
-                "modifying a source's alt text (e.g. contributing back to a publisher). "
-                "Composes with --diagrams."
-            ),
-        ),
-        force_ocr: bool = typer.Option(
-            False,
-            "--force-ocr/--no-force-ocr",
-            help="PDF only: force OCR even on text-bearing PDFs.",
-        ),
-        device: str | None = typer.Option(
-            None,
-            "--device",
-            help='PDF only: torch device ("cpu" / "mps" / "cuda"). Use "cpu" to dodge the surya/MPS crash on Apple Silicon.',
-        ),
-        page_range: str | None = typer.Option(
-            None,
-            "--page-range",
-            help='PDF only: convert only these pages, 0-based. Spec like "0-19" or "0-3,5,7-9".',
-        ),
-        html_base_url: str | None = typer.Option(
-            None,
-            "--html-base-url",
-            help="HTML only: base URL of the source page so relative <img> refs "
-            "(e.g. ../Storage/..) download. Example: the page's own URL.",
-        ),
-        cleanup: str = typer.Option(
-            "basic",
-            "--cleanup",
-            help="Cleanup level: off | basic | aggressive.",
-        ),
-        cross_refs: str = typer.Option(
-            "keep",
-            "--cross-refs",
-            help="How to handle \\[label](#page-X-Y) refs: keep | strip | remap.",
-        ),
-        split_sections: bool = typer.Option(
-            False,
-            "--split-sections/--no-split-sections",
-            help="Also write one file per section under <output_dir>/sections/.",
-        ),
-        nested_split: bool = typer.Option(
-            False,
-            "--nested-split/--no-nested-split",
-            help="With --split-sections, nest numbered files in numeric-prefix folders.",
-        ),
-        split_min_level: int | None = typer.Option(
-            None,
-            "--split-min-level",
-            help="With --split-sections, split on semantic headings at this depth or deeper. Default 1 (split on every heading); pass a higher depth for coarser sections.",
-        ),
-        split_max_level: int | None = typer.Option(
-            None,
-            "--split-max-level",
-            help="With --split-sections, cap section depth: headings deeper than this stay inline. E.g. 2 = one file per H2 with subsections inline (textbook section-level chunks). Default: no cap.",
-        ),
-        split_target_kb: int | None = typer.Option(
-            None,
-            "--split-target-kb",
-            help="With --split-sections, pack sections to a size target instead of splitting on every heading: a branch fitting N KB becomes one file, an oversized branch splits deeper, and an oversized heading-less section is partitioned into '(part i of k)' files. Off unless passed, and never inherited from a run record: pass it on each run that should pack. Mutually exclusive with --split-max-level.",
-        ),
-        min_body_chars: int | None = typer.Option(
-            None,
-            "--min-body-chars",
-            help="With --split-sections, drop sections whose body has fewer than N non-whitespace characters. Default 1: drops only heading-only shells; a section with any text is kept. Pass 0 to keep every section, including empty ones — right for a document whose empty headings are placeholders to be filled in later.",
-        ),
-        english_only: bool = typer.Option(
-            False,
-            "--english-only/--no-english-only",
-            help="With --split-sections, drop sections classified as clearly non-English (a multilingual manual's translated appendix). Conservative — short/ambiguous sections are kept. Off by default.",
-        ),
-        pdf_backend: str = typer.Option(
-            "marker",
-            "--pdf-backend",
-            help="PDF backend: 'marker' (default) | 'docling' (requires pagespeak\\[pdf-docling]; pair with --heading-hierarchy, else every heading lands at one level) | 'tophat' (Top Hat quiz-export PDFs → per-question markdown, requires pagespeak\\[tophat]).",
-        ),
-        heading_hierarchy: bool = typer.Option(
-            False,
-            "--heading-hierarchy/--no-heading-hierarchy",
-            help="Docling PDF only. Infer real heading levels from PDF bookmarks, then section numbering, then font style, instead of Docling's flat single-level default. Helps documents with an embedded outline or 'Section N.'/'N.M' numbering; not a win on documents with neither. Off by default. Requires docling>=2.109. See docs/backends.md.",
-        ),
-        pdf_backend_kwargs: str | None = typer.Option(
-            None, "--pdf-backend-kwargs", help=BACKEND_KWARGS_HELP
-        ),
-        decoration_threshold: int | None = typer.Option(
-            None,
-            "--decoration-threshold",
-            min=0,
-            help="Look-alike pictures that occur at least this many times are page furniture: a near-identical copy is removed, another keeps only its description, unless it is large and used at most twice under its own description. Default 5; 0 turns it off. See docs/pipeline-decorations.md.",
-        ),
-        decoration_hamming_distance: int | None = typer.Option(
-            None,
-            "--decoration-hamming-distance",
-            min=0,
-            help="How alike pictures must be to count as one piece of furniture, in perceptual-hash bits (default 12). 2 = only near-identical copies: use it for screenshot-heavy help sites whose screens all share one frame.",
-        ),
-        repair_tables: bool = typer.Option(
-            False,
-            "--repair-tables/--no-repair-tables",
-            help="Marker PDF only. After ingest, splice Docling's clean grid over Marker-broken tables — both <br>-collapsed mega-cells (a multi-column table jammed into one cell) and split multi-line-cell tables (one row per wrapped line). Off by default; requires pagespeak\\[pdf-docling]. Same fix as the standalone `pagespeak repair-tables` command, run inline. See docs/repair-tables.md.",
-        ),
-        docx_backend: str = typer.Option(
-            "markitdown",
-            "--docx-backend",
-            help="DOCX backend: 'markitdown' (default) | 'python-docx' (structure-faithful, requires pagespeak\\[docx-structured]). Ignored for non-.docx formats.",
-        ),
-        docx_outline_heading_depth: int = typer.Option(
-            0,
-            "--docx-outline-heading-depth",
-            help="python-docx only. Outline→heading switch. 0 (default) = retain the WHOLE Word outline as a nested list (only the document title is '#'). N>0 overrides the top N outline levels into headings (1 = ilvl0 → '#').",
-        ),
-        normalize_headings: bool = typer.Option(
-            False,
-            "--normalize-headings/--no-normalize-headings",
-            help="Fix flattened chapter+subsection levels (e.g. textbook-style PDFs where Marker emits everything at the same depth). See --normalize-headings-mode for engine choice.",
-        ),
-        normalize_headings_mode: str = typer.Option(
-            "heuristic",
-            "--normalize-headings-mode",
-            help="heuristic (default — fast, free, deterministic) | llm (headers-only LLM) | llm_full (LLM + body-context anchors: re-levels the hierarchy AND drops junk headings) | llm_dehead (same payload, drops junk headings but never changes a level — for a doc whose hierarchy the backend already got right) | auto (classify the doc and pick heuristic-vs-llm_full per-document).",
-        ),
-        normalize_headings_model: str | None = typer.Option(
-            None,
-            "--normalize-headings-model",
-            help=NORMALIZE_MODEL_HELP,
-        ),
-        normalize_headings_backend: str | None = typer.Option(
-            None,
-            "--normalize-headings-backend",
-            help="Per-task backend for heading-normalize LLM calls. claude_code (default) | anthropic | openrouter. Sets PAGESPEAK_HEADING_NORMALIZE_BACKEND, _FULL_BACKEND and _DEHEAD_BACKEND for the run, so it applies to every normalize mode.",
-        ),
-        strip_frontmatter: bool = typer.Option(
-            False,
-            "--strip-frontmatter/--no-strip-frontmatter",
-            help="DOCX only: drop revision-history / instructional-text / Word-TOC frontmatter before the first H1 heading. Off by default; the rag-default / flat / textbook presets enable it.",
-        ),
-        provenance: bool = typer.Option(
-            False,
-            "--provenance/--no-provenance",
-            help="Emit output provenance frontmatter (source tags + auto-derived label + per-section breadcrumb locators) on the whole-doc markdown and every section file — the multi-source RAG enabler. Off by default; the rag-default preset enables it. With no --source-label, the label is auto-derived from the cleaned filename; --source-type/--source-label also turn it on.",
-        ),
-        source_type: str | None = typer.Option(
-            None,
-            "--source-type",
-            help="Provenance tag (e.g. textbook | lab_manual | manual). Omitted from the block when unset. Also turns frontmatter on (see --provenance). Distinct from --strip-frontmatter (input-side).",
-        ),
-        source_label: str | None = typer.Option(
-            None,
-            "--source-label",
-            help='Human source title for the provenance frontmatter (e.g. "Quick Start Guide"). Emits frontmatter the same as --source-type.',
-        ),
-        inherit: bool = typer.Option(
-            True,
-            "--inherit/--no-inherit",
-            help="When the output dir holds a .pagespeak-run.json, flags you don't pass default to that record's resolved_flags (explicit flags and an explicit --preset win; LLM/engine flags never inherit). --no-inherit ignores the record: bare defaults. See docs/caching.md.",
-        ),
-        rerun_from: str | None = typer.Option(
-            None,
-            "--rerun-from",
-            help="Bust caches at this stage and re-run from there. Stages: ingest | cleanup | decorations | normalize | repair | structure | vision | split. Unspecified output-shaping flags come from the run record (see --inherit). See docs/caching.md.",
-        ),
-        start: str | None = typer.Option(
-            None,
-            "--from",
-            help="Begin at this phase using the existing upstream checkpoint as input (does NOT bust caches — that's --rerun-from). Phases: ingest | cleanup | normalize | repair | structure | vision | split. --from X --stop-after X runs exactly one phase.",
-        ),
-        stop_after: str | None = typer.Option(
-            None,
-            "--stop-after",
-            help="Halt after this phase (its checkpoint is written; nothing downstream runs). Same phase names as --from. Lets you validate the pipeline one phase at a time.",
-        ),
-        workers: int | None = typer.Option(
-            None,
-            "--workers",
-            "-w",
-            help="Number of parallel worker processes for the backend phase. When > 1, routes through ingest (chunked parallel) then Phase 3. Requires --output-dir. Default 1 (single-shot), or PAGESPEAK_WORKERS when set. An env-derived value applies to PDF file input only and is ignored for a run the chunked path cannot serve (--from / --stop-after / --rerun-from / --page-range / --english-only / --repair-tables); a typed -w is always honoured.",
-        ),
-        answer_key: bool = typer.Option(
-            True,
-            "--answer-key/--no-answer-key",
-            help="Canvas QTI quiz exports only: mark/state the correct answers. On by default; --no-answer-key renders a blank quiz.",
-        ),
-        allow_partial_ingest: bool = typer.Option(
-            False,
-            "--allow-partial-ingest",
-            help="Build the document even though a chunked ingest left failed chunks. The output will be missing those pages.",
-        ),
+        input_path: Path = source_opts.INPUT_PATH,
+        output_dir: Path = source_opts.OUTPUT_DIR,
+        preset: str | None = source_opts.PRESET,
+        diagrams: bool = run_opts.DIAGRAMS,
+        vision_backend: str | None = run_opts.VISION_BACKEND,
+        vision_model: str | None = run_opts.VISION_MODEL,
+        vision_concurrency: int | None = run_opts.VISION_CONCURRENCY,
+        vision_cache_only: bool = run_opts.VISION_CACHE_ONLY,
+        vision_all_images: bool = run_opts.VISION_ALL_IMAGES,
+        preserve_alt: bool = run_opts.PRESERVE_ALT,
+        force_ocr: bool = source_opts.FORCE_OCR,
+        device: str | None = source_opts.DEVICE,
+        page_range: str | None = source_opts.PAGE_RANGE,
+        html_base_url: str | None = source_opts.HTML_BASE_URL,
+        cleanup: str = source_opts.CLEANUP,
+        cross_refs: str = source_opts.CROSS_REFS,
+        split_sections: bool = run_opts.SPLIT_SECTIONS,
+        nested_split: bool = run_opts.NESTED_SPLIT,
+        split_min_level: int | None = run_opts.SPLIT_MIN_LEVEL,
+        split_max_level: int | None = run_opts.SPLIT_MAX_LEVEL,
+        split_target_kb: int | None = run_opts.SPLIT_TARGET_KB,
+        min_body_chars: int | None = run_opts.MIN_BODY_CHARS,
+        english_only: bool = run_opts.ENGLISH_ONLY,
+        pdf_backend: str = source_opts.PDF_BACKEND,
+        heading_hierarchy: bool = source_opts.HEADING_HIERARCHY,
+        pdf_backend_kwargs: str | None = source_opts.PDF_BACKEND_KWARGS,
+        decoration_threshold: int | None = source_opts.DECORATION_THRESHOLD,
+        decoration_hamming_distance: int | None = source_opts.DECORATION_HAMMING_DISTANCE,
+        repair_tables: bool = source_opts.REPAIR_TABLES,
+        docx_backend: str = source_opts.DOCX_BACKEND,
+        docx_outline_heading_depth: int = source_opts.DOCX_OUTLINE_HEADING_DEPTH,
+        normalize_headings: bool = run_opts.NORMALIZE_HEADINGS,
+        normalize_headings_mode: str = run_opts.NORMALIZE_HEADINGS_MODE,
+        normalize_headings_model: str | None = run_opts.NORMALIZE_HEADINGS_MODEL,
+        normalize_headings_backend: str | None = run_opts.NORMALIZE_HEADINGS_BACKEND,
+        strip_frontmatter: bool = source_opts.STRIP_FRONTMATTER,
+        provenance: bool = run_opts.PROVENANCE,
+        source_type: str | None = run_opts.SOURCE_TYPE,
+        source_label: str | None = run_opts.SOURCE_LABEL,
+        inherit: bool = run_opts.INHERIT,
+        rerun_from: str | None = run_opts.RERUN_FROM,
+        start: str | None = run_opts.START,
+        stop_after: str | None = run_opts.STOP_AFTER,
+        workers: int | None = run_opts.WORKERS,
+        answer_key: bool = source_opts.ANSWER_KEY,
+        allow_partial_ingest: bool = run_opts.ALLOW_PARTIAL_INGEST,
     ) -> None:
         """Convert a document to LLM-friendly markdown.
 

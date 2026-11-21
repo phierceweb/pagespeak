@@ -127,6 +127,7 @@ def split_into_sections(
     english_only: bool = False,
     source_id: str | None = None,
     source_sha256: str | None = None,
+    authored_levels: bool = False,
 ) -> list[Path]:
     """Split cleaned markdown into per-section files under `output_dir`.
 
@@ -135,11 +136,10 @@ def split_into_sections(
     a numbered outline.
 
     `min_level=N`: any heading at depth ≥ N starts a section, numbered or not.
-    Numbered ones still get `<number>. <title>.md` filenames; semantic ones
-    use the heading text only (`Quick Start.md`).
+    Filenames are slugs of the heading (`4-1-mount.md`, `quick-start.md`).
 
-    With `nested=True`, numbered sections land in numeric-prefix folders
-    (`4/4.1/4.1.1. Title.md`); unnumbered sections land flat regardless.
+    With `nested=True`, files go in folders that follow the heading hierarchy;
+    see `docs/cleanup.md` § Section splitting.
 
     Sections whose body has fewer than `min_body_chars` non-whitespace chars
     are dropped (no file written, not listed in any parent's Subsections).
@@ -162,7 +162,7 @@ def split_into_sections(
             `<out>/sections`, which it owns. A direct caller must pass a
             directory it owns too: pointing this at an existing docs tree
             deletes it.
-        nested: If True, write numbered sections into nested numeric-prefix folders.
+        nested: If True, nest section files in folders (see above).
         source_name: Display name used in the `INDEX.md` heading.
         min_level: If set, also split on semantic headings at this depth or deeper.
         images_dir: Override the default `<output>/../images/` location.
@@ -195,6 +195,8 @@ def split_into_sections(
             frontmatter when set — the cross-conversion join key.
         source_sha256: SHA-256 of the exact source bytes the conversion ran
             on; emitted alongside ``source_id`` when set.
+        authored_levels: Every heading is the author's: nest by heading level,
+            and a leading number stays title text.
 
     Returns:
         The list of written section file paths (excluding `INDEX.md`).
@@ -206,7 +208,9 @@ def split_into_sections(
     output_dir.mkdir(parents=True, exist_ok=True)
     _clear_prior_split(output_dir)
     lines = markdown.splitlines()
-    sections = _parse_sections(lines, min_level=min_level, max_level=max_level)
+    sections = _parse_sections(
+        lines, min_level=min_level, max_level=max_level, authored_levels=authored_levels
+    )
 
     # Auto-fallback for non-numbered docs. When the caller passed no explicit
     # `min_level` and the numbered-only parse doesn't represent the doc's
@@ -223,7 +227,12 @@ def split_into_sections(
                 detected_level,
                 reason,
             )
-            sections = _parse_sections(lines, min_level=detected_level, max_level=max_level)
+            sections = _parse_sections(
+                lines,
+                min_level=detected_level,
+                max_level=max_level,
+                authored_levels=authored_levels,
+            )
 
     # Default: images live at `<output>/images/`, sibling to the sections/ dir.
     # That's what `to_markdown` produces. Callers with a different layout can

@@ -18,6 +18,7 @@ from ._split_heading import (
     ANY_HEADING_RE,
     _heading_numbering,
     _parse_any_heading,
+    _parse_authored_heading,
     _parse_numbered_heading,
 )
 
@@ -254,7 +255,11 @@ def _detect_fallback_min_level(lines: list[str]) -> int | None:
 
 
 def _parse_sections(
-    lines: list[str], *, min_level: int | None, max_level: int | None = None
+    lines: list[str],
+    *,
+    min_level: int | None,
+    max_level: int | None = None,
+    authored_levels: bool = False,
 ) -> list[_Section]:
     sections: list[_Section] = []
     current: _Section | None = None
@@ -270,9 +275,10 @@ def _parse_sections(
             (current.content_lines if current is not None else preamble).append(line)
             continue
         is_ancestor_only = False
+        parsed: tuple[str, str | None, str] | None
         if min_level is None:
-            parsed_num = _parse_numbered_heading(line, numbering=numbering)
-            parsed: tuple[str, str | None, str] | None = parsed_num
+            # An authored document has no numbered headings: the caller falls back to a level.
+            parsed = None if authored_levels else _parse_numbered_heading(line, numbering=numbering)
         else:
             # also parse UNNUMBERED headings shallower than
             # min_level — those become "ancestor-only" sections that
@@ -281,7 +287,10 @@ def _parse_sections(
             # Numbered headings below min_level are ALREADY writable per
             # `_parse_any_heading`'s "numbered always parses" rule; they
             # get section files and are NOT ancestor-only.
-            parsed = _parse_any_heading(line, min_level=1, numbering=numbering)
+            if authored_levels:
+                parsed = _parse_authored_heading(line)
+            else:
+                parsed = _parse_any_heading(line, min_level=1, numbering=numbering)
             if parsed:
                 hashes, number, _title = parsed
                 if number is None and len(hashes) < min_level:

@@ -182,6 +182,7 @@ def gather_normalize_levels(
     model: str | None = None,
     filter_structural: bool = True,
     max_input_tokens: int | None = None,
+    authored_levels: bool = False,
 ) -> NormalizeData | None:
     """Pure side-file producer for the heading-renormalization pass.
 
@@ -189,7 +190,8 @@ def gather_normalize_levels(
 
     - `mode="heuristic"` (default) — deterministic structural rules:
       `Chapter N` → L1, `N.M` → L2, `N.M.O` → L3, etc. Free, fast, no
-      LLM call, no cache file, no auth requirement.
+      LLM call, no cache file, no auth requirement. With `authored_levels`
+      (every heading is the author's) it changes nothing.
     - `mode="llm"` — sends the structural heading list (numbered prefixes
       only) to Claude Code, parses the response, caches it. Best for docs
       with a numbered outline.
@@ -211,6 +213,9 @@ def gather_normalize_levels(
     See `normalize_heading_levels` for the wrapper that chains gather +
     apply (legacy API, kept for backward compatibility).
     """
+    if mode == "heuristic" and authored_levels:
+        logger.info("heading_normalize_skipped reason=authored_headings")
+        return None
     all_headings = _extract_headings(md)
     if len(all_headings) < 2:
         return None

@@ -1,8 +1,8 @@
 """Heading-line parsing for the splitter: a heading's level, section number,
 and title (`_parse_numbered_heading` / `_parse_any_heading` /
-`_parse_chapter_heading`), plus the document numbering
-(`_heading_numbering`) that decides whether a bare-integer prefix is a
-section number at all.
+`_parse_chapter_heading`, or `_parse_authored_heading` when every heading is
+the author's), plus the document numbering (`_heading_numbering`) that
+decides whether a bare-integer prefix is a section number at all.
 """
 
 from __future__ import annotations
@@ -171,3 +171,11 @@ def _parse_any_heading(
     if len(hashes) < min_level:
         return None
     return hashes, None, body.strip()
+
+
+def _parse_authored_heading(line: str) -> tuple[str, None, str] | None:
+    """The author's levels decide nesting, so a leading number is title text."""
+    m = ANY_HEADING_RE.match(line)
+    if not m:
+        return None
+    return m.group(1), None, m.group(2)

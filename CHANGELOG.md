@@ -2,6 +2,13 @@
 
 Notable changes to pagespeak, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## 0.23.0
+
+### Changed
+- **Split: a document whose headings are all the author's (HTML) nests sections by heading level**; a leading number stays in the title verbatim (no added period, no number folders, no `section_number`), and `Chapter N` headings keep the word `Chapter`. Existing conversions change on a re-split (`--from split`) when their ingest recorded the claim; older ones need converting again from the source (`pagespeak convert <source> -o <out> --rerun-from ingest`). Other documents split as before. `split_into_sections` takes `authored_levels=` (default off).
+- **Heading normalize's `heuristic` mode leaves a document whose headings are all the author's (HTML) unchanged**, so the split above nests by the author's levels with the default heuristic normalize on (`--preset rag-default` / `textbook`, or `--normalize-headings`). A conversion made with normalize on picks this up on `--from normalize`. `gather_normalize_levels` takes `authored_levels=` (default off).
+- `convert --nested-split` help describes the nesting as following the heading hierarchy.
+
 ## 0.22.0
 
 ### Added

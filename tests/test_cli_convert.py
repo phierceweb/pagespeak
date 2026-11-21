@@ -378,3 +378,16 @@ def test_convert_help_names_the_extras() -> None:
         "[label](#page-X-Y)",
     ):
         assert text in output
+
+
+def test_every_convert_parameter_comes_from_an_option_module() -> None:
+    import inspect
+
+    from pagespeak.cli import _convert_options_run, _convert_options_source
+
+    convert = next(c.callback for c in app.registered_commands if c.name == "convert")
+    assert convert is not None
+    declared = [*vars(_convert_options_run).values(), *vars(_convert_options_source).values()]
+    for name, param in inspect.signature(convert).parameters.items():
+        if name != "ctx":
+            assert any(param.default is d for d in declared), name

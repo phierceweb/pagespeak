@@ -5,6 +5,7 @@ from __future__ import annotations
 from pagespeak.services._split_heading import (
     _heading_numbering,
     _parse_any_heading,
+    _parse_authored_heading,
     _parse_numbered_heading,
 )
 
@@ -90,3 +91,32 @@ def test_numbering_never_touches_dotted_numbers() -> None:
         "3",
         "Setup",
     )
+
+
+def test_parse_authored_heading_keeps_leading_number_in_title() -> None:
+    assert _parse_authored_heading("##### 5.1 (Type A) widget format") == (
+        "#####",
+        None,
+        "5.1 (Type A) widget format",
+    )
+
+
+def test_parse_authored_heading_keeps_chapter_word() -> None:
+    assert _parse_authored_heading("## Chapter 3 Gears") == (
+        "##",
+        None,
+        "Chapter 3 Gears",
+    )
+
+
+def test_parse_authored_heading_keeps_source_period() -> None:
+    assert _parse_authored_heading("#### 1. First step") == (
+        "####",
+        None,
+        "1. First step",
+    )
+
+
+def test_parse_authored_heading_non_heading_is_none() -> None:
+    assert _parse_authored_heading("plain text") is None
+    assert _parse_authored_heading("#hashtag") is None

@@ -97,6 +97,7 @@ def _write_generic(
         }
 
     if c.split_sections and c.out is not None:
+        from ..services._hierarchy_trust import authored_headings
         from ..services._split import DEFAULT_MIN_BODY_CHARS, split_into_sections
 
         effective_min_body = (
@@ -125,6 +126,7 @@ def _write_generic(
             english_only=c.english_only,
             source_id=identity.get("source_id"),
             source_sha256=identity.get("sha256"),
+            authored_levels=authored_headings(c.out, in_memory=result.authored_headings),
         )
         c.section_count = len(written)
 

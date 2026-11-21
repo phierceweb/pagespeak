@@ -23,7 +23,7 @@ result = to_markdown(
     cleanup="basic",               # "off" | "basic" | "aggressive"
     cross_refs="keep",             # "keep" | "strip" | "remap" — [label](#page-X-Y) refs
     split_sections=False,          # write per-section files under out/sections/
-    nested_split=False,            # with split_sections, nest numbered files by depth
+    nested_split=False,            # with split_sections, nest files in folders by heading hierarchy
     split_min_level=None,          # None → default 1 (split on EVERY heading); higher = coarser
     min_body_chars=None,           # with split_sections, drop sections shorter than N chars (None → 1: heading-only shells)
     regenerate_toc=True,           # replace Marker's broken pipe-table TOC with a generated bullet list
@@ -113,7 +113,7 @@ Either way, when the target output dir holds a `.pagespeak-run.json` from a prev
 | `--decoration-hamming-distance` | `12` | How alike pictures must be, in perceptual-hash bits, to count as one piece of furniture. `2` = only near-identical copies: use it on screenshot-heavy help sites whose screens share one frame. Recorded in the run record and inherited. |
 | `--cross-refs` | `keep` | How to handle `[label](#page-X-Y)` refs: `keep` (preserve), `strip` (rewrite to plain text), or `remap` (rewrite to point at the next heading's slug). Pair with `--cleanup aggressive` for orphan-free output. |
 | `--split-sections` / `--no-split-sections` | off | Also write per-section files under `<output_dir>/sections/` plus an `INDEX.md` |
-| `--nested-split` / `--no-nested-split` | off | With `--split-sections`, nest section files in folders that mirror the heading hierarchy. Numbered sections use number prefixes (`1/1-4/1-4-1-title.md`); semantic sections use their heading titles (`quick-start/foot-switches-1.md`). Every path component is slugified — see [docs/pipeline-split.md](pipeline-split.md). |
+| `--nested-split` / `--no-nested-split` | off | With `--split-sections`, nest section files in folders that mirror the heading hierarchy. Numbered sections use number prefixes (`1/1-4/1-4-1-title.md`); semantic sections use their heading titles (`quick-start/foot-switches-1.md`). A document whose headings are all the author's (HTML) nests by heading level instead and keeps a leading number in the title. Every path component is slugified — see [docs/pipeline-split.md](pipeline-split.md). |
 | `--split-min-level` | `1` | With `--split-sections`, split on semantic headings at this depth or deeper. Default `1` splits on **every** heading (numbered + un-numbered) for small RAG sections; pass a higher depth (e.g. `--split-min-level 2`) for coarser sections |
 | `--split-max-level` | none | With `--split-sections`, cap section depth — headings deeper than this stay **inline** as content of their enclosing section. `--split-max-level 2` gives one file per H2 with subsections inline (textbook section-level chunks: one file per `## N.M` section and per unnumbered back-matter H2, `### `+ deeper inline). Pairs with `--split-min-level` for an exact band. Default: no cap. |
 | `--split-target-kb` | none | With `--split-sections`, pack sections to a **size target** instead of splitting on every heading: a branch of the heading tree that fits N KB becomes one file (subsections inlined), an oversized branch splits one level deeper (same rule per child), and an oversized section with no sub-headings is partitioned at paragraph/block boundaries into `Title (part i of k)` files that share its identity (`part_index`/`part_count` frontmatter, parts parented to part 1; fenced code + tables are never cut). Off unless passed, and **never inherited** from a run record: a re-run splits on headings unless you pass it again. Mutually exclusive with `--split-max-level`. |
@@ -280,7 +280,7 @@ When Marker emits chapter headings and their subsections at the same depth, the 
 bin/run convert textbook.pdf -o ./out --normalize-headings
 ```
 
-Default is heuristic mode (`Chapter N` → L1, `N.M` → L2, …). For unusual front-matter or non-numbered chapters, use `--normalize-headings-mode llm`. Full doc: [docs/normalize-headings.md](normalize-headings.md).
+Default is heuristic mode (`Chapter N` → L1, `N.M` → L2, …), which leaves an HTML source's own heading levels alone. For unusual front-matter or non-numbered chapters, use `--normalize-headings-mode llm`. Full doc: [docs/normalize-headings.md](normalize-headings.md).
 
 ### Iterate on a big PDF without paying full conversion each time
 
