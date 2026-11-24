@@ -115,6 +115,15 @@ def assert_ingest_flags_match(out: Path, suffix: str, current: Mapping[str, Any]
         )
 
 
+def _upstream_files(src: Path, flags: Mapping[str, Any] | None) -> tuple[Path, ...]:
+    """The files raw.md is read from: the source, and for a layout build its profile."""
+    if flags and flags.get("pdf_backend") == "layout" and src.suffix.lower() == ".pdf":
+        from ..backends._layout import profile_path
+
+        return (src, profile_path(src, flags.get("pdf_backend_kwargs")))
+    return (src,)
+
+
 def _try_resume_from_checkpoint(
     src: Path,
     out: Path | None,
@@ -128,7 +137,7 @@ def _try_resume_from_checkpoint(
     Returns a hydrated `IngestResult` if a usable checkpoint exists,
     else `None` (caller runs the backend fresh). The checkpoint is
     valid when the raw markdown's mtime is at least as new as the
-    source file — editing the source invalidates resume. With
+    source file (and a layout build's profile) — editing either invalidates resume. With
     `current_flags`, a checkpoint the run record says was ingested with
     different settings raises instead (`assert_ingest_flags_match`).
 
@@ -138,7 +147,7 @@ def _try_resume_from_checkpoint(
     """
     if out is None or raw_md_path is None:
         return None
-    validator = SnapshotValidator(upstream_files=(src,))
+    validator = SnapshotValidator(upstream_files=_upstream_files(src, current_flags))
     cached_text = try_resume_from_snapshot(raw_md_path, validator)
     if cached_text is None:
         return None

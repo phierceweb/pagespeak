@@ -1716,3 +1716,133 @@ def test_to_markdown_hands_the_flag_to_the_export(
     monkeypatch.setattr(_qti_export, "run_qti_export", fake_run)
     to_markdown(export, output_dir=tmp_path / "out", vision_all_images=all_images)
     assert seen["vision_all_images"] is all_images
+
+
+@pytest.mark.parametrize(
+    ("explicit", "cleanup", "threshold"),
+    [({}, "off", 0), ({"cleanup": "basic", "decoration_threshold": 5}, "basic", 5)],
+)
+def test_the_layout_backend_turns_cleanup_and_decorations_off_unless_asked(
+    tmp_path: Path, explicit, cleanup, threshold
+) -> None:
+    pytest.importorskip("pypdfium2")
+    import json
+
+    from pagespeak import to_markdown
+    from tests.fixtures.layout_book import make_book, write_profile
+
+    pdf = make_book(tmp_path / "book.pdf")
+    write_profile(tmp_path / "book.layout.yaml")
+    to_markdown(pdf, output_dir=tmp_path / "out", pdf_backend="layout", diagrams=False, **explicit)
+    flags = json.loads((tmp_path / "out" / ".pagespeak-run.json").read_text())["resolved_flags"]
+    assert (flags["cleanup"], flags["decoration_threshold"], flags["pdf_backend"]) == (
+        cleanup,
+        threshold,
+        "layout",
+    )
+
+
+def test_editing_a_layout_profile_rebuilds_the_document_on_the_next_run(tmp_path: Path) -> None:
+    pytest.importorskip("pypdfium2")
+    import os
+    import time
+
+    from pagespeak import to_markdown
+    from tests.fixtures.layout_book import make_book, profile_mapping, write_profile
+
+    pdf = make_book(tmp_path / "book.pdf")
+    profile = write_profile(tmp_path / "book.layout.yaml")
+    run = {"output_dir": tmp_path / "out", "pdf_backend": "layout", "diagrams": False}
+    first = to_markdown(pdf, **run)
+    edited = profile_mapping()
+    edited["document"]["title_block"]["heading"] = "Another Title"
+    write_profile(profile, edited)
+    os.utime(profile, (time.time() + 60, time.time() + 60))
+    second = to_markdown(pdf, **run)
+    assert first.markdown.startswith("# A Small Book\n")
+    assert second.markdown.startswith("# Another Title\n")
+
+
+def _resolved(out: Path) -> dict[str, object]:
+    import json
+
+    return json.loads((out / ".pagespeak-run.json").read_text())["resolved_flags"]
+
+
+def test_the_layout_defaults_do_not_reach_a_source_that_is_not_a_pdf(tmp_path: Path) -> None:
+    from pagespeak import to_markdown
+
+    doc = tmp_path / "doc.md"
+    doc.write_text("# Title\n\nBody text.\n", encoding="utf-8")
+    to_markdown(doc, output_dir=tmp_path / "plain", diagrams=False)
+    to_markdown(doc, output_dir=tmp_path / "layout", pdf_backend="layout", diagrams=False)
+    plain, layout = _resolved(tmp_path / "plain"), _resolved(tmp_path / "layout")
+    assert layout["cleanup"] == plain["cleanup"] != "off"
+    assert layout["decoration_threshold"] == plain["decoration_threshold"] != 0
+    for start in ("cleanup", "cleanup"):  # a re-run over the output dir, and one after it
+        to_markdown(
+            tmp_path / "layout", output_dir=tmp_path / "layout", start=start, diagrams=False
+        )
+        again = _resolved(tmp_path / "layout")
+        assert (again["cleanup"], again["decoration_threshold"]) == (
+            plain["cleanup"],
+            plain["decoration_threshold"],
+        )
+
+
+@pytest.mark.parametrize(
+    ("explicit", "cleanup", "threshold"),
+    [({}, "off", 0), ({"cleanup": "basic", "decoration_threshold": 5}, "basic", 5)],
+)
+def test_a_rerun_over_a_layout_output_dir_keeps_the_layout_defaults(
+    tmp_path: Path, explicit, cleanup, threshold
+) -> None:
+    pytest.importorskip("pypdfium2")
+    from pagespeak import to_markdown
+    from tests.fixtures.layout_book import make_book, write_profile
+
+    pdf = make_book(tmp_path / "book.pdf")
+    write_profile(tmp_path / "book.layout.yaml")
+    out = tmp_path / "out"
+    first = to_markdown(pdf, output_dir=out, pdf_backend="layout", diagrams=False)
+    again = to_markdown(out, output_dir=out, start="cleanup", diagrams=False, **explicit)
+    flags = _resolved(out)
+    assert (flags["cleanup"], flags["decoration_threshold"]) == (cleanup, threshold)
+    if not explicit:
+        assert again.markdown == first.markdown
+        import json
+
+        record = json.loads((out / ".pagespeak-run.json").read_text())
+        del record["source_identity"]  # a record that does not name its source file
+        (out / ".pagespeak-run.json").write_text(json.dumps(record), encoding="utf-8")
+        to_markdown(out, output_dir=out, start="cleanup", diagrams=False)
+        flags = _resolved(out)
+        assert (flags["cleanup"], flags["decoration_threshold"]) == ("off", 0)
+
+
+def test_a_profile_edit_reaches_a_rerun_of_the_pdf_but_not_a_run_over_its_output_dir(
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("pypdfium2")
+    import os
+    import time
+
+    from pagespeak import to_markdown
+    from tests.fixtures.layout_book import make_book, profile_mapping, write_profile
+
+    pdf, out = make_book(tmp_path / "book.pdf"), tmp_path / "out"
+    profile = write_profile(tmp_path / "book.layout.yaml")
+    run = {"output_dir": out, "pdf_backend": "layout", "diagrams": False}
+    to_markdown(pdf, **run)
+    edited = profile_mapping()
+    edited["document"]["title_block"]["heading"] = "Another Title"
+    write_profile(profile, edited)
+    os.utime(profile, (time.time() + 60, time.time() + 60))
+
+    # the output dir holds the text already read: only a run on the PDF reads the profile again
+    over_dir = to_markdown(out, output_dir=out, start="cleanup", diagrams=False)
+    assert over_dir.markdown.startswith("# A Small Book\n")
+    with pytest.raises(ValueError, match="ingested with different settings"):
+        to_markdown(pdf, output_dir=out, diagrams=False)  # the same PDF without its backend
+    rerun = to_markdown(pdf, rerun_from="cleanup", **run)
+    assert rerun.markdown.startswith("# Another Title\n")

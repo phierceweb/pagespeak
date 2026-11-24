@@ -6,7 +6,7 @@
 
 | Level | Behavior |
 |---|---|
-| `cleanup="off"` | Return the backend's raw output. Useful for debugging. |
+| `cleanup="off"` | Return the backend's raw output. Useful for debugging, and the layout backend's default: its reader leaves no converter debris ([layout-backend.md](layout-backend.md)). |
 | `cleanup="basic"` (default) | Generic normalizations safe across documents. |
 | `cleanup="aggressive"` | Adds document-shaped pattern matchers (image decorations, TOC pipe tables, page-anchor spans). |
 
@@ -135,7 +135,7 @@ Opt-in via `split_sections=True` (plus optional `nested_split=True` and `split_m
 > **`split_into_sections()` is destructive.** It deletes every `*.md` under `output_dir` before writing (recursively, and removes emptied directories) so a re-run leaves no stale sections. The pipeline passes `<out>/sections`, which it owns. If you call it directly, pass a directory you own — pointing it at an existing docs tree deletes it.
 - **Semantic mode** (`split_min_level=N`): also split on any heading at depth ≥ N. `split_min_level=2` is the right choice for product manuals that use `## Quick Start`-style headings. Filenames are slugs of the heading (`4-1-mount.md`, `quick-start.md`).
 - **Capped depth** (`split_max_level=N`): headings deeper than N stay inline as content of their enclosing section instead of splitting out. `split_max_level=2` yields one file per H2 (section-level chunks) with `### `+ subsections inline — the fix for textbook-shaped docs (a single `# Title`, numbered `## N.M` sections, plus unnumbered back-matter H2) that otherwise over-fragment into thousands of tiny per-heading files. Opt-in per doc, since the right cap depends on how much content lives below the section heading.
-- **Nested mode** (`nested_split=True`): sections nest by heading hierarchy. Numbered sections use the number string for folder names (`1/1-4/1-4-1-workflow-triggers.md`); semantic sections use the slugified heading title (`quick-start/foot-switches.md`). Top-level sections land in their own folder named after themselves. A document whose headings are all the author's (HTML) nests every section by heading level and keeps a leading number in its title; see [pipeline-split.md](pipeline-split.md).
+- **Nested mode** (`nested_split=True`): sections nest by heading hierarchy. Numbered sections use the number string for folder names (`1/1-4/1-4-1-workflow-triggers.md`); semantic sections use the slugified heading title (`quick-start/foot-switches.md`). Top-level sections land in their own folder named after themselves. A document whose headings are all the author's (HTML, the `layout` backend) nests every section by heading level and keeps a leading number in its title; see [pipeline-split.md](pipeline-split.md).
 - **`INDEX.md`** lists top-level sections.
 - **Breadcrumb header** — each non-root section file starts with `> ↑ [Root](root.md) / [Parent](parent.md)` so an LLM that retrieves a single chunk knows where it fits.
 - **Empty-body filter** — sections whose body has fewer than `min_body_chars` chars are dropped (default `1` from `to_markdown()`: only a heading with no text under it; page-anchor lines and `---` rules don't count as text. `0` if calling `split_into_sections()` directly). A section with any text is kept, however short. This drops front-matter TOC entries that the backend promotes to `#`-headings, which would otherwise become empty "chapter shell" files. Each dropped section is logged by title (`split_empty_section_dropped`) after the `split_dropped_empty_sections` count.

@@ -6,6 +6,7 @@
 |---|---|---|---|
 | `.pdf` | Marker (default) or Docling | yes (Marker writes JPEG, Docling PNG) | Requires `pagespeak[pdf]` / `pagespeak[pdf-docling]`. `force_ocr=True` for scans. |
 | Top Hat quiz-export `.pdf` | `--pdf-backend tophat` | yes (embedded figures) | Reads the PDF text layer → one `## Question N` block per question; marks the correct answer when revealed (grey-letter signal); extracts embedded figures (incl. image-only questions) for the vision pass. Requires `pagespeak[tophat]`. See [tophat-quizzes.md](tophat-quizzes.md). |
+| A `.pdf` book with a profile | `--pdf-backend layout` | yes (one crop per figure, and per table row's drawings) | Reads the text layer through the document's profile (`<source>.layout.yaml`): headings from fonts, ruled tables from their grid, figures matched to captions, furniture dropped. Text layer only, never OCR; single-column books only ([its limits](layout-backend.md#what-it-does-not-read-yet)). Requires `pagespeak[layout]`. See [layout-backend.md](layout-backend.md). |
 | `.docx` | MarkItDown | yes (via zipfile from `word/media/`) | Tables, headings, lists, footnotes |
 | `.pptx` | MarkItDown | yes (via zipfile from `ppt/media/`) | Slide-by-slide content |
 | `.xlsx` | MarkItDown | yes (via zipfile from `xl/media/`) | Sheet contents as markdown tables |

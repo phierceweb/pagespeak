@@ -88,6 +88,21 @@ def resolved_flags_from_ctx(ctx: PipelineContext) -> dict[str, Any]:
     }
 
 
+def reads_with_layout(src: Path, pdf_backend: str) -> bool:
+    """Whether the run's text is the layout reader's: a PDF it is asked to convert, or an
+    output dir whose raw.md it wrote (from a PDF, where the record names its source file)."""
+    from ..services._run_record import read_run_record
+    from ._ingest import PDF_SUFFIXES
+    from ._resume import recorded_ingest_flags
+
+    source = src
+    if src.is_dir():
+        pdf_backend = recorded_ingest_flags(src).get("pdf_backend", "")
+        identity = (read_run_record(src) or {}).get("source_identity") or {}
+        source = Path(str(identity.get("file") or "unnamed.pdf"))
+    return pdf_backend == "layout" and source.suffix.lower() in PDF_SUFFIXES
+
+
 def check_chunked_route(out: Path | None, *, rerun_from: str | None, repair_tables: bool) -> Path:
     """Refuse what the `workers > 1` route cannot honour; return its output dir."""
     if out is None:

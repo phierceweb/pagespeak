@@ -20,7 +20,7 @@ Because this runs inside cleanup, refs extracted from PDFs are still alt-less at
 
 ## When it runs
 
-- **Always**, whenever the document has extracted images and an `output_dir`. Set `decoration_threshold=0` to disable.
+- **Always**, whenever the document has extracted images and an `output_dir`. Set `decoration_threshold=0` to disable; the layout backend defaults to 0, since its reader leaves page furniture out itself ([layout-backend.md](layout-backend.md)).
 - Tunables: `decoration_threshold` (cluster-size cutoff; `0` = off), `decoration_hamming_distance` (near-duplicate grouping width), on `convert` as `--decoration-threshold` and `--decoration-hamming-distance`; both are recorded in `.pagespeak-run.json` and inherited by a re-run.
 
 ## Inputs

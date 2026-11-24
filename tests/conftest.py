@@ -45,6 +45,8 @@ _OPTIONAL_EXTRA_FOR_MODULE = {
     "test_marker_ignoretext": "marker",
     "test_marker_pagebox": "marker",
     "test_pdf_docling": "docling",
+    "test_layout": "pypdfium2",
+    "test_layout_pages": "pypdfium2",
     "test_pdf_glyphs": "pypdfium2",
     "test_pdf_ink": "pypdfium2",
     "test_pdf_layout": "pypdfium2",

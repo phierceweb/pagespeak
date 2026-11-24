@@ -42,6 +42,7 @@ pip install pagespeak[pdf,pdf-docling]      # both — pick at call time
 pip install pagespeak[docx-structured]      # adds python-docx for structure-faithful DOCX
 pip install pagespeak[pdf,docx-structured]  # PDF + structure-faithful DOCX
 pip install pagespeak[tophat]               # adds the Top Hat quiz-export backend and verify's PDF checks (light; pypdfium2)
+pip install pagespeak[layout]               # adds the layout backend: a book read from its text layer with its profile (light)
 pip install pagespeak[web]                  # localhost web console (FastAPI + uvicorn)
 ```
 
@@ -130,6 +131,7 @@ Vision output is best-effort. A diagram's Mermaid is a model's *reading* of the 
 | `.docx`, `.pptx`, `.xlsx`, `.html`, `.htm`, `.csv`, `.json`, `.xml`, `.epub` | [MarkItDown](https://github.com/microsoft/markitdown) |
 | Canvas QTI quiz export (directory or `.imscc`) | Built-in QTI backend → one markdown file per quiz with the answer key. See [docs/canvas-quizzes.md](https://github.com/phierceweb/pagespeak/blob/main/docs/canvas-quizzes.md). |
 | Top Hat quiz-export PDF | `--pdf-backend tophat` → one `## Question N` block per question, correct answer marked when revealed, embedded figures extracted + captioned. See [docs/tophat-quizzes.md](https://github.com/phierceweb/pagespeak/blob/main/docs/tophat-quizzes.md). |
+| A PDF book with a profile | `--pdf-backend layout` → the book read from its text layer through a per-document profile: headings from fonts, ruled tables from their grid, figures matched to their captions. See [docs/layout-backend.md](https://github.com/phierceweb/pagespeak/blob/main/docs/layout-backend.md). |
 
 ## How it relates to other tools
 
@@ -173,6 +175,7 @@ So no backend gets structure right on its own — "just use Marker" or "just use
 - [docs/format-support.md](https://github.com/phierceweb/pagespeak/blob/main/docs/format-support.md) — per-format quirks
 - [docs/canvas-quizzes.md](https://github.com/phierceweb/pagespeak/blob/main/docs/canvas-quizzes.md) — Canvas QTI quiz exports → one markdown file per quiz
 - [docs/tophat-quizzes.md](https://github.com/phierceweb/pagespeak/blob/main/docs/tophat-quizzes.md) — Top Hat quiz-export PDFs → per-question markdown (`--pdf-backend tophat`)
+- [docs/layout-backend.md](https://github.com/phierceweb/pagespeak/blob/main/docs/layout-backend.md) — a PDF book read from its text layer through a per-document profile (`--pdf-backend layout`)
 - [docs/operations.md](https://github.com/phierceweb/pagespeak/blob/main/docs/operations.md) — sandbox / `ProcessPoolExecutor` gotchas
 - [docs/web.md](https://github.com/phierceweb/pagespeak/blob/main/docs/web.md) — web console: upload/queue, per-phase cockpit, cost gate, LLM observability
 

@@ -2,6 +2,11 @@
 
 Notable changes to pagespeak, newest first. The project is pre-1.0 — pin to a tagged release; `main` is the development line.
 
+## 0.24.0
+
+### Added
+- **`--pdf-backend layout`**: reads a single-column PDF book from its text layer through a per-document profile (`<source>.layout.yaml` beside the PDF, or `{"profile": …}` in `--pdf-backend-kwargs`): fonts mapped to heading levels, ruled tables read from their grid, figures matched to their captions with their labels, page furniture dropped, picture crops cut per figure and per table row. The profile is read strictly: an unknown key, a value of the wrong type, or a body or heading face the book never uses stops the build with the field named, and a profile edit rebuilds on the next `convert` of the PDF that runs ingest. Its headings are authored, so the split nests by its heading levels and heuristic heading normalize leaves them alone; cleanup and decorations are off by default (an explicit `--cleanup` or `--decoration-threshold` runs them); it writes the source map `pagespeak verify` checks against; it reads the whole book in one pass, so `--page-range`, `--max-pages` and `--workers > 1` are refused. It does not read text columns, a paragraph running over a page break, or running footers yet. Install with `pagespeak[layout]` (pypdfium2). See `docs/layout-backend.md`.
+
 ## 0.23.0
 
 ### Changed

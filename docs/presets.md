@@ -61,6 +61,8 @@ For each preset-controlled flag, the resolver picks (in order):
 3. **Recorded run value** — CLI only: re-targeting an output dir that holds a `.pagespeak-run.json` inherits its `resolved_flags` for flags neither passed explicitly nor covered by an explicit `--preset` (`--no-inherit` opts out). See [caching.md](caching.md) § "Re-run flag inheritance".
 4. **Original to_markdown default** — `cleanup="basic"`, `split_sections=False`, `nested_split=False`, `split_min_level=None`, `normalize_headings=False`, `normalize_headings_mode="heuristic"`.
 
+With `--pdf-backend layout` on a PDF, the fallback in step 4 is `cleanup="off"` (and `decoration_threshold=0`), and it also outranks a preset's cleanup level: a preset's level suits Marker output, not that backend's. An explicit `--cleanup` still wins. See [layout-backend.md](layout-backend.md).
+
 Non-preset-controlled flags (`vision_backend`, `vision_model`, `cross_refs`, `pdf_backend`, etc.) aren't affected by presets — they use their own defaults and explicit values (many of them do participate in run-record inheritance; the engine/model flags never do).
 
 ## Re-run reproducibility (`<output>/.pagespeak-run.json`)

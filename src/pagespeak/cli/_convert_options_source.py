@@ -55,7 +55,7 @@ CROSS_REFS = typer.Option(
 PDF_BACKEND = typer.Option(
     "marker",
     "--pdf-backend",
-    help="PDF backend: 'marker' (default) | 'docling' (requires pagespeak\\[pdf-docling]; pair with --heading-hierarchy, else every heading lands at one level) | 'tophat' (Top Hat quiz-export PDFs → per-question markdown, requires pagespeak\\[tophat]).",
+    help="PDF backend: 'marker' (default) | 'docling' (requires pagespeak\\[pdf-docling]; pair with --heading-hierarchy, else every heading lands at one level) | 'tophat' (Top Hat quiz-export PDFs → per-question markdown, requires pagespeak\\[tophat]) | 'layout' (a book read from its text layer with its profile, <source>.layout.yaml; requires pagespeak\\[layout]; see docs/layout-backend.md).",
 )
 HEADING_HIERARCHY = typer.Option(
     False,

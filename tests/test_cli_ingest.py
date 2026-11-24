@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from pagespeak.cli import app
@@ -219,3 +220,29 @@ def test_ingest_workers_zero_is_a_clean_error(tmp_path):
     assert result.exception is None or isinstance(result.exception, SystemExit)
     assert "--workers" in result.output
     assert "PAGESPEAK_WORKERS" not in result.output
+
+
+@pytest.mark.parametrize(("backend", "workers"), [("layout", 1), ("tophat", 1), ("marker", 5)])
+def test_ingest_env_workers_never_chunk_a_backend_that_reads_the_whole_document(
+    tmp_path, monkeypatch, backend: str, workers: int
+) -> None:
+    from pagespeak.cli import _ingest as cli_ingest
+
+    captured: dict[str, object] = {}
+
+    def fake_ingest(input_path, *, output_dir, workers, **kwargs):
+        captured["workers"] = workers
+        raw = Path(output_dir) / "doc.raw.md"
+        raw.parent.mkdir(parents=True, exist_ok=True)
+        raw.write_text("# x", encoding="utf-8")
+        return raw
+
+    monkeypatch.setattr(cli_ingest, "ingest", fake_ingest)
+    monkeypatch.setenv("PAGESPEAK_WORKERS", "5")
+    src = tmp_path / "doc.pdf"
+    src.write_bytes(b"%PDF-fake")
+    result = runner.invoke(
+        app, ["ingest", str(src), "-o", str(tmp_path / "out"), "--pdf-backend", backend]
+    )
+    assert result.exit_code == 0, result.output
+    assert captured["workers"] == workers

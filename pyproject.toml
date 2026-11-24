@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pagespeak"
-version = "0.23.0"
+version = "0.24.0"
 description = "Convert PDF, Word, and other documents into retrieval-ready markdown — one document or a whole corpus, diagrams turned to Mermaid."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -61,6 +61,10 @@ pdf-docling = [
 ]
 docx-structured = [
     "python-docx>=1.1",
+]
+layout = [
+    # The layout backend: a book read from its text layer with a per-document profile.
+    "pypdfium2>=4.30,<6",
 ]
 tophat = [
     # Top Hat quiz-export PDFs: text-layer extraction only (no Marker/torch).

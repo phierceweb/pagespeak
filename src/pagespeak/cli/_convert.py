@@ -276,9 +276,9 @@ def register(
                         start or stop_after or rerun_from or page_range or english_only
                     )
                     or repair_tables
-                    # tophat reads the whole export in one pass and ignores
-                    # page_range, so chunking duplicates every question.
-                    or pdf_backend == "tophat",
+                    # tophat and layout read the whole document in one pass and
+                    # ignore page_range, so chunking duplicates or garbles it.
+                    or pdf_backend in ("tophat", "layout"),
                 ),
                 answer_key=answer_key,
                 allow_partial_ingest=allow_partial_ingest,

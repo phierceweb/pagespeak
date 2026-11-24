@@ -47,7 +47,8 @@ def register(
             callback=validate_pdf_backend,
             help=(
                 "'marker' (default) | 'docling' (requires pagespeak\\[pdf-docling]) | "
-                "'tophat' (Top Hat quiz exports, requires pagespeak\\[tophat])."
+                "'tophat' (Top Hat quiz exports, requires pagespeak\\[tophat]) | "
+                "'layout' (a book read with its profile, requires pagespeak\\[layout])."
             ),
         ),
         heading_hierarchy: bool = typer.Option(
@@ -92,7 +93,7 @@ def register(
             None,
             "--max-pages",
             help="PDF only: convert just the first N pages, as a trial on a slice. "
-            "Not with --pdf-backend tophat.",
+            "Not with --pdf-backend tophat or layout.",
         ),
         force: bool = typer.Option(
             False, "--force", help="Discard manifest + chunks; re-ingest from scratch."
@@ -105,9 +106,9 @@ def register(
                 "workers": resolve_cli_workers(
                     workers,
                     input_path,
-                    # The tophat backend reads the whole export in one pass and
-                    # ignores page_range, so chunking it duplicates every question.
-                    chunk_unsafe=pdf_backend == "tophat",
+                    # tophat and layout read the whole document in one pass and
+                    # ignore page_range, so chunking duplicates or garbles it.
+                    chunk_unsafe=pdf_backend in ("tophat", "layout"),
                 ),
                 "pdf_backend": pdf_backend,
                 "pdf_backend_kwargs": backend_kwargs,

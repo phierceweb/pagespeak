@@ -25,6 +25,7 @@ from ._dispatch_setup import (
     _now_utc_iso,
     check_chunked_route,
     prepare_output_dir,
+    reads_with_layout,
 )
 from ._dispatch_setup import (
     resolve_dir_mode_stem as resolve_dir_mode_stem,
@@ -198,6 +199,12 @@ def to_markdown(
         _cross_refs_was_default = True
     else:
         _cross_refs_was_default = False
+
+    if reads_with_layout(src, pdf_backend):
+        # the layout reader's output carries no converter debris and no page furniture:
+        # cleanup and decorations stand down unless asked for
+        cleanup = "off" if cleanup is None else cleanup
+        decoration_threshold = 0 if decoration_threshold is None else decoration_threshold
 
     # detect a QTI export up front so the branches below skip it — a
     # QTI export fans out into one full-pipeline document per exam (handled

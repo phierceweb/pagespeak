@@ -63,10 +63,10 @@ pagespeak ingest thick-textbook.pdf -o ./out --workers 4 --device cpu
 | `--output-dir`, `-o` | (required) | Directory for `<stem>.raw.md` and `images/` |
 | `--workers`, `-w` | `1` | Worker count. `1` = single-process; `N > 1` = chunked-parallel (PDF only). Override the default via `PAGESPEAK_WORKERS` (applied to PDF input only). |
 | `--chunk-pages` | `50` (or `PAGESPEAK_CHUNK_PAGES`) | Pages per chunk (chunked path only). Smaller = finer-grained resume; larger = less Marker model-load overhead per chunk. |
-| `--max-pages` | (all) | PDF only — convert just the first N pages, as a trial on a slice, with any `--workers`. Not with `--pdf-backend tophat`, which reads the whole export. A later `convert` of the whole source into the same dir refuses the trial's `raw.md`. |
+| `--max-pages` | (all) | PDF only — convert just the first N pages, as a trial on a slice, with any `--workers`. Not with `--pdf-backend tophat` or `layout`, which read the whole document. A later `convert` of the whole source into the same dir refuses the trial's `raw.md`. |
 | `--device` | (auto) | `cpu` / `mps` / `cuda`. `cpu` avoids the surya/MPS crash on Apple Silicon. |
 | `--force-ocr` | off | PDF only — force OCR even on text-bearing PDFs. |
-| `--pdf-backend` | `marker` | `marker` (default), `docling` (pair with `--heading-hierarchy`, else every heading lands at one level), or `tophat`. See [docs/backends.md](backends.md). |
+| `--pdf-backend` | `marker` | `marker` (default), `docling` (pair with `--heading-hierarchy`, else every heading lands at one level), `tophat`, or `layout` (a book read with its profile; `--workers > 1` is refused). See [docs/backends.md](backends.md). |
 | `--heading-hierarchy` / `--no-heading-hierarchy` | off | Docling PDF only. Heading levels from PDF bookmarks → section numbering → font style. Requires `docling>=2.109`. |
 | `--pdf-backend-kwargs` | none | PDF backend pipeline options as a JSON object, passed to the backend as-is. Recorded and inherited like the other ingest settings. See [docs/backends.md](backends.md). |
 | `--docx-backend` | `markitdown` | `markitdown` (default) or `python-docx`. `.docx`-only, single-process. See [docs/docx-backends.md](docx-backends.md). |

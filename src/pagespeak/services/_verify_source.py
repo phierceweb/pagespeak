@@ -102,7 +102,7 @@ def source_checks(
         pages = read_pages(pdf, numbers, glyphs=smap.glyph_tables() if smap is not None else None)
         outline = read_outline(pdf)
     except ImportError:
-        reason = "needs pypdfium2 (the pdf, pdf-docling or tophat extra)"
+        reason = "needs pypdfium2 (the pdf, pdf-docling, tophat or layout extra)"
         return [CheckResult(check, skipped=reason) for check in SOURCE_CHECKS]
     except RuntimeError as exc:  # pdfium's PdfiumError: a damaged or locked file
         reason = f"could not read {pdf.name}: {exc}"

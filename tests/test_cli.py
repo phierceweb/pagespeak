@@ -117,7 +117,7 @@ def test_cli_convert_rejects_bad_pdf_backend(tmp_path: Path) -> None:
     # Assert on the message BODY, not the option name: under rich, Typer
     # reformats `--pdf-backend` to `- -pdf -backend`, but the choices list
     # survives normalization.
-    assert "must be one of ('marker', 'docling', 'tophat')" in _plain(result.output)
+    assert "must be one of ('marker', 'docling', 'tophat', 'layout')" in _plain(result.output)
 
 
 def test_cli_convert_passes_pdf_backend_to_to_markdown(tmp_path: Path) -> None:

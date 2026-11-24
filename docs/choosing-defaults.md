@@ -133,6 +133,12 @@ The `heuristic` mode is for textbook-style PDFs with numbered headings (`1.2`, `
 
 ---
 
+### Use the layout backend when a book's conventions are regular and worth a profile
+
+**Do** reach for `--pdf-backend layout` when a long PDF book sets its structure plainly — a single text column, one heading face, numbered captions, ruled tables, a fixed running head — and Marker and Docling both get it wrong. It does not read text columns or running footers yet ([what it does not read yet](layout-backend.md#what-it-does-not-read-yet)). Write the profile once, convert, read the whole master, and fix the profile, not the output. See [layout-backend.md](layout-backend.md).
+
+**Do not** use it for a scanned PDF (text layer only), or for a short document a hand fix would settle faster than a profile.
+
 ## Vendor-template patterns
 
 Vendors consistently use the same PDF template across products. Once you've seen one product's output from a vendor, you can predict the next.

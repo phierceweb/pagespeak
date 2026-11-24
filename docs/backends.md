@@ -1,6 +1,6 @@
 # PDF backends
 
-Two general PDF backends. Pick per call via `pdf_backend="marker"` (default) or `pdf_backend="docling"`. A third, special-purpose backend — `pdf_backend="tophat"` — handles **Top Hat quiz-export PDFs** only (text-layer → per-question markdown); see [tophat-quizzes.md](tophat-quizzes.md). The rest of this page covers the two general backends.
+Two general PDF backends. Pick per call via `pdf_backend="marker"` (default) or `pdf_backend="docling"`. A third, special-purpose backend — `pdf_backend="tophat"` — handles **Top Hat quiz-export PDFs** only (text-layer → per-question markdown); see [tophat-quizzes.md](tophat-quizzes.md). A fourth, `pdf_backend="layout"`, reads a book from its text layer through a per-document profile; see [layout-backend.md](layout-backend.md). The rest of this page covers the two general backends.
 
 ## When to pick which
 
@@ -41,6 +41,7 @@ pip install pagespeak[pdf]              # Marker (default)
 pip install pagespeak[pdf-docling]      # Docling
 pip install pagespeak[pdf,pdf-docling]  # both — pick at call time
 pip install pagespeak[tophat]           # Top Hat quiz backend (light; pypdfium2)
+pip install pagespeak[layout]           # layout backend: a book read with its profile (light; pypdfium2)
 ```
 
 Marker requires Pillow below 11, so the `pdf` extra installs Pillow 10.4. Read [SECURITY.md](../SECURITY.md#converting-untrusted-documents) before converting untrusted documents with it.

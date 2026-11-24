@@ -1,4 +1,4 @@
-"""PDF-backend selection: pick `marker`, `docling`, or `tophat` per call.
+"""PDF-backend selection: pick `marker`, `docling`, `tophat` or `layout` per call.
 
 Pagespeak's PDF backends:
 
@@ -15,6 +15,10 @@ Pagespeak's PDF backends:
   `Question N` marker to a `## Question N` heading so the pipeline splits one
   file per question; marks the correct answer (grey-letter signal) and extracts
   embedded figures for the vision pass. Lightweight (`pypdfium2`).
+- **Layout** (`_layout.convert_pdf_layout`) — reads a book from its text layer
+  with a per-document profile (`<source>.layout.yaml`): fonts to heading levels,
+  ruled tables from their grid, figures matched to captions. Lightweight
+  (`pypdfium2`); see docs/layout-backend.md.
 
 The `convert(name)` factory returns the right callable. Both convert
 functions accept the same kwargs and return the same `IngestResult`
@@ -32,7 +36,7 @@ from pw_foundation.utils.env import resolve_str
 
 from ..models._models import IngestResult
 
-PdfBackendName = Literal["marker", "docling", "tophat"]
+PdfBackendName = Literal["marker", "docling", "tophat", "layout"]
 DEFAULT_PDF_BACKEND: PdfBackendName = "marker"
 
 # Type for any backend's convert callable.
@@ -84,7 +88,20 @@ def get_pdf_converter(name: PdfBackendName) -> PdfConverter:
                 "Install with: pip install pagespeak[tophat]"
             ) from e
         return convert_pdf_tophat
-    raise ValueError(f"Unknown pdf_backend: {name!r}. Valid: 'marker' | 'docling' | 'tophat'.")
+    if name == "layout":
+        try:
+            import pypdfium2  # noqa: F401
+        except ImportError as e:
+            raise ImportError(
+                "The layout PDF backend requires pypdfium2. "
+                "Install with: pip install pagespeak[layout]"
+            ) from e
+        from ._layout import convert_pdf_layout
+
+        return convert_pdf_layout
+    raise ValueError(
+        f"Unknown pdf_backend: {name!r}. Valid: 'marker' | 'docling' | 'tophat' | 'layout'."
+    )
 
 
 def convert(

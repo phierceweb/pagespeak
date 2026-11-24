@@ -15,7 +15,7 @@ Opt-in pre-split pass that fixes flattened heading hierarchy in PDF extractions.
 
 So when the ingest recorded an outline-derived hierarchy (docling + `--heading-hierarchy` + a PDF carrying a bookmark outline at least `PAGESPEAK_TRUSTED_OUTLINE_MIN_DEPTH` deep), a requested `llm` / `llm_full` is downgraded to **`llm_dehead`** — junk removal without re-leveling. The downgrade logs `normalize_mode_downgraded`. `heuristic` and `llm_dehead` pass through untouched, as does any Marker conversion.
 
-`heuristic` changes nothing in a document whose headings are all the author's (an HTML source, recorded at ingest): its numbering rules would replace the author's levels with guessed ones. It logs `heading_normalize_skipped reason=authored_headings`.
+`heuristic` changes nothing in a document whose headings are all the author's (an HTML source or the `layout` backend, recorded at ingest): its numbering rules would replace the author's levels with guessed ones. It logs `heading_normalize_skipped reason=authored_headings`.
 
 This is the same provenance signal that gates the structure phase's level-rewriting passes; see `services/_hierarchy_trust.py`.
 

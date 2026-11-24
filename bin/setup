@@ -5,6 +5,8 @@
 #   --pdf               marker-pdf (heavy: torch + surya, ~2GB)
 #   --docling           docling PDF backend (pdf-docling extra)
 #   --docx-structured   python-docx (structure-faithful DOCX)
+#   --layout            pypdfium2 (layout PDF backend: a book read with its
+#                       profile; light — also ships with --pdf / --docling)
 #   --tophat            pypdfium2 (Top Hat quiz-export PDF backend; light —
 #                       also ships with --pdf / --docling)
 #   --web               web console (FastAPI + uvicorn)
@@ -47,6 +49,9 @@ for arg in "$@"; do
     --docx-structured)
       EXTRAS="$EXTRAS,docx-structured"
       ;;
+    --layout)
+      EXTRAS="$EXTRAS,layout"
+      ;;
     --tophat)
       EXTRAS="$EXTRAS,tophat"
       ;;
@@ -57,10 +62,10 @@ for arg in "$@"; do
       EXTRAS="$EXTRAS,postgres"
       ;;
     --all)
-      EXTRAS="dev,pdf,pdf-docling,docx-structured,tophat,web,postgres"
+      EXTRAS="dev,pdf,pdf-docling,docx-structured,layout,tophat,web,postgres"
       ;;
     --help|-h)
-      echo "Usage: bin/setup [--all] [--pdf] [--docling] [--docx-structured] [--tophat] [--web] [--postgres]"
+      echo "Usage: bin/setup [--all] [--pdf] [--docling] [--docx-structured] [--layout] [--tophat] [--web] [--postgres]"
       echo ""
       echo "Extras are additive — combine flags freely."
       echo ""
@@ -68,6 +73,7 @@ for arg in "$@"; do
       echo "  --pdf               marker-pdf (~2GB: torch + surya; required for PDF support)"
       echo "  --docling           docling PDF backend (pdf-docling extra)"
       echo "  --docx-structured   python-docx (structure-faithful DOCX)"
+      echo "  --layout            pypdfium2 (layout PDF backend: a book read with its profile; light)"
       echo "  --tophat            pypdfium2 (Top Hat quiz-export PDF backend; light)"
       echo "  --web               web console (FastAPI + uvicorn)"
       echo "  --postgres          psycopg2 (Postgres LLM-tracking DB driver)"

@@ -498,3 +498,32 @@ def test_raw_resume_treats_absent_and_empty_backend_kwargs_alike(tmp_path: Path)
         )
         result = _convert_without_backend(src, out, pdf_backend_kwargs=current)
         assert result.markdown.startswith("# from the earlier run")
+
+
+@pytest.mark.parametrize("kwargs", [None, {"profile": "elsewhere.yaml"}])
+def test_a_layout_checkpoint_goes_stale_when_its_profile_is_edited(
+    tmp_path: Path, monkeypatch, kwargs
+) -> None:
+    from pagespeak.orchestrators._resume import _try_resume_from_checkpoint
+
+    monkeypatch.chdir(tmp_path)
+    src, out = tmp_path / "book.pdf", tmp_path / "out"
+    profile = tmp_path / ("elsewhere.yaml" if kwargs else "book.layout.yaml")
+    out.mkdir()
+    for f in (src, profile, out / "book.raw.md"):
+        f.write_text("x", encoding="utf-8")
+        os.utime(f, (1_000, 1_000))
+
+    def resumed(backend: str) -> bool:
+        flags = {"pdf_backend": backend, "pdf_backend_kwargs": kwargs}
+        got = _try_resume_from_checkpoint(
+            src, out, out / "book.raw.md", source_format="pdf", current_flags=flags
+        )
+        return got is not None
+
+    assert resumed("layout")
+    os.utime(profile, (2_000, 2_000))
+    assert not resumed("layout")
+    assert resumed("marker")  # no other backend reads a profile
+    profile.unlink()
+    assert not resumed("layout")

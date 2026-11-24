@@ -137,6 +137,15 @@ def test_ingest_chunked_rejects_page_range(tmp_path):
         ingest(src, output_dir=tmp_path / "out", workers=2, page_range="0-10")
 
 
+def test_ingest_refuses_to_chunk_the_layout_backend(tmp_path):
+    src, out = tmp_path / "doc.pdf", tmp_path / "out"
+    src.write_bytes(b"%PDF-fake")
+    with pytest.raises(ValueError, match="layout backend reads the whole document in one pass"):
+        # the route `convert -w 2` takes before it re-enters on the output dir
+        ingest(src, output_dir=out, workers=2, pdf_backend="layout")
+    assert not (out / "chunks").exists() and not (out / "manifest.json").exists()
+
+
 def _capture_backends(monkeypatch) -> list[object]:
     """Stub the PDF and MarkItDown backends; returns where the PDF page ranges land."""
     from pagespeak.backends import _docx, _pdf_dispatch
@@ -196,6 +205,7 @@ def test_ingest_max_pages_past_the_end_reads_every_page(tmp_path, monkeypatch):
     [
         ("doc.docx", {}, "PDF"),
         ("doc.pdf", {"pdf_backend": "tophat"}, "tophat"),
+        ("doc.pdf", {"pdf_backend": "layout"}, "layout"),
         ("doc.pdf", {"page_range": "0-3"}, "page_range"),
         ("doc.pdf", {"max_pages": 0}, ">= 1"),
     ],

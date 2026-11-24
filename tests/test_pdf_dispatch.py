@@ -45,6 +45,21 @@ def test_get_pdf_converter_docling_raises_when_uninstalled() -> None:
         get_pdf_converter("docling")
 
 
+def test_get_pdf_converter_layout_returns_the_layout_backend() -> None:
+    pytest.importorskip("pypdfium2")
+    from pagespeak.backends._layout import convert_pdf_layout
+
+    assert get_pdf_converter("layout") is convert_pdf_layout
+
+
+def test_get_pdf_converter_layout_names_its_extra_when_pypdfium2_is_missing() -> None:
+    with (
+        patch.dict("sys.modules", {"pypdfium2": None}),
+        pytest.raises(ImportError, match=r"pagespeak\[layout\]"),
+    ):
+        get_pdf_converter("layout")
+
+
 def test_get_pdf_converter_unknown_name_value_errors() -> None:
     with pytest.raises(ValueError, match="Unknown pdf_backend"):
         get_pdf_converter("bogus")  # type: ignore[arg-type]

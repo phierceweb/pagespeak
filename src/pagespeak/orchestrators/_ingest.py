@@ -86,14 +86,14 @@ def ingest(
             against so a web-help export's images download (single-process).
         force: Discard manifest + chunks; re-run from scratch.
         max_pages: Limit ingest to first N pages of the PDF (not with
-            `page_range` or the tophat backend).
+            `page_range` or the tophat or layout backend).
 
     Returns:
         The absolute path to `<output_dir>/<stem>.raw.md`.
 
     Raises:
-        ValueError: workers < 1, chunked path requested for non-PDF, or a
-            `max_pages` that cannot apply.
+        ValueError: workers < 1, chunked path requested for non-PDF or for the
+            layout backend, or a `max_pages` that cannot apply.
         FileNotFoundError: input doesn't exist.
     """
     if workers < 1:
@@ -164,6 +164,11 @@ def ingest(
             f"Chunked ingest (workers>1) is PDF-only; got {suffix!r}. "
             "Use workers=1 for non-PDF formats."
         )
+    if pdf_backend == "layout":
+        raise ValueError(
+            "The layout backend reads the whole document in one pass, so chunked "
+            "ingest (workers>1) does not apply. Use workers=1."
+        )
     try:
         raw = _ingest_chunked(
             src,
@@ -198,9 +203,9 @@ def _first_pages(
         raise ValueError(f"max_pages must be >= 1, got {n!r}")
     if suffix not in PDF_SUFFIXES:
         raise ValueError(f"max_pages applies to PDFs only; got {suffix!r}")
-    if pdf_backend == "tophat":
+    if pdf_backend in ("tophat", "layout"):
         raise ValueError(
-            "max_pages does not apply to the tophat backend, which reads the whole export"
+            f"max_pages does not apply to the {pdf_backend} backend, which reads the whole document"
         )
     if page_range is not None:
         raise ValueError("pass page_range or max_pages, not both")
